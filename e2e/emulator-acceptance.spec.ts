@@ -254,14 +254,14 @@ test('chat reconciles a lost acknowledgement into one durable message and listen
 test('feedback confirms persistence and enforces cooldown after reopening the real modal', async ({ page, request }) => {
   await page.goto('/'); await login(page);
   await page.getByRole('button', { name: 'Profile', exact: true }).click();
-  await page.getByRole('button', { name: 'Send Feedback', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Submit Feedback' })).toBeDisabled();
+  await page.getByRole('button', { name: 'Send feedback', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Submit feedback' })).toBeDisabled();
   await page.getByRole('textbox').fill('Synthetic suggestion only.');
-  await page.getByRole('button', { name: 'Submit Feedback' }).click();
+  await page.getByRole('button', { name: 'Submit feedback' }).click();
   await expect(page.getByRole('heading', { name: 'Thank you!' })).toBeVisible();
   expect((await evidence(request)).feedbacks).toEqual([expect.objectContaining({ userId: 'qa_passenger', type: 'general', comment: 'Synthetic suggestion only.' })]);
   await expect(page.getByRole('dialog')).toHaveCount(0);
-  await page.getByRole('button', { name: 'Send Feedback', exact: true }).click();
+  await page.getByRole('button', { name: 'Send feedback', exact: true }).click();
   await expect(page.getByRole('dialog').getByRole('button', { name: /^Wait / })).toBeDisabled();
   await page.keyboard.press('Escape'); await expect(page.getByRole('dialog')).toHaveCount(0);
 });
@@ -269,10 +269,10 @@ test('feedback confirms persistence and enforces cooldown after reopening the re
 test('profile cancellation preserves auth and confirmation signs out the real emulator account', async ({ page }) => {
   await page.goto('/'); await login(page);
   await page.getByRole('button', { name: 'Profile', exact: true }).click();
-  await page.getByRole('button', { name: 'Sign Out', exact: true }).click();
+  await page.getByRole('button', { name: 'Sign out', exact: true }).click();
   await page.getByRole('dialog').getByRole('button', { name: 'Cancel', exact: true }).click();
   await expect(page.getByLabel('Verified fixture account')).toHaveText('qa_passenger');
-  await page.getByRole('button', { name: 'Sign Out', exact: true }).click();
+  await page.getByRole('button', { name: 'Sign out', exact: true }).click();
   await page.getByRole('dialog').getByRole('button', { name: 'Sign out', exact: true }).click();
   await expect(page.getByLabel('Verified fixture account')).toHaveText('signed out');
   await expect(page.getByRole('heading', { name: 'Guest', exact: true })).toBeVisible();
@@ -291,21 +291,21 @@ test('accepted account deletion signs out on dismissal and the real worker prese
   await expect(page.getByRole('textbox', { name: 'Chat message' })).toHaveValue('');
   await page.getByRole('button', { name: 'Close chat' }).click();
   await page.getByRole('button', { name: 'Profile', exact: true }).click();
-  await page.getByRole('button', { name: 'Send Feedback', exact: true }).click();
+  await page.getByRole('button', { name: 'Send feedback', exact: true }).click();
   await page.getByRole('dialog').getByRole('textbox').fill('Retained synthetic feedback');
-  await page.getByRole('button', { name: 'Submit Feedback' }).click();
+  await page.getByRole('button', { name: 'Submit feedback' }).click();
   await expect(page.getByRole('heading', { name: 'Thank you!' })).toBeVisible();
   await expect(page.getByRole('dialog')).toHaveCount(0);
   const before = await evidence(request);
   expect(before.messages).toHaveLength(1); expect(before.feedbacks).toHaveLength(1);
-  await page.getByRole('button', { name: 'Delete Account', exact: true }).click();
-  const confirmation = page.getByRole('dialog', { name: 'Delete Account?', exact: true });
+  await page.getByRole('button', { name: 'Delete account', exact: true }).click();
+  const confirmation = page.getByRole('dialog', { name: 'Delete account?', exact: true });
   expect(await confirmation.evaluate(element => element.parentElement === document.body)).toBe(true);
   await confirmation.getByRole('button', { name: 'Cancel', exact: true }).click();
   await expect(page.getByLabel('Verified fixture account')).toHaveText('qa_passenger');
-  await page.getByRole('button', { name: 'Delete Account', exact: true }).click();
+  await page.getByRole('button', { name: 'Delete account', exact: true }).click();
   const acknowledged = page.waitForResponse(response => response.url().endsWith('/api/v2/privacy-deletion-requests') && response.request().method() === 'POST');
-  await page.getByRole('dialog').getByRole('button', { name: 'Delete Account', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Delete account', exact: true }).click();
   const response = await acknowledged; expect(response.status()).toBe(202); expect(await response.json()).toMatchObject({ accepted: true });
   const accepted = page.getByRole('dialog', { name: 'Deletion requested', exact: true });
   await expect(accepted).toBeVisible(); await expect(accepted.getByRole('button', { name: 'Cancel' })).toHaveCount(0);
@@ -354,14 +354,14 @@ test('failed account deletion exposes the error and preserves sign-in for a corr
   }));
   for (const failure of ['service', 'acknowledgement']) {
     malformed = failure === 'acknowledgement';
-    await page.getByRole('button', { name: 'Delete Account', exact: true }).click();
-    await page.getByRole('dialog').getByRole('button', { name: 'Delete Account', exact: true }).click();
+    await page.getByRole('button', { name: 'Delete account', exact: true }).click();
+    await page.getByRole('dialog').getByRole('button', { name: 'Delete account', exact: true }).click();
     await expect(page.getByRole('dialog')).toHaveCount(0);
     await expect(page.getByRole('status').filter({ hasText: malformed ? 'acknowledgement is missing' : 'Synthetic deletion service unavailable' })).toBeVisible();
     await expect(page.getByLabel('Verified fixture account')).toHaveText('qa_passenger');
   }
-  await page.getByRole('button', { name: 'Delete Account', exact: true }).click();
-  await expect(page.getByRole('dialog', { name: 'Delete Account?', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Delete account', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: 'Delete account?', exact: true })).toBeVisible();
   await page.keyboard.press('Escape');
 });
 
@@ -453,9 +453,9 @@ test('credible off-route authenticated telemetry publishes a versioned detour an
 
 test('stop arrival updates the real passenger timeline only after authenticated telemetry enters the arrival corridor', async ({ page, request }, testInfo) => {
   await page.goto('/'); await login(page); await board(page);
-  const timeline = page.getByRole('button', { name: 'Route Timeline', exact: true });
+  const timeline = page.getByRole('button', { name: 'Route timeline', exact: true });
   await timeline.click();
-  const nextStop = page.getByText('Next Stop', { exact: true }).locator('..');
+  const nextStop = page.getByText('Next stop', { exact: true }).locator('..');
   const outside = await request.post(`${control}/telemetry/middle-outside`);
   expect(outside.ok()).toBe(true); expect((await outside.json()).statuses).toEqual([202]);
   await expect(nextStop).toContainText('Synthetic middle');
@@ -516,7 +516,7 @@ test('authenticated telemetry completes the joined ride and arms a distinct retu
   expect(completed.completions).toEqual([expect.objectContaining({ id: 'qa_session', sessionId: 'qa_session', direction: 'forward' })]);
   await expect(page.getByRole('heading', { name: 'Rate your ride', exact: true })).toBeVisible({ timeout: 15000 });
   await page.getByRole('dialog').getByRole('textbox').fill('Synthetic completed ride feedback.');
-  await page.getByRole('button', { name: 'Submit Feedback', exact: true }).click();
+  await page.getByRole('button', { name: 'Submit feedback', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Thank you!', exact: true })).toBeVisible();
   expect((await evidence(request)).feedbacks).toEqual([expect.objectContaining({ userId: 'qa_passenger', type: 'ride',
     sessionId: 'qa_session', busId: 'qa_bus', driverId: 'qa_driver' })]);

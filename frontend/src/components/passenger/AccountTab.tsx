@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import WorkspaceLink from "@/components/shared/WorkspaceLink";
 import { CircleUserRound, LogOut, ChevronRight, LogIn, ClipboardPenLine, Trash2, LayoutDashboard } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
@@ -8,16 +8,18 @@ import FeedbackModal from "@/components/shared/FeedbackModal";
 import ConfirmModal from "@/components/ui/ConfirmModal";
 import { auth } from "@/lib/firebaseAuth";
 import { apiRequest } from "@/lib/apiClient";
-import { passengerNavHeight } from "./passengerFrame";
+import { BUILD_DATE, BUILD_VERSION, UNIVERSITY_LINKS } from "@/config/university";
 
 function ProfilePhoto({ photoURL }: { photoURL?: string | null }) {
   const [failed, setFailed] = useState(false);
   if (!photoURL || failed) {
-    return <CircleUserRound role="img" aria-label="Default profile" className="w-9 h-9" style={{ color: "var(--text-ghost)" }} />;
+    return <CircleUserRound role="img" aria-label="Default profile" className="w-10 h-10" strokeWidth={1.5} />;
   }
   // eslint-disable-next-line @next/next/no-img-element
-  return <img src={photoURL} alt="Profile" referrerPolicy="no-referrer" onError={() => setFailed(true)} className="w-full h-full object-cover" />;
+  return <img src={photoURL} alt="Profile" referrerPolicy="no-referrer" onError={() => setFailed(true)} />;
 }
+
+const roleLabel = (role?: string | null) => role ? role.charAt(0).toUpperCase() + role.slice(1) : "Passenger";
 
 export default function AccountTab() {
   const {
@@ -38,34 +40,13 @@ export default function AccountTab() {
   const [showDeletionAccepted, setShowDeletionAccepted] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deletionStatus, setDeletionStatus] = useState("");
-  const [showCoin, setShowCoin] = useState(false);
-  const lastPhotoTap = useRef<number | null>(null);
-  const coinTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => () => {
-    if (coinTimer.current) clearTimeout(coinTimer.current);
-  }, []);
-
-  const handlePhotoTap = () => {
-    const now = Date.now();
-    if (lastPhotoTap.current !== null && now - lastPhotoTap.current <= 350 && !showCoin) {
-      setShowCoin(true);
-      lastPhotoTap.current = null;
-      coinTimer.current = setTimeout(() => {
-        setShowCoin(false);
-        lastPhotoTap.current = null;
-        coinTimer.current = null;
-      }, 4_000);
-    } else if (!showCoin) {
-      lastPhotoTap.current = now;
-    }
-  };
+  const links = UNIVERSITY_LINKS.filter(link => link.href);
 
   const confirmDeletion = async () => {
     setIsDeleting(true);
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "");
     if (!backendUrl || !auth.currentUser) {
-      setDeletionStatus("Account deletion is unavailable until the university API is configured.");
+      setDeletionStatus("Account deletion isn't available right now. Please try again later.");
       setShowDeleteConfirm(false);
       setIsDeleting(false);
       return;
@@ -93,188 +74,115 @@ export default function AccountTab() {
     void logout();
   };
   return (
-    <div className="flex-1 overflow-y-auto overscroll-contain flex flex-col pt-safe px-5" style={{ background: "var(--surface-0)" }}>
-      {/* Scroll past the navigation and its safe area, plus the previous 47px breathing room. */}
-      <div
-        className="w-full max-w-lg mx-auto space-y-6 mt-10"
-        style={{ paddingBottom: `calc(${passengerNavHeight} + 47px + var(--safe-area-bottom))` }}
-      >
-        
-        {/* Profile Header */}
-        <div className="p-6 rounded-2xl relative overflow-hidden" 
-          style={{ background: "var(--surface-2)", border: "1px solid var(--border-subtle)" }}>
-          <div className="flex flex-col items-center gap-5 relative z-10">
-            <div className="w-20 h-20 rounded-full flex items-center justify-center"
-              role="group" aria-label="Profile photo"
-              >
-              <button type="button" onClick={handlePhotoTap}
-                aria-label="Profile photo, double tap for a surprise"
-                className="relative w-full h-full rounded-full flex items-center justify-center overflow-hidden touch-manipulation"
-                style={{ background: "var(--surface-3)", border: "1px solid var(--border-default)", perspective: "500px" }}>
-                {showCoin ? (
-                  <span className="profile-coin" role="img" aria-label="Golden coin: 19">
-                    <span className="profile-coin-face profile-coin-front" aria-hidden="true" />
-                    <span className="profile-coin-face profile-coin-back" aria-hidden="true">19</span>
-                  </span>
-                ) : <ProfilePhoto key={JSON.stringify([user?.uid, user?.photoURL])} photoURL={user?.photoURL} />}
-              </button>
-            </div>
-            
-            <div className="text-center">
-              {user ? (
-                <>
-                  <h2 className="text-xl font-extrabold tracking-tight mb-1.5" style={{ color: "var(--text-primary)" }}>
-                    {user.displayName || "Rider"}
-                  </h2>
-                  <span className="text-[10px] font-semibold px-2 py-1 rounded-md"
-                    style={{ 
-                      background: "var(--accent-subtle)",
-                      color: "var(--accent)",
-                      letterSpacing: "0.05em" 
-                    }}>
-                    {user.role?.toUpperCase() || "PASSENGER"}
-                  </span>
-                </>
-              ) : (
-                <>
-                  <h2 className="text-xl font-extrabold tracking-tight mb-1" style={{ color: "var(--text-primary)" }}>
-                    Guest
-                  </h2>
-                  <span className="text-[10px] font-semibold" style={{ color: "var(--text-ghost)" }}>
-                    Sign in to save preferences
-                  </span>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
+    <div className="pp-page overflow-y-auto overscroll-contain">
+      <div className="pp-page-inner">
+        <h1 className="pp-title pp-page-title">Profile</h1>
 
-        {/* Actions List */}
-        <div className="rounded-xl overflow-hidden"
-          style={{ background: "var(--surface-2)", border: "1px solid var(--border-subtle)" }}>
+        <section className="pp-profile-card" aria-label="Account">
+          <div className="pp-avatar" role="group" aria-label="Profile photo">
+            <ProfilePhoto key={JSON.stringify([user?.uid, user?.photoURL])} photoURL={user?.photoURL} />
+          </div>
+          <div>
+            {user ? (
+              <>
+                <h2 className="pp-profile-name">{user.displayName || "Rider"}</h2>
+                {user.email && <p className="pp-profile-email">{user.email}</p>}
+                <span className="pp-role-chip">{roleLabel(user.role)}</span>
+              </>
+            ) : (
+              <>
+                <h2 className="pp-profile-name">Guest</h2>
+                <p className="pp-profile-email">Sign in to save preferences</p>
+              </>
+            )}
+          </div>
+        </section>
+
+        <div className="pp-list">
           {user?.role === "admin" && (
-            <WorkspaceLink
-              href="/admin"
-              className="w-full flex items-center justify-between p-4 hover:bg-[var(--surface-3)] transition-colors group active:bg-[var(--surface-4)] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--accent)]"
-              style={{ borderBottom: "1px solid var(--border-subtle)" }}
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-lg flex items-center justify-center"
-                  style={{ background: "var(--accent-subtle)" }}>
-                  <LayoutDashboard className="w-4 h-4" aria-hidden="true" style={{ color: "var(--accent)" }} />
-                </div>
-                <span className="text-[13px] font-semibold" style={{ color: "var(--text-secondary)" }}>
-                  Admin Panel
-                </span>
-              </div>
-              <ChevronRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5"
-                aria-hidden="true" style={{ color: "var(--text-ghost)" }} />
+            <WorkspaceLink href="/admin" className="pp-list-row" data-tone="accent">
+              <span className="pp-list-icon" data-tone="accent">
+                <LayoutDashboard className="w-[18px] h-[18px]" aria-hidden="true" />
+              </span>
+              <span className="pp-list-label">Admin panel</span>
+              <ChevronRight className="pp-list-chevron w-4 h-4" aria-hidden="true" />
             </WorkspaceLink>
           )}
-          {user && <button
-            type="button"
-            onClick={() => setShowFeedback(true)}
-            className="w-full flex items-center justify-between p-4 bg-transparent hover:bg-[var(--surface-3)] transition-colors group active:bg-[var(--surface-4)]"
-            style={{ borderBottom: "1px solid var(--border-subtle)" }}
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-lg flex items-center justify-center transition-colors"
-                style={{ background: "var(--surface-3)" }}>
-                  <ClipboardPenLine aria-hidden="true" className="w-4 h-4" style={{ color: "var(--text-tertiary)" }} />
-              </div>
-              <span className="text-[13px] font-semibold" style={{ color: "var(--text-secondary)" }}>
-                Send Feedback
+          {user && (
+            <button type="button" className="pp-list-row" onClick={() => setShowFeedback(true)}>
+              <span className="pp-list-icon">
+                <ClipboardPenLine className="w-[18px] h-[18px]" aria-hidden="true" />
               </span>
-            </div>
-            <ChevronRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" 
-              style={{ color: "var(--text-ghost)" }} />
-          </button>}
+              <span className="pp-list-label">Send feedback</span>
+              <ChevronRight className="pp-list-chevron w-4 h-4" aria-hidden="true" />
+            </button>
+          )}
 
           {user ? (
             <>
-              <button
-                type="button"
-                onClick={() => setShowLogoutConfirm(true)}
-                className="w-full flex items-center justify-between p-4 bg-transparent hover:bg-[var(--surface-3)] transition-colors group"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-lg flex items-center justify-center"
-                    style={{ background: "var(--status-danger-bg)" }}>
-                    <LogOut className="w-4 h-4" style={{ color: "var(--status-danger)" }} />
-                  </div>
-                  <span className="text-[13px] font-semibold" style={{ color: "var(--status-danger)" }}>
-                    Sign Out
-                  </span>
-                </div>
-                <ChevronRight className="w-4 h-4" aria-hidden="true" style={{ color: "var(--text-ghost)" }} />
+              <button type="button" className="pp-list-row" data-tone="danger" onClick={() => setShowLogoutConfirm(true)}>
+                <span className="pp-list-icon" data-tone="danger">
+                  <LogOut className="w-[18px] h-[18px]" aria-hidden="true" />
+                </span>
+                <span className="pp-list-label">Sign out</span>
+                <ChevronRight className="pp-list-chevron w-4 h-4" aria-hidden="true" />
               </button>
               {user.role === "passenger" && (
                 <button
                   type="button"
+                  className="pp-list-row"
+                  data-tone="danger"
                   onClick={() => {
                     setDeletionStatus("");
                     setShowDeleteConfirm(true);
                   }}
-                  className="w-full flex items-center justify-between p-4 bg-transparent hover:bg-[var(--surface-3)] transition-colors group"
-                  style={{ borderTop: "1px solid var(--border-subtle)" }}
                 >
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-lg flex items-center justify-center"
-                      style={{ background: "var(--status-danger-bg)" }}>
-                      <Trash2 className="w-4 h-4" style={{ color: "var(--status-danger)" }} />
-                    </div>
-                    <span className="text-[13px] font-semibold" style={{ color: "var(--status-danger)" }}>
-                      Delete Account
-                    </span>
-                  </div>
-                  <ChevronRight className="w-4 h-4" aria-hidden="true" style={{ color: "var(--text-ghost)" }} />
+                  <span className="pp-list-icon" data-tone="danger">
+                    <Trash2 className="w-[18px] h-[18px]" aria-hidden="true" />
+                  </span>
+                  <span className="pp-list-label">Delete account</span>
+                  <ChevronRight className="pp-list-chevron w-4 h-4" aria-hidden="true" />
                 </button>
               )}
             </>
           ) : (
             <button
               type="button"
+              className="pp-list-row"
+              data-tone="accent"
               onClick={loginWithGoogle}
               disabled={!loginReady || loginLoading}
-              className="w-full flex items-center justify-between p-4 bg-transparent hover:bg-[var(--surface-3)] transition-colors group"
             >
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-lg flex items-center justify-center"
-                  style={{ background: "var(--accent-subtle)" }}>
-                   <LogIn className="w-4 h-4" aria-hidden="true" style={{ color: "var(--accent)" }} />
-                </div>
-                <span className="text-[13px] font-semibold" style={{ color: "var(--accent)" }}>
-                  Sign in with Google
-                </span>
-              </div>
-              <ChevronRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" 
-                style={{ color: "var(--text-ghost)" }} />
+              <span className="pp-list-icon" data-tone="accent">
+                <LogIn className="w-[18px] h-[18px]" aria-hidden="true" />
+              </span>
+              <span className="pp-list-label">Sign in with Google</span>
+              <ChevronRight className="pp-list-chevron w-4 h-4" aria-hidden="true" />
             </button>
           )}
         </div>
         {loginError && (
-          <div className="px-4 pb-4">
-            <p className="text-sm" style={{ color: "var(--status-danger)" }} role="alert">
-              {loginError}
-            </p>
-            {loginFallbackAvailable && (
-              <button
-                type="button"
-                onClick={loginWithGoogleRedirect}
-                className="mt-2 text-sm font-semibold underline underline-offset-4"
-                style={{ color: "var(--text-primary)" }}
-              >
-                Continue with full-page sign-in
-              </button>
-            )}
+          <div className="pp-banner" data-tone="danger">
+            <div className="flex-1">
+              <p role="alert">{loginError}</p>
+              {loginFallbackAvailable && (
+                <button
+                  type="button"
+                  onClick={loginWithGoogleRedirect}
+                  className="mt-1 min-h-11 font-medium underline underline-offset-4"
+                >
+                  Continue with full-page sign-in
+                </button>
+              )}
+            </div>
           </div>
         )}
         {deletionStatus && (
-          <p className="text-center text-xs" role="status" style={{ color: "var(--text-secondary)" }}>
+          <p className="pp-footnote" role="status">
             {deletionStatus}
           </p>
         )}
-        
+
         {showFeedback && user && (
           <FeedbackModal
             userId={user.uid}
@@ -283,11 +191,19 @@ export default function AccountTab() {
             onClose={() => setShowFeedback(false)}
           />
         )}
-        
-        {/* Version */}
-        <p className="text-center text-[10px] font-semibold pt-4" style={{ color: "var(--text-ghost)" }}>
-          Eki Transit · v3.0
-        </p>
+
+        <footer className="pp-footnote">
+          {links.length > 0 && (
+            <nav aria-label="University links" className="pp-footnote-links">
+              {links.map(link => <a key={link.label} href={link.href}>{link.label}</a>)}
+            </nav>
+          )}
+          <p>
+            Eki
+            {BUILD_VERSION && ` · build ${BUILD_VERSION}`}
+            {BUILD_DATE && ` · ${BUILD_DATE}`}
+          </p>
+        </footer>
       </div>
 
       <ConfirmModal
@@ -304,9 +220,9 @@ export default function AccountTab() {
 
       <ConfirmModal
         isOpen={showDeleteConfirm}
-        title="Delete Account?"
+        title="Delete account?"
         description="Permanently delete your Eki profile and login account? Your feedback, passenger ride entries, and messages will be retained. This action cannot be undone."
-        confirmText="Delete Account"
+        confirmText="Delete account"
         cancelText="Cancel"
         variant="danger"
         loading={isDeleting}

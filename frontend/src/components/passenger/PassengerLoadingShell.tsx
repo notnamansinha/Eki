@@ -10,7 +10,7 @@ import {
 export default function PassengerLoadingShell() {
   return (
     <div
-      className="relative overflow-hidden text-white"
+      className="relative overflow-hidden"
       style={{ height: "100dvh", backgroundColor: "var(--surface-0)" }}
       aria-hidden="true"
     >
@@ -27,25 +27,14 @@ export default function PassengerLoadingShell() {
           className={passengerPanelClassName}
           style={passengerPanelStyle}
         >
-          <div className="passenger-home-heading mx-6 mb-4 shrink-0 pb-6 text-center">
-            <h1
-              className="mb-2 text-[32px] font-black leading-none tracking-tight"
-              style={{ color: "var(--text-primary)" }}
-            >
-              Live Routes
-            </h1>
-            <p
-              className="mt-2 text-[15px] font-medium"
-              style={{ color: "var(--text-secondary)" }}
-            >
-              Restoring your transit session…
-            </p>
+          <div className="passenger-home-heading pp-home-heading mx-6 mb-3 shrink-0 pb-5">
+            <h1 className="pp-title">Live routes</h1>
+            <p className="pp-subtitle">Restoring your transit session…</p>
+            <hr className="pp-rule" aria-hidden="true" />
           </div>
 
-          <div className="mx-5 rounded-xl border border-white/5 bg-white/[0.03] px-5 py-6 text-center">
-            <p className="text-[13px] font-semibold" style={{ color: "var(--text-tertiary)" }}>
-              Loading live route information
-            </p>
+          <div className="pp-empty mx-5">
+            <p className="pp-empty-detail">Loading live route information</p>
           </div>
         </div>
       </div>
@@ -56,7 +45,7 @@ export default function PassengerLoadingShell() {
         aria-hidden="true"
       >
         <div className={passengerNavClassName}>
-          <div className="h-[60px] w-[140px] rounded-[20px] bg-white/[0.08]" />
+          <div className="h-[52px] w-[120px] rounded-[16px] bg-[var(--surface-4)]" />
           <div className="h-[60px] w-[140px] rounded-[20px]" />
         </div>
       </div>

@@ -26,13 +26,13 @@ async function submitGeneral() {
   const user = userEvent.setup();
   render(<FeedbackModal userId="qa-passenger" onClose={vi.fn()} />);
   await user.type(screen.getByRole("textbox"), "The route card should open reliably.");
-  await user.click(screen.getByRole("button", { name: "Submit Feedback" }));
+  await user.click(screen.getByRole("button", { name: "Submit feedback" }));
   return user;
 }
 describe("passenger feedback workflow", () => {
   it("explains empty ride feedback without making a request", async () => {
     render(<FeedbackModal userId="qa-passenger" busId="bus" sessionId="ride" onClose={vi.fn()} />);
-    await userEvent.setup().click(screen.getByRole("button", { name: "Submit Feedback" }));
+    await userEvent.setup().click(screen.getByRole("button", { name: "Submit feedback" }));
     expect(screen.getByRole("status").textContent).toContain("Please add a rating or comment before submitting.");
     expect(store.submitFeedback).not.toHaveBeenCalled();
   });
@@ -54,7 +54,7 @@ describe("passenger feedback workflow", () => {
     store.submitFeedback.mockRejectedValueOnce({ code: "unavailable" });
     const user = await submitGeneral();
     await screen.findByText(/Could not connect to Firestore/);
-    await user.click(screen.getByRole("button", { name: "Submit Feedback" }));
+    await user.click(screen.getByRole("button", { name: "Submit feedback" }));
     expect(await screen.findByText("Thank you!")).toBeTruthy();
     expect(store.submitFeedback.mock.calls[0][2]).toBe(store.submitFeedback.mock.calls[1][2]);
   });
@@ -71,7 +71,7 @@ describe("passenger feedback workflow", () => {
       const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
       const { unmount } = render(<FeedbackModal userId="qa-passenger" onClose={vi.fn()} />);
       await user.type(screen.getByRole("textbox"), "The route card should open reliably.");
-      await user.click(screen.getByRole("button", { name: "Submit Feedback" }));
+      await user.click(screen.getByRole("button", { name: "Submit feedback" }));
       await screen.findByText(/Limit reached/);
       await act(async () => { vi.advanceTimersByTime(61_000); });
       expect((screen.getByRole("button", { name: /^Wait/ }) as HTMLButtonElement).disabled).toBe(true);
@@ -87,13 +87,13 @@ describe("passenger feedback workflow", () => {
       const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
       render(<FeedbackModal userId="qa-passenger" onClose={vi.fn()} />);
       await user.type(screen.getByRole("textbox"), "The route card should open reliably.");
-      await user.click(screen.getByRole("button", { name: "Submit Feedback" }));
+      await user.click(screen.getByRole("button", { name: "Submit feedback" }));
       await screen.findByText("Limit reached. Please try again in 1m.");
       const wait = screen.getByRole("button", { name: /^Wait/ }) as HTMLButtonElement;
       expect(wait.disabled).toBe(true);
       expect(wait.textContent).toBe("Wait 1m");
       await act(async () => { vi.advanceTimersByTime(30_100); });
-      expect((screen.getByRole("button", { name: "Submit Feedback" }) as HTMLButtonElement).disabled).toBe(false);
+      expect((screen.getByRole("button", { name: "Submit feedback" }) as HTMLButtonElement).disabled).toBe(false);
     } finally { vi.useRealTimers(); }
   });
   it("shows the last minute of a local cooldown as 1m, never 0m", () => {
@@ -121,7 +121,7 @@ describe("passenger feedback workflow", () => {
   it("supports close and Escape without submitting an empty form", async () => {
     const user = userEvent.setup(); const close = vi.fn();
     render(<FeedbackModal userId="qa-passenger" onClose={close} />);
-    expect((screen.getByRole("button", { name: "Submit Feedback" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Submit feedback" }) as HTMLButtonElement).disabled).toBe(true);
     await user.keyboard("{Escape}"); await user.click(screen.getByRole("button", { name: "Close feedback" }));
     expect(close).toHaveBeenCalledTimes(2); expect(store.submitFeedback).not.toHaveBeenCalled();
   });
@@ -135,7 +135,7 @@ describe("feedback dialog layering and drafts", () => {
       expect(host.contains(screen.getByRole("dialog"))).toBe(false);
       expect(screen.getByRole("dialog").parentElement?.parentElement).toBe(document.body);
       await user.type(screen.getByRole("textbox"), "Layering check");
-      await user.click(screen.getByRole("button", { name: "Submit Feedback" }));
+      await user.click(screen.getByRole("button", { name: "Submit feedback" }));
       expect(await screen.findByText("Thank you!")).toBeTruthy();
       expect(host.contains(screen.getByRole("dialog"))).toBe(false);
     } finally { host.remove(); }
@@ -160,10 +160,10 @@ describe("feedback dialog layering and drafts", () => {
     store.submitFeedback.mockRejectedValueOnce(new Error("offline"));
     const user = userEvent.setup();
     render(<FeedbackModal userId="qa-passenger" draft="Keep me" onDraftChange={onDraftChange} onClose={vi.fn()} />);
-    await user.click(screen.getByRole("button", { name: "Submit Feedback" }));
+    await user.click(screen.getByRole("button", { name: "Submit feedback" }));
     await screen.findByText(/Failed to send|offline/);
     expect(onDraftChange).not.toHaveBeenCalledWith("");
-    await user.click(screen.getByRole("button", { name: "Submit Feedback" }));
+    await user.click(screen.getByRole("button", { name: "Submit feedback" }));
     expect(await screen.findByText("Thank you!")).toBeTruthy();
     expect(onDraftChange).toHaveBeenLastCalledWith("");
   });

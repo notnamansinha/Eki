@@ -53,6 +53,17 @@ function requestRoadGeometry(
   return request;
 }
 
+/** Line colours; admin maps keep the defaults, the passenger map passes the AU palette. */
+export interface RoutePalette {
+  casing: string;
+  casingOpacity?: number;
+  line: string;
+  active: string;
+  passed: string;
+}
+
+const DEFAULT_PALETTE: RoutePalette = { casing: "#09090b", line: "#3b82f6", active: "#3b82f6", passed: "#71717a" };
+
 interface DirectionsRouteProps {
   routeId?: string;
   stops: LatLng[];
@@ -75,6 +86,7 @@ interface DirectionsRouteProps {
   firstStopIndex?: number;
   direction: "forward" | "reverse";
   onGeometryReady?: (path: LatLng[]) => void;
+  palette?: RoutePalette;
 }
 
 /**
@@ -82,7 +94,7 @@ interface DirectionsRouteProps {
  * does not call the browser Directions service: rendering a map must not add
  * routing cost, quota pressure, or delay to the live GNSS stream.
  */
-export default function DirectionsRoute({ routeId, stops, polyline, polylineQuality, color, hasBuses = false, nextStopIndices, progressDistanceM, completedStopIndex, hideRemaining = false, progressContext, firstStopIndex = 0, direction, onGeometryReady }: DirectionsRouteProps) {
+export default function DirectionsRoute({ routeId, stops, polyline, polylineQuality, color, hasBuses = false, nextStopIndices, progressDistanceM, completedStopIndex, hideRemaining = false, progressContext, firstStopIndex = 0, direction, onGeometryReady, palette = DEFAULT_PALETTE }: DirectionsRouteProps) {
   const map = useMap();
   const stopsKey = JSON.stringify(stops);
   const stableStops = useMemo(() => JSON.parse(stopsKey) as LatLng[], [stopsKey]);
@@ -115,7 +127,8 @@ export default function DirectionsRoute({ routeId, stops, polyline, polylineQual
     const index = publishedStopIndex(value, stableStops.length);
     return index === undefined ? [] : [index === 0 ? 1 : index];
   }) ?? [])].sort((a, b) => a - b));
-  const baseColor = nextStopIndices !== undefined ? "#3b82f6" : (color ?? "#3b82f6");
+  const baseColor = nextStopIndices !== undefined ? palette.line : (color ?? palette.line);
+  const { casing, casingOpacity, active: activeColor, passed: passedColor } = palette;
   const singleProgress = (JSON.parse(activeIndices) as number[]).length === 1;
   const completedIndex = publishedStopIndex(completedStopIndex, stableStops.length);
   const confirmedPrefix = useRef<{ path: LatLng[]; context: string; nextStopIndex: number;
@@ -148,9 +161,9 @@ export default function DirectionsRoute({ routeId, stops, polyline, polylineQual
 
     const outline = new google.maps.Polyline({
       path,
-      strokeColor: "#09090b",
+      strokeColor: casing,
       strokeWeight: hasBuses ? 9 : 7,
-      strokeOpacity: hasBuses ? 0.72 : 0.5,
+      strokeOpacity: casingOpacity ?? (hasBuses ? 0.72 : 0.5),
       zIndex: 20,
       map,
     });
@@ -166,7 +179,7 @@ export default function DirectionsRoute({ routeId, stops, polyline, polylineQual
       outline.setMap(null);
       line.setMap(null);
     };
-  }, [map, path, hasBuses, baseColor, hideRemaining]);
+  }, [map, path, hasBuses, baseColor, hideRemaining, casing, casingOpacity]);
 
   useEffect(() => {
     if (!map || path.length < 2) return;
@@ -179,7 +192,7 @@ export default function DirectionsRoute({ routeId, stops, polyline, polylineQual
         strokeWeight: hasBuses ? 5 : 3, strokeOpacity: 1, zIndex, map }));
     };
     if (completedIndex !== undefined && completedIndex > 0) {
-      add(confirmedPrefix.current?.sections.completed ?? routeProgressPaths(path, legs, completedIndex).completed, "#71717a", 22);
+      add(confirmedPrefix.current?.sections.completed ?? routeProgressPaths(path, legs, completedIndex).completed, passedColor, 22);
     }
     for (const index of JSON.parse(activeIndices) as number[]) {
       if (singleProgress) {
@@ -190,15 +203,15 @@ export default function DirectionsRoute({ routeId, stops, polyline, polylineQual
             !confirmedPrefix.current || confirmedPrefix.current.nextStopIndex !== index)) {
           confirmedPrefix.current = { path, context: progressContext, nextStopIndex: index, sections };
         }
-        add(sections.completed, "#71717a", 22);
-        if (!hideRemaining) add(sections.active, "#3b82f6", 23);
+        add(sections.completed, passedColor, 22);
+        if (!hideRemaining) add(sections.active, activeColor, 23);
       } else {
         // A fleet has no shared completed distance. Preserve each active leg.
-        if (!hideRemaining) add(legs.get(index) ?? [], "#3b82f6", 23);
+        if (!hideRemaining) add(legs.get(index) ?? [], activeColor, 23);
       }
     }
     return () => overlays.forEach(line => line.setMap(null));
-  }, [map, path, hasBuses, legs, activeIndices, singleProgress, progressDistanceM, completedIndex, hideRemaining, progressContext]);
+  }, [map, path, hasBuses, legs, activeIndices, singleProgress, progressDistanceM, completedIndex, hideRemaining, progressContext, activeColor, passedColor]);
 
   return null;
 }

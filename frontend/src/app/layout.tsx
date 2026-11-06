@@ -1,10 +1,24 @@
 import type { Metadata, Viewport } from "next";
+import { Playfair_Display, Roboto } from "next/font/google";
 import "./globals.css";
 
 import Providers from "@/components/Providers";
 import ServiceWorkerRegistrar from "@/components/ServiceWorkerRegistrar";
 import { siteOrigin, siteIndexingEnabled } from "@/lib/siteMetadata";
 
+
+// Ahmedabad University's web pair, self-hosted at build time so the CSP needs
+// no font origin. Only the variables are set here; each surface opts in.
+const roboto = Roboto({
+  subsets: ["latin"],
+  weight: ["400", "500", "700"],
+  variable: "--font-roboto",
+});
+const playfair = Playfair_Display({
+  subsets: ["latin"],
+  weight: ["600", "700"],
+  variable: "--font-playfair",
+});
 
 export const viewport: Viewport = {
   width: "device-width",
@@ -41,7 +55,7 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className="h-full" suppressHydrationWarning data-scroll-behavior="smooth">
+    <html lang="en" className={`h-full ${roboto.variable} ${playfair.variable}`} suppressHydrationWarning data-scroll-behavior="smooth">
       <head>
         {/* Preconnect to the origins on the actual critical path.
             apis.google.com hosts Firebase Auth's iframe JS (400ms LCP savings per Lighthouse).

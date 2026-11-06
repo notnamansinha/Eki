@@ -16,7 +16,7 @@ test("reconnecting retains a full map and paused tracking without new ride contr
   await page.goto("/");
   await page.getByRole("button", { name: "Track QA route", exact: true }).click();
   await scenario(page, "reconnecting");
-  await expect(page.getByText("Reconnecting to live bus data...",{exact:true})).toBeVisible();
+  await expect(page.getByText("Reconnecting to live bus data…",{exact:true})).toBeVisible();
   await expect(page.getByText("Live tracking paused", { exact: true })).toBeVisible();
   await expect(page.getByRole("combobox", { name: "Destination station" })).toHaveCount(0);
   await fullMap(page);
@@ -74,7 +74,7 @@ test("location delay stays below variable ride controls and clears on recovery",
     } finally { element.style.pointerEvents = prior; }
   })).toBe(true);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(page.viewportSize()!.width);
-  await expect(page.getByRole("button", { name: "Route Timeline", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Route timeline", exact: true })).toBeVisible();
   await page.screenshot({ path: info.outputPath("location-delay.png"), fullPage: true });
   await page.getByText("QA controls (synthetic)", { exact: true }).click();
   await page.getByLabel("QA scenario").selectOption("reverse");

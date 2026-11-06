@@ -135,8 +135,8 @@ export default function InAppSelect({ name, value, onChange, options, placeholde
         disabled={disabled || options.length === 0}
         onClick={() => open ? setPopup(null) : openAt()}
         onKeyDown={handleKeyDown}
-        className="flex min-h-11 w-full items-center gap-2 rounded-xl px-3.5 py-2.5 text-left text-xs font-semibold cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-400"
-        style={{ background: "var(--surface-3, #09090b)", color: "var(--text-primary, #fff)", border: "1px solid var(--border-default, #3f3f46)", ...style }}
+        className="flex min-h-11 w-full items-center gap-2 rounded-xl px-3.5 py-2.5 text-left text-sm font-medium cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+        style={{ background: "var(--surface-1, #09090b)", color: "var(--text-primary, #fff)", border: "1px solid var(--border-default, #3f3f46)", ...style }}
       >
         <span className="min-w-0 flex-1 truncate">{selected?.label ?? placeholder}</span>
         {selected?.detail && <span id={`${id}-selected-detail`} className="shrink-0 tabular-nums" style={{ color: "var(--text-secondary)" }}>{selected.detail}</span>}
@@ -150,7 +150,7 @@ export default function InAppSelect({ name, value, onChange, options, placeholde
           aria-label={ariaLabel}
           onMouseDown={event => event.preventDefault()}
           className={`absolute left-0 right-0 overflow-y-auto overscroll-contain rounded-xl p-1 shadow-xl ${popup.above ? "bottom-full mb-1" : "top-full mt-1"}`}
-          style={{ maxHeight: popup.maxHeight, background: "var(--surface-3, #09090b)", color: "var(--text-primary, #fff)", border: "1px solid var(--border-default, #3f3f46)" }}
+          style={{ maxHeight: popup.maxHeight, background: "var(--surface-1, #09090b)", color: "var(--text-primary, #fff)", border: "1px solid var(--border-default, #3f3f46)" }}
         >
           {options.map((option, index) => (
             <li
@@ -161,7 +161,7 @@ export default function InAppSelect({ name, value, onChange, options, placeholde
               aria-describedby={option.detail ? `${id}-detail-${index}` : undefined}
               aria-selected={option.value === value}
               onClick={() => { choose(option.value); triggerRef.current?.focus({ preventScroll: true }); }}
-              className="flex min-h-11 cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold hover:bg-white/10"
+              className="flex min-h-11 cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium hover:bg-[var(--surface-3)]"
               style={{ background: index === activeIndex ? "var(--surface-4, #27272a)" : undefined, overflowWrap: "anywhere", color: option.completed ? "var(--text-secondary, #a1a1aa)" : undefined }}
             >
               <span className="min-w-0 flex-1">{option.label}</span>

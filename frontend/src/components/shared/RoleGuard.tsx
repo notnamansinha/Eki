@@ -159,7 +159,7 @@ export default function RoleGuard({ children, allowedRoles, loadingFallback }: R
         >
           <span style={{ color: "var(--text-primary)" }}>{user.email}</span> does not have access to this panel.
         </p>
-        <p className="text-[11px] font-semibold mb-8 uppercase tracking-widest" style={{ color: "var(--text-ghost)" }}>
+        <p className="text-[12px] font-semibold mb-8" style={{ color: "var(--text-ghost)" }}>
           Role: {user.role}
         </p>
         <div className="flex items-center gap-4">
@@ -175,7 +175,7 @@ export default function RoleGuard({ children, allowedRoles, loadingFallback }: R
             className="text-[13px] font-medium transition-colors"
             style={{ color: "var(--accent)" }}
           >
-            Return Home
+            Return home
           </Link>
         </div>
 

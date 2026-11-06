@@ -132,9 +132,9 @@ describe("published passenger stop progress", () => {
     const bus = { ...fixtureBus("forward"), currentStopIndex: 1 };
     state.snapshot = { bus };
     const changed = vi.fn();
-    const view = render(<PassengerMap route={directed} targetStop={route.stops[1]} onStopEstimatesChange={changed} />);
+    render(<PassengerMap route={directed} targetStop={route.stops[1]} onStopEstimatesChange={changed} />);
     expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ minutes: { b: 1 }, nextStopIndex: 1, unavailable: undefined }));
-    expect(view.container.querySelector('[aria-label="Alpha — passed"]')).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Show stop Alpha — passed" })).toBeTruthy();
     // The deadline clock flips at the threshold itself, not at the next 15 s tick.
     await act(async () => { await vi.advanceTimersByTimeAsync(SIGNAL_LOST_MS + 50); });
     expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ minutes: {}, unavailable: "Live tracking lost" }));
@@ -163,6 +163,63 @@ describe("published passenger stop progress", () => {
     view.unmount();
     delete (navigator as unknown as { geolocation?: unknown }).geolocation;
   });
+  it.each([
+    ["granted", false, true],
+    ["prompt", true, false],
+    // A blocked permission cannot reopen the browser prompt, so "Allow location" would do nothing.
+    ["denied", false, false],
+  ] as const)("location permission %s: notice shown %s, location watched %s", async (permission, notice, watched) => {
+    const watchPosition = vi.fn(() => 1);
+    Object.defineProperty(navigator, "geolocation", { configurable: true, value: { watchPosition, clearWatch: vi.fn() } });
+    Object.defineProperty(navigator, "permissions", { configurable: true, value: { query: vi.fn(async () => ({ state: permission })) } });
+    try {
+      const view = render(<PassengerMap route={directed} targetStop={route.stops[1]} />);
+      await act(async () => {});
+      expect(screen.queryByRole("button", { name: "Allow location" }) !== null).toBe(notice);
+      expect(watchPosition.mock.calls.length > 0).toBe(watched);
+      if (notice) {
+        await userEvent.setup().click(screen.getByRole("button", { name: "Allow location" }));
+        expect(watchPosition).toHaveBeenCalledTimes(1);
+      }
+      view.unmount();
+    } finally {
+      delete (navigator as unknown as { geolocation?: unknown }).geolocation;
+      delete (navigator as unknown as { permissions?: unknown }).permissions;
+    }
+  });
+  it("starts location when the passenger allows it in browser settings while the map is open", async () => {
+    const watchPosition = vi.fn(() => 1);
+    let onChange: (() => void) | undefined;
+    const status = {
+      state: "denied" as PermissionState,
+      addEventListener: vi.fn((_type: string, listener: () => void) => { onChange = listener; }),
+      removeEventListener: vi.fn(),
+    };
+    Object.defineProperty(navigator, "geolocation", { configurable: true, value: { watchPosition, clearWatch: vi.fn() } });
+    Object.defineProperty(navigator, "permissions", { configurable: true, value: { query: vi.fn(async () => status) } });
+    try {
+      const view = render(<PassengerMap route={directed} targetStop={route.stops[1]} />);
+      await act(async () => {});
+      expect(watchPosition).not.toHaveBeenCalled();
+      status.state = "granted";
+      act(() => onChange?.());
+      expect(watchPosition).toHaveBeenCalledTimes(1);
+      view.unmount();
+      expect(status.removeEventListener).toHaveBeenCalledWith("change", onChange);
+    } finally {
+      delete (navigator as unknown as { geolocation?: unknown }).geolocation;
+      delete (navigator as unknown as { permissions?: unknown }).permissions;
+    }
+  });
+  it("marks stop markers by state for the theme instead of inline colours", () => {
+    state.snapshot = { bus: { ...fixtureBus("forward"), currentStopIndex: 1 } };
+    const view = render(<PassengerMap route={directed} targetStop={route.stops[1]} />);
+    const dots = [...view.container.querySelectorAll<HTMLElement>(".pp-stop-dot")];
+    expect(dots).toHaveLength(route.stops.length);
+    expect(dots[0].dataset.state).toBe("passed");
+    expect(dots.slice(1).every(dot => dot.dataset.state !== "passed")).toBe(true);
+    expect(dots.every(dot => !dot.style.background)).toBe(true);
+  });
   it("distinguishes a camera fallback from an explicitly selected or cleared destination", async () => {
     const props = { route: directed, targetStop: route.stops[1], preview: true };
     const view = render(<PassengerMap {...props} />);
@@ -181,8 +238,8 @@ describe("published passenger stop progress", () => {
   const tripRoute = { ...route, stops };
   const road = { polyline: "_ekkC_omvLo}@o}@o}@o}@o}@o}@", polylineQuality: "HIGH_QUALITY" as const };
   const row = (name: string) => screen.getByText(name).parentElement!.parentElement!;
-  const next = () => screen.queryByText("Next Stop")?.parentElement?.textContent;
-  const openTimeline = () => userEvent.setup().click(screen.getByRole("button", { name: "Route Timeline" }));
+  const next = () => screen.queryByText("Next stop")?.parentElement?.textContent;
+  const openTimeline = () => userEvent.setup().click(screen.getByRole("button", { name: "Route timeline" }));
 
   it.each(["forward", "reverse"] as const)("keeps timeline, labels, ETA and active leg on published progress in %s travel", async direction => {
     const directedRoute = { ...routeInRideDirection(tripRoute, direction), ...road };
@@ -193,7 +250,7 @@ describe("published passenger stop progress", () => {
     await openTimeline();
     const expected = directedRoute.stops[1];
     expect(next()).toContain(expected.name);
-    expect(row(expected.name).className).toContain("opacity-100");
+    expect(row(expected.name).getAttribute("data-passed")).toBe("false");
     const marker = view.container.querySelector(`[data-marker='${JSON.stringify({ lat: expected.lat, lng: expected.lng })}']`);
     expect((marker?.firstElementChild as HTMLElement).style.opacity).not.toBe("0.6");
     expect(screen.getByTestId("road").getAttribute("data-next")).toBe("[1]");
@@ -207,7 +264,7 @@ describe("published passenger stop progress", () => {
     }
     act(() => state.listener?.({ bus: { ...bus, currentStopIndex: 2, seq: 100 } }));
     expect(next()).toContain(downstream.name);
-    expect(row(expected.name).className).toContain("opacity-25");
+    expect(row(expected.name).getAttribute("data-passed")).toBe("true");
     expect(screen.getByTestId("road").getAttribute("data-next")).toBe("[2]");
     expect(state.arrivals.mock.lastCall?.[0].remainingStops.map((stop: { id: string }) => stop.id)).toEqual(directedRoute.stops.slice(2).map(stop => stop.id));
   });
@@ -227,7 +284,7 @@ describe("published passenger stop progress", () => {
     expect(state.arrivals).toHaveBeenCalledTimes(etaCalls);
     expect(screen.getByText("Stop progress unavailable.")).toBeTruthy();
     expect(screen.getByTestId("road").getAttribute("data-next")).toBe("[]");
-    for (const stop of stops) expect(row(stop.name).className).toContain("opacity-100");
+    for (const stop of stops) expect(row(stop.name).getAttribute("data-passed")).toBe("false");
     state.arrivals.mockClear();
     act(() => state.listener?.({ bus: { ...bus, sessionId: "replacement-session", currentStopIndex: undefined } }));
     expect(next()).toBeUndefined();
@@ -240,7 +297,7 @@ describe("published passenger stop progress", () => {
     render(<PassengerMap route={{ ...routeInRideDirection({ ...tripRoute, stops: loopStops }, "forward"), ...road }} targetStop={loopStops[3]} />);
     await openTimeline();
     expect(next()).toContain("Alpha");
-    for (const stop of stops) expect(row(stop.name).className).toContain("opacity-100");
+    for (const stop of stops) expect(row(stop.name).getAttribute("data-passed")).toBe("false");
     expect(state.arrivals.mock.lastCall?.[0].remainingStops.map((stop: { id: string }) => stop.id)).toEqual(loopStops.map(stop => stop.id));
     expect(screen.getByTestId("road").getAttribute("data-next")).toBe("[0]");
   });
@@ -253,7 +310,7 @@ describe("published passenger stop progress", () => {
     state.snapshot = { bus: { ...bus, sessionId: "reverse-session", direction: "reverse", currentStopIndex: 0, tripState: "pre_departure" } };
     view.rerender(<PassengerMap route={{ ...routeInRideDirection(tripRoute, "reverse"), ...road }} targetStop={stops[0]} selectedBusKey="session:reverse-session" />);
     await openTimeline(); expect(next()).toContain("Delta");
-    for (const stop of stops) expect(row(stop.name).className).toContain("opacity-100");
+    for (const stop of stops) expect(row(stop.name).getAttribute("data-passed")).toBe("false");
     act(() => state.listener?.({}));
     expect(next()).toBeUndefined();
     expect(screen.getByTestId("road").getAttribute("data-next")).toBe("[]");
@@ -264,7 +321,7 @@ describe("published passenger stop progress", () => {
     render(<PassengerMap route={{ ...routeInRideDirection(tripRoute, "forward"), ...road }} targetStop={stops[3]} />);
     await openTimeline();
     expect(next()).toBeUndefined();
-    for (const stop of stops) expect(row(stop.name).className).toContain("opacity-100");
+    for (const stop of stops) expect(row(stop.name).getAttribute("data-passed")).toBe("false");
     expect(state.arrivals).not.toHaveBeenCalled();
     expect(screen.getByTestId("road").getAttribute("data-next")).toBe("[]");
   });
@@ -279,7 +336,7 @@ describe("published passenger stop progress", () => {
     const view = render(<PassengerMap route={directedRoute} targetStop={stops[3]} />);
     await openTimeline();
     expect(next()).toBeUndefined();
-    for (const stop of stops) expect(row(stop.name).className).toContain("opacity-100");
+    for (const stop of stops) expect(row(stop.name).getAttribute("data-passed")).toBe("false");
     expect(screen.getAllByTestId("road").map(node => node.getAttribute("data-next"))).toEqual(["[1]", "[2]"]);
     expect(screen.getAllByTestId("road")[0].getAttribute("data-hide-remaining")).toBe("false");
     expect(state.arrivals.mock.calls.map(call => call[0].remainingStops[0].id)).toEqual(expect.arrayContaining([stops[1].id, stops[2].id]));
@@ -337,15 +394,15 @@ describe("passenger map device and ride contexts", () => {
       second: { ...fixtureBus("forward", "qa-session-2", "qa-bus-2"), currentStopIndex: 0 },
     };
     render(<PassengerMap route={directed} targetStop={route.stops[1]} />);
-    await userEvent.setup().click(screen.getByRole("button", { name: "Route Timeline" }));
-    expect(screen.queryByText("Next Stop")).toBeNull();
+    await userEvent.setup().click(screen.getByRole("button", { name: "Route timeline" }));
+    expect(screen.queryByText("Next stop")).toBeNull();
     expect(screen.getByText(/Earliest arrival across buses/)).toBeTruthy();
     act(() => state.listener?.({ second: state.snapshot.second, bus: state.snapshot.bus }));
-    expect(screen.queryByText("Next Stop")).toBeNull();
+    expect(screen.queryByText("Next stop")).toBeNull();
   });
   it("withholds road ETA for missing, corrupt, or untrusted geometry", async () => {
     const { rerender } = render(<PassengerMap route={{ ...directed, polyline: "" }} targetStop={route.stops[1]} />);
-    await userEvent.setup().click(screen.getByRole("button", { name: "Route Timeline" }));
+    await userEvent.setup().click(screen.getByRole("button", { name: "Route timeline" }));
     expect(screen.getByText(/Road geometry unavailable/)).toBeTruthy();
     expect(state.arrivals).not.toHaveBeenCalled();
     rerender(<PassengerMap route={{ ...directed, polyline: "~" }} targetStop={route.stops[1]} />);
@@ -366,7 +423,7 @@ describe("passenger map device and ride contexts", () => {
     expect(state.panTo).not.toHaveBeenCalled();
     await userEvent.setup().click(screen.getByRole("button", { name: "Configured route" }));
     expect(screen.getByText("Alpha")).toBeTruthy();
-    expect(screen.queryByText("Next Stop")).toBeNull();
+    expect(screen.queryByText("Next stop")).toBeNull();
     expect(screen.queryByText("Boarding Stop")).toBeNull();
     expect(state.arrivals).not.toHaveBeenCalled();
   });
@@ -386,9 +443,12 @@ describe("passenger map device and ride contexts", () => {
     await userEvent.setup().click(screen.getByRole("button", { name: "Center on bus" }));
     expect(state.panTo).toHaveBeenLastCalledWith({ lat: 23.12, lng: 72.1 });
     expect(state.setZoom).toHaveBeenLastCalledWith(16);
+    expect(screen.getByRole("button", { name: "Center on bus" }).getAttribute("aria-pressed")).toBe("true");
     const beforeOverview = state.fitBounds.mock.calls.length;
     await userEvent.setup().click(screen.getByRole("button", {name:"Show route overview"}));
     expect(state.fitBounds.mock.calls.length).toBeGreaterThan(beforeOverview);
+    // The overview centres the route, not the bus, so Center on bus is not pressed.
+    expect(screen.getByRole("button", { name: "Center on bus" }).getAttribute("aria-pressed")).toBe("false");
     expect(state.fitBounds).toHaveBeenLastCalledWith({north:23.12,south:23,east:72.1,west:72},expect.any(Object));
   });
   it("includes the first off-route fix without losing configured route bounds", async () => {
@@ -466,23 +526,23 @@ describe("passenger map device and ride contexts", () => {
     const bus = { ...fixtureBus("forward"), currentStopIndex: 0, atStopIndex: 0 };
     state.snapshot = { bus };
     const changed = vi.fn();
-    const view = render(<PassengerMap route={directed} targetStop={route.stops[1]} onStopEstimatesChange={changed} />);
-    expect(view.container.querySelector('[aria-label="Alpha — bus is here"]')).toBeTruthy();
+    render(<PassengerMap route={directed} targetStop={route.stops[1]} onStopEstimatesChange={changed} />);
+    expect(screen.queryByRole("button", { name: "Show stop Alpha — bus is here" })).toBeTruthy();
     await act(async () => { state.listener?.({ bus: { ...bus, motionState: "uncertain", signalState: "gnss_lost", timestamp: Date.now(), backendReceivedAt: Date.now() } }); });
-    expect(view.container.querySelector('[aria-label="Alpha — bus is here"]')).toBeNull();
+    expect(screen.queryByRole("button", { name: "Show stop Alpha — bus is here" })).toBeNull();
     expect(changed.mock.lastCall?.[0]).not.toHaveProperty("atStopIndex");
     await act(async () => { state.listener?.({ bus: { ...bus, timestamp: Date.now(), backendReceivedAt: Date.now() } }); });
     await act(async () => { await vi.advanceTimersByTimeAsync(SIGNAL_LOST_MS + 50); });
-    expect(view.container.querySelector('[aria-label="Alpha — bus is here"]')).toBeNull();
+    expect(screen.queryByRole("button", { name: "Show stop Alpha — bus is here" })).toBeNull();
   });
   it("marks the stop the bus is at on arrival, before it departs", async () => {
     state.snapshot = { bus: { ...fixtureBus("forward"), currentStopIndex: 0, atStopIndex: 0 } };
     const changed = vi.fn();
-    const view = render(<PassengerMap route={directed} targetStop={route.stops[1]} onStopEstimatesChange={changed} />);
-    expect(view.container.querySelector('[aria-label="Alpha — bus is here"]')).toBeTruthy();
+    render(<PassengerMap route={directed} targetStop={route.stops[1]} onStopEstimatesChange={changed} />);
+    expect(screen.queryByRole("button", { name: "Show stop Alpha — bus is here" })).toBeTruthy();
     expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ nextStopIndex: 0, atStopIndex: 0 }));
     act(() => state.listener?.({ bus: { ...fixtureBus("forward"), currentStopIndex: 1 } }));
-    expect(view.container.querySelector('[aria-label="Alpha — passed"]')).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Show stop Alpha — passed" })).toBeTruthy();
   });
   it("keeps fresh streamed fixes online between the 15-second clock ticks", async () => {
     vi.useFakeTimers();
@@ -496,7 +556,7 @@ describe("passenger map device and ride contexts", () => {
   });
   it("clears old ETAs after the selected bus disappears", async () => {
     render(<PassengerMap route={directed} targetStop={route.stops[1]} />);
-    await userEvent.setup().click(screen.getByRole("button", { name: "Route Timeline" }));
+    await userEvent.setup().click(screen.getByRole("button", { name: "Route timeline" }));
     expect(screen.getByText("min")).toBeTruthy();
     act(() => state.listener?.({}));
     expect(screen.queryByText("min")).toBeNull();

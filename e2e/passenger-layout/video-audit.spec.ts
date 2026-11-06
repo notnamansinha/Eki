@@ -16,7 +16,7 @@ async function paintedNavBottom(page: Page) {
     // The lowest edge painted with the navigation surface colour.
     let bottom = 0;
     for (let node: HTMLElement | null = element as HTMLElement; node && !node.hasAttribute("data-passenger-workspace"); node = node.parentElement) {
-      if (getComputedStyle(node).backgroundColor === "rgba(22, 22, 26, 0.98)") bottom = Math.max(bottom, node.getBoundingClientRect().bottom);
+      if (getComputedStyle(node).backgroundColor === "rgba(249, 248, 246, 0.94)") bottom = Math.max(bottom, node.getBoundingClientRect().bottom);
     }
     return bottom;
   });
@@ -32,10 +32,11 @@ for (const bottomInset of [0, 34]) {
     expect(await paintedNavBottom(page)).toBeCloseTo(viewport.height - (desktop ? 16 : 0), 0);
     const panel = (await homePanel(page).boundingBox())!;
     const navBox = (await nav(page).boundingBox())!;
-    expect(navBox.y - (panel.y + panel.height)).toBeGreaterThanOrEqual(8);
+    // Phones rest the sheet on the tab bar; the desktop panel keeps a gap above the dock.
+    expect(navBox.y - (panel.y + panel.height)).toBeGreaterThanOrEqual(desktop ? 8 : 0);
     // Profile scroll content can reach past the navigation.
     await navButton(page, "Profile").click();
-    const version = page.getByText("Eki Transit · v3.0", { exact: true });
+    const version = page.getByText("Eki", { exact: true });
     await version.evaluate(element => {
       const scroller = element.closest(".overflow-y-auto")!;
       scroller.scrollTop = scroller.scrollHeight;
@@ -55,13 +56,13 @@ test("PAX-02 initialization copy is gone once the workspace is ready", async ({ 
 test("PAX-02 Profile switches settle quickly without exposing the loading screen", async ({ page }) => {
   await page.goto("/");
   await navButton(page, "Profile").click();
-  await expect(page.getByRole("button", { name: "Send Feedback" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Send feedback" })).toBeVisible();
   await navButton(page, "Live").click();
   await page.waitForTimeout(700);
   for (const destination of ["Profile", "Live", "Profile"] as const) {
     const samples = await page.evaluate(async target => {
       const profileView = document.querySelector("[data-passenger-workspace] button")?.ownerDocument
-        .evaluate("//button[normalize-space()='Send Feedback']", document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null)
+        .evaluate("//button[normalize-space()='Send feedback']", document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null)
         .singleNodeValue as HTMLElement | null;
       const wrapper = profileView?.closest("[aria-hidden]") as HTMLElement | null;
       const restoring = Array.from(document.querySelectorAll("p")).find(p => p.textContent === "Restoring your transit session…");
@@ -96,11 +97,11 @@ test("PAX-02 rapid switching ends on a coherent destination", async ({ page }) =
   for (let i = 0; i < 12; i++) await navButton(page, i % 2 ? "Live" : "Profile").click({ delay: 0 });
   await navButton(page, "Live").click();
   await expect(navButton(page, "Live")).toHaveAttribute("aria-current", "page");
-  await expect(page.getByRole("heading", { name: "Live Routes" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Send Feedback" })).toBeHidden();
+  await expect(page.getByRole("heading", { name: "Live routes" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Send feedback" })).toBeHidden();
   await page.waitForTimeout(400);
   const hit = await page.evaluate(() => {
-    const heading = Array.from(document.querySelectorAll("[data-passenger-workspace] h1")).find(h => h.textContent === "Live Routes")!;
+    const heading = Array.from(document.querySelectorAll("[data-passenger-workspace] h1")).find(h => h.textContent === "Live routes")!;
     const box = heading.getBoundingClientRect();
     return heading.contains(document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2));
   });
@@ -111,7 +112,7 @@ test("PAX-02 reduced motion switches immediately", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/");
   await navButton(page, "Profile").click();
-  const view = page.getByRole("button", { name: "Send Feedback" }).locator("xpath=ancestor::*[@aria-hidden][1]");
+  const view = page.getByRole("button", { name: "Send feedback" }).locator("xpath=ancestor::*[@aria-hidden][1]");
   // Deterministic: the global reduced-motion override collapses the fade.
   expect(await view.evaluate(element => parseFloat(getComputedStyle(element).transitionDuration))).toBeLessThan(0.001);
   // And observable: the view reaches full opacity (the duration check above proves it is not faded in).
@@ -121,7 +122,7 @@ test("PAX-02 reduced motion switches immediately", async ({ page }) => {
 
 async function openFeedback(page: Page, draft: string) {
   await navButton(page, "Profile").click();
-  await page.getByRole("button", { name: "Send Feedback" }).click();
+  await page.getByRole("button", { name: "Send feedback" }).click();
   const dialog = page.getByRole("dialog", { name: "Send feedback" });
   await expect(dialog).toBeVisible();
   if (draft) await dialog.getByRole("textbox").fill(draft);
@@ -157,10 +158,10 @@ test("PAX-03 keyboard focus stays in feedback; Escape keeps the draft and restor
   }
   await page.keyboard.press("Escape");
   await expect(dialog).toBeHidden();
-  await expect(page.getByRole("button", { name: "Send Feedback" })).toBeFocused();
+  await expect(page.getByRole("button", { name: "Send feedback" })).toBeFocused();
   await navButton(page, "Live").click();
   await navButton(page, "Profile").click();
-  await page.getByRole("button", { name: "Send Feedback" }).click();
+  await page.getByRole("button", { name: "Send feedback" }).click();
   await expect(page.getByRole("dialog").getByRole("textbox")).toHaveValue("Keyboard draft");
 });
 
@@ -168,12 +169,12 @@ test("PAX-03 a submitted draft is cleared and recorded once", async ({ page }) =
   await page.goto("/");
   await page.evaluate(() => localStorage.clear());
   const dialog = await openFeedback(page, "Submitted synthetic note");
-  await dialog.getByRole("button", { name: "Submit Feedback" }).click();
+  await dialog.getByRole("button", { name: "Submit feedback" }).click();
   await expect(page.getByText("Thank you!", { exact: true })).toBeVisible();
   await expect(page.getByRole("dialog")).toBeHidden({ timeout: 4_000 });
   expect(await page.evaluate(() => (window as unknown as { __qaFeedback?: { input: { comment: string } }[] }).__qaFeedback?.map(entry => entry.input.comment)))
     .toEqual(["Submitted synthetic note"]);
-  await page.getByRole("button", { name: "Send Feedback" }).click();
+  await page.getByRole("button", { name: "Send feedback" }).click();
   await expect(page.getByRole("dialog").getByRole("textbox")).toHaveValue("");
 });
 
@@ -183,7 +184,7 @@ test("PAX-03 feedback stays usable when the visible viewport shrinks (soft keybo
   const dialog = await openFeedback(page, "Short screen");
   const width = page.viewportSize()!.width;
   await page.setViewportSize({ width, height: 480 });
-  const submit = dialog.getByRole("button", { name: "Submit Feedback" });
+  const submit = dialog.getByRole("button", { name: "Submit feedback" });
   await submit.scrollIntoViewIfNeeded();
   const box = (await submit.boundingBox())!;
   expect(box.y).toBeGreaterThanOrEqual(0);
@@ -201,7 +202,7 @@ test("PAX-04 the document cannot rubber-band or scroll the passenger frame", asy
   const scroller = homePanel(page).locator("div.overflow-y-auto");
   expect(await scroller.evaluate(element => getComputedStyle(element).overscrollBehaviorY)).toBe("contain");
   await navButton(page, "Profile").click();
-  const profileScroller = page.getByRole("button", { name: "Send Feedback" }).locator("xpath=ancestor::div[contains(@class,'overflow-y-auto')][1]");
+  const profileScroller = page.getByRole("button", { name: "Send feedback" }).locator("xpath=ancestor::div[contains(@class,'overflow-y-auto')][1]");
   expect(await profileScroller.evaluate(element => getComputedStyle(element).overscrollBehaviorY)).toBe("contain");
   await page.mouse.move(100, 100);
   await page.mouse.wheel(0, -2000);
@@ -214,11 +215,11 @@ test("PAX-04 the document cannot rubber-band or scroll the passenger frame", asy
 test("Admin Panel entry appears in Profile only for administrators", async ({ page }) => {
   await page.goto("/?role=admin");
   await navButton(page, "Profile").click();
-  await expect(page.getByRole("link", { name: "Admin Panel" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Admin panel" })).toBeVisible();
   await page.goto("/?role=passenger");
   await navButton(page, "Profile").click();
-  await expect(page.getByRole("button", { name: "Send Feedback" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Admin Panel" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Send feedback" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Admin panel" })).toHaveCount(0);
 });
 
 test("admin Passenger Panel switch is the last item of the sliding section row", async ({ page }) => {
@@ -319,7 +320,7 @@ test("edge: landscape phone and tiny heights keep the panel above a painted foot
         const chat = page.getByRole("button", { name: "Open live chat", exact: true });
         await expect(chat).toBeVisible();
         const chatBox = (await chat.boundingBox())!;
-        const toggle = page.getByRole("button", { name: "Route Timeline", exact: true });
+        const toggle = page.getByRole("button", { name: "Route timeline", exact: true });
         await toggle.click();
         await expect(toggle).toHaveAttribute("aria-expanded", "true");
         // Sample only once the sheet has finished rising; its closed position is never covered.
@@ -344,7 +345,7 @@ test("edge: the collapsed route timeline paints and takes pointers only on its h
   await page.goto("/?scenario=forward");
   await injectInsets(page, 0, 21);
   await page.getByRole("button", { name: "Track QA route", exact: true }).click();
-  const toggle = page.getByRole("button", { name: "Route Timeline", exact: true });
+  const toggle = page.getByRole("button", { name: "Route timeline", exact: true });
   await expect(toggle).toHaveAttribute("aria-expanded", "false");
   await page.locator("[data-map-sheet]").evaluate(element => Promise.all(element.getAnimations().map(animation => animation.finished)));
   const header = (await toggle.boundingBox())!;
