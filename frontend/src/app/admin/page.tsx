@@ -71,7 +71,10 @@ export default function AdminPage() {
       style={{ height: "100dvh", overflow: "hidden" }}
     >
       {/* ── Tab Bar ── */}
-      <div className="admin-navigation shrink-0 w-full border-b border-ui-line backdrop-blur-sm">
+      <div
+        className="admin-navigation shrink-0 w-full border-b border-ui-line backdrop-blur-sm"
+        data-tone={activeTab === "operations" ? "dark" : undefined}
+      >
         {/* One sliding row: on narrow screens the passenger switch is reached
             by scrolling past the last section instead of pinning beside them. */}
         <div className="max-w-7xl mx-auto flex min-w-0 items-center gap-2 overflow-x-auto hide-scrollbar px-4 sm:px-6">
@@ -124,7 +127,7 @@ export default function AdminPage() {
         id={`admin-panel-${activeTab}`}
         role="tabpanel"
         aria-labelledby={`admin-tab-${activeTab}`}
-        className="flex-1 min-h-0 overflow-y-auto bg-brand-dark/20"
+        className="flex-1 min-h-0 overflow-y-auto bg-brand-dark/20" data-tone={activeTab === "operations" ? "dark" : undefined}
       >
         {/* Keyed by tab so switching sections clears a contained crash. */}
         <AdminPanelErrorBoundary key={activeTab}>

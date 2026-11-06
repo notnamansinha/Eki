@@ -784,7 +784,7 @@ export default function DashboardPanel() {
   if (chatEntry && !chatOpen) setChatEntry(null);
 
   return (
-    <div className="relative flex h-full min-h-0 w-full flex-col overflow-hidden lg:flex-row">
+    <div className="admin-live-ops relative flex h-full min-h-0 w-full flex-col overflow-hidden lg:flex-row">
       {/* â”€â”€ Map â”€â”€ */}
       <div className="flex-1 relative min-h-[300px] lg:min-h-0">
         <GoogleMap

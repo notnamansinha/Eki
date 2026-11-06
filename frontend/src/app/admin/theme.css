@@ -24,6 +24,65 @@
   backdrop-filter: blur(20px) saturate(180%);
 }
 
+/* Live Ops only: the original Eki warm blacks (globals.css :root) for the panel,
+   its tab-panel frame (loading and error states) and the tab bar above it, so
+   they separate clearly from the light Google Map. Re-tokens the shared palette;
+   utilities read these through @theme inline. Text and borders sit brighter than
+   the original for readability. AU Red stays the fill colour (white text 6.5:1);
+   --accent-text is the AU Red tint for text, rules and focus on black (8:1+). */
+.admin-layout :is(.admin-live-ops, [data-tone="dark"]) {
+  color-scheme: dark;
+  --accent-text: #f3a4a5;
+
+  --surface-0: #09090b;
+  --surface-1: #16161a;
+  --surface-2: #16161a;
+  --surface-3: #1c1c21;
+  --surface-4: #26262c;
+
+  --accent: #b3262a;
+  --accent-hover: #9a1f23;
+  --accent-subtle: rgb(243 164 165 / 0.12);
+  --accent-glow: rgb(243 164 165 / 0.3);
+  --accent-contrast: #ffffff;
+
+  --text-primary: #ececef;
+  --text-secondary: #c9c9cf;
+  --text-tertiary: #b1b1b9;
+  --text-ghost: #b1b1b9;
+
+  --border-subtle: rgb(255 255 255 / 0.12);
+  --border-default: rgb(255 255 255 / 0.24);
+  --border-hover: rgb(255 255 255 / 0.36);
+  --hairline: rgb(255 255 255 / 0.12);
+
+  --status-live: #34d399;
+  --status-live-bg: rgb(52 211 153 / 0.12);
+  --status-warning: #fbbf24;
+  --status-warning-bg: rgb(251 191 36 / 0.12);
+  --status-danger: #f87171;
+  --status-danger-bg: rgb(248 113 113 / 0.12);
+
+  color: var(--text-primary);
+}
+.admin-layout :is(.admin-live-ops, [role="tabpanel"][data-tone="dark"]) { background: var(--surface-0); }
+.admin-layout .admin-navigation[data-tone="dark"] {
+  background: #0f0f12;
+  backdrop-filter: none;
+}
+/* Google's own map UI keeps its light scheme; bus markers read the dark tokens on purpose. */
+.admin-layout .admin-live-ops .gm-style { color-scheme: light; }
+/* AU Red is too dark to read as text, a thin rule or a focus indicator on black. */
+.admin-layout :is(.admin-live-ops, [data-tone="dark"]) :is(.text-brand-accent, .hover\:text-brand-accent:hover) { color: var(--accent-text); }
+.admin-layout .admin-navigation[data-tone="dark"] [role="tab"] > .bg-brand-accent { background: var(--accent-text); }
+.admin-layout .admin-live-ops [data-fleet-card].border-brand-accent\/40 { border-color: var(--accent-text); }
+.admin-layout :is(.admin-live-ops, [data-tone="dark"]) .focus-visible\:ring-brand-accent\/50:focus-visible { --tw-ring-color: var(--accent-text); }
+.admin-layout :is(.admin-live-ops, [data-tone="dark"]) .focus-visible\:outline-brand-accent:focus-visible { outline-color: var(--accent-text); }
+.admin-layout :is(.admin-live-ops, [data-tone="dark"]) :is(input, select, textarea):focus {
+  border-color: var(--accent-text);
+  outline-color: var(--accent-text);
+}
+
 .admin-layout :is(.panel-rc, .eki-panel, .glass-panel) {
   background: var(--surface-1);
   border-color: var(--border-subtle);
