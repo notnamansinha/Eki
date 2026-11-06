@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-OPS-028 | 1.2 | Proposed | 2026-11-03 |
+| EKI-OPS-028 | 1.3 | Proposed | 2026-11-06 |
 
 Assessment date: 2026-10-21, Asia/Kolkata. Source baseline: `testing` at `a523731`, including the existing uncommitted RTDB readiness change in `backend/src/server.ts`.
 
@@ -243,7 +243,7 @@ Run all mutating/negative-load scenarios against isolated staging identities/dat
 | Failure responses | Device policy retries transport failures, 403/408/425/429/5xx and respects bounded Retry-After. Genuine 404 or unexpected redirects are not success and can drop a fix. Unknown commit 503 must reconcile safely. |
 | Physical transport | Actual ESP32 validates hostname, chain and clock through the final endpoint; cold/warm TLS, DNS, connection reuse, Wi-Fi/mobile outage and complete power cycle recover within the existing documented limits. No insecure TLS bypass. |
 | Driver lifecycle | Create/start/stop/delay, ordered stops, direction/turnaround, abandoned ride recovery and active-ride ownership persist across cloud restart. No duplicate completion or fabricated progress. |
-| Passenger behavior | Route catalogue/geometry, live marker/ETA/freshness, boarding code/join, messaging, feedback and account/profile settings work against the same data. |
+| Passenger behavior | Route catalogue/geometry, live marker/ETA/freshness, boarding/join, messaging, feedback and account/profile settings work against the same data. |
 | Admin operations | Fleet/bus/driver/device assignment, route/geometry preview/save, Places search, feedback, requests, settings, analytics/history, reconciliation jobs and operational recovery all succeed with existing authorization and paging. |
 | Realtime reads | RTDB `publicRouteBuses`/`liveRouteCatalog` and Firestore listeners recover after reconnect, background/resume and assignment revocation. A healthy API does not prove listener paths/rules. |
 | Idle workers | Leave HTTP traffic idle and prove workers still process staged stale/abandoned/reconciliation cases; observe retention/deletion progression using eligible synthetic records. |

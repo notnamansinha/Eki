@@ -1,6 +1,6 @@
 # Eki full A–Z testing plan and current contract overlay
 
-Last updated: 2026-10-08 08:40 IST (UTC+05:30).
+Last updated: 2026-11-06 10:31 IST (UTC+05:30).
 
 > **Current execution overlay — 8 October 2026 (IST).** Read
 > [WEBAPP_A_Z_AB_TESTING.md](WEBAPP_A_Z_AB_TESTING.md) for current results,
@@ -53,6 +53,12 @@ from an old table.
 - **R11/R14/R15:** use the current ledger's implementation and verification
   entries. Automated software evidence does not close index deployment,
   moving-route, real-provider or real-client recovery acceptance.
+- **OPS11 and the Live Ops scope row (retired 2026-11-06):** Live Ops no
+  longer requests or shows a boarding code; passengers stopped entering codes
+  on 2026-10-25. Treat OPS11 and "boarding code" in the historical Live Ops
+  scope row as not applicable: no admin control remains to test. The legacy
+  boarding-code endpoint stays served for older clients, so its authorization
+  and redaction remain covered by the H01–H18 HTTP matrix.
 
 The original supplied plan had SHA-256
 `1369fc31baa8bc42cd68d3f28284ef92979a530e7c968afcc926cac5dfc23864`.

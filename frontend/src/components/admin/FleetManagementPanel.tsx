@@ -39,19 +39,19 @@ async function fleetRequest(path: string, method: "PUT" | "DELETE", body?: objec
 }
 
 const TRIP_STATE_CONFIG: Record<string, { label: string; color: string; bg: string; Icon: ComponentType<{ className?: string }> }> = {
-  not_armed:     { label: "Ride Not Armed", color: "text-white/40", bg: "bg-white/5", Icon: Clock },
-  direction_pending: { label: "Direction Pending", color: "text-amber-300", bg: "bg-amber-500/10", Icon: Clock },
-  pre_departure: { label: "Awaiting Stop 1", color: "text-white/50", bg: "bg-white/5", Icon: Clock },
-  in_service:    { label: "In Service",  color: "text-emerald-400",  bg: "bg-emerald-500/10", Icon: Navigation },
-  completed:     { label: "Completed",   color: "text-blue-400",     bg: "bg-blue-500/10",    Icon: CheckCircle2 },
+  not_armed:     { label: "Ride Not Armed", color: "text-ui-quiet", bg: "bg-ui-soft", Icon: Clock },
+  direction_pending: { label: "Direction Pending", color: "text-ui-warning", bg: "bg-ui-warning/10", Icon: Clock },
+  pre_departure: { label: "Awaiting Stop 1", color: "text-ui-muted", bg: "bg-ui-soft", Icon: Clock },
+  in_service:    { label: "In Service",  color: "text-ui-success",  bg: "bg-ui-success/10", Icon: Navigation },
+  completed:     { label: "Completed",   color: "text-brand-accent",     bg: "bg-brand-accent/10",    Icon: CheckCircle2 },
 };
 
 function ErrorBanner({ message, onDismiss }: { message: string; onDismiss: () => void }) {
   return (
-    <div className="flex items-center gap-2 bg-red-500/10 border border-red-500/30 text-red-400 rounded-xl px-3 py-2 text-xs font-semibold animate-slide-up">
+    <div className="flex items-center gap-2 bg-ui-danger/10 border border-ui-danger/30 text-ui-danger rounded-xl px-3 py-2 text-xs font-semibold animate-slide-up">
       <AlertCircle className="w-3.5 h-3.5 shrink-0" />
       <span className="flex-1">{message}</span>
-      <button onClick={onDismiss} aria-label="Dismiss error" className="shrink-0 hover:text-white transition-colors">
+      <button onClick={onDismiss} aria-label="Dismiss error" className="shrink-0 hover:text-ui-ink transition-colors">
         <X className="w-3.5 h-3.5" />
       </button>
     </div>
@@ -314,10 +314,10 @@ export default function FleetManagementPanel({ mode = "combined" }: Props) {
   // â”€â”€ Fleet summary stats â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   if (busesError || routesError || driversError) {
     return (
-      <div className="mx-auto flex w-full max-w-3xl flex-col items-center justify-center gap-3 p-12 text-center text-red-300" role="alert">
+      <div className="mx-auto flex w-full max-w-3xl flex-col items-center justify-center gap-3 p-12 text-center text-ui-danger" role="alert">
         <AlertCircle className="size-9" aria-hidden="true" />
         <p className="text-sm font-semibold">Fleet data could not be loaded.</p>
-        <p className="text-xs text-red-300/70">{busesError || routesError || driversError}</p>
+        <p className="text-xs text-ui-danger">{busesError || routesError || driversError}</p>
         <button
           type="button"
           onClick={() => {
@@ -325,7 +325,7 @@ export default function FleetManagementPanel({ mode = "combined" }: Props) {
             if (routesError) retryRoutes();
             if (driversError) retryDrivers();
           }}
-          className="mt-1 rounded-lg bg-white/10 px-4 py-2 text-xs font-semibold text-white"
+          className="mt-1 rounded-lg bg-ui-hover px-4 py-2 text-xs font-semibold text-ui-ink"
         >
           Retry
         </button>
@@ -353,56 +353,56 @@ export default function FleetManagementPanel({ mode = "combined" }: Props) {
         {(mode === "fleet" || mode === "combined") && (
           <div className="flex flex-col gap-4">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-white/5 flex items-center justify-center shrink-0">
-              <Bus className="w-4 h-4 text-white/50" />
+            <div className="w-9 h-9 rounded-xl bg-ui-soft flex items-center justify-center shrink-0">
+              <Bus className="w-4 h-4 text-ui-muted" />
             </div>
             <div>
               <h2 className="font-extrabold text-lg tracking-tight">Fleet Vehicles</h2>
-              <p className="text-[10px] text-white/30 uppercase tracking-[0.2em] font-black">Manage Bus IDs</p>
+              <p className="text-xs text-ui-quiet uppercase tracking-[0.2em] font-bold">Manage Bus IDs</p>
             </div>
           </div>
 
           {/* Add form */}
           <div className="panel-rc p-6 flex flex-col gap-4">
-            <p className="text-[9px] text-white/20 font-black uppercase tracking-[0.2em]">Register new vehicle</p>
+            <p className="text-xs text-ui-quiet font-bold uppercase tracking-[0.2em]">Register new vehicle</p>
             <input
               value={newBusId} onChange={(e) => setNewBusId(e.target.value)}
               placeholder="Bus ID (e.g. bus_01)"
               aria-label="New vehicle Bus ID"
-              className="w-full h-11 bg-brand-dark/60 border border-white/10 rounded-xl px-3 text-sm text-white focus:border-white/40 outline-none transition-colors placeholder:text-white/20 font-semibold"
+              className="w-full h-11 bg-brand-dark/60 border border-ui-line rounded-xl px-3 text-sm text-ui-ink focus:border-ui-control outline-none transition-colors placeholder:text-ui-quiet font-semibold"
             />
             <input
               value={newBusName} onChange={(e) => setNewBusName(e.target.value)}
               placeholder="Display Name (e.g. Red Line Express)"
               aria-label="New vehicle display name"
-              className="w-full h-11 bg-brand-dark/60 border border-white/10 rounded-xl px-3 text-sm text-white focus:border-white/40 outline-none transition-colors placeholder:text-white/20 font-semibold"
+              className="w-full h-11 bg-brand-dark/60 border border-ui-line rounded-xl px-3 text-sm text-ui-ink focus:border-ui-control outline-none transition-colors placeholder:text-ui-quiet font-semibold"
             />
             <div className="flex flex-col gap-1.5">
               <div className="flex items-center justify-between">
-                <span className="text-[9px] text-white/30 uppercase tracking-[0.2em] font-black">Assign Allowed Routes</span>
+                <span className="text-xs text-ui-quiet uppercase tracking-[0.2em] font-bold">Assign Allowed Routes</span>
                 {newBusRoutes.length > 0 && (
-                  <span className="text-[9px] text-white/50 bg-white/10 font-black px-2 py-0.5 rounded-full">
+                  <span className="text-xs text-ui-muted bg-ui-hover font-bold px-2 py-0.5 rounded-full">
                     {newBusRoutes.length} selected
                   </span>
                 )}
               </div>
-              <div className="max-h-36 overflow-y-auto bg-brand-dark/60 border border-white/10 rounded-xl p-2 flex flex-col gap-0.5">
+              <div className="max-h-36 overflow-y-auto bg-brand-dark/60 border border-ui-line rounded-xl p-2 flex flex-col gap-0.5">
                 {routes.length === 0
-                  ? <p className="text-white/20 text-[10px] text-center py-3 font-semibold">No routes available</p>
+                  ? <p className="text-ui-quiet text-xs text-center py-3 font-semibold">No routes available</p>
                   : routes.map((r) => {
                     const checked = newBusRoutes.includes(r.id);
                     return (
                       <label
                         key={r.id}
-                        className={`flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer transition-colors ${checked ? "bg-white/10" : "hover:bg-white/5"}`}
+                        className={`flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer transition-colors ${checked ? "bg-ui-hover" : "hover:bg-ui-soft"}`}
                       >
-                        <div className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition-all ${checked ? "border-white bg-white" : "border-white/20 bg-transparent"}`}>
+                        <div className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition-all ${checked ? "border-ui-control bg-brand-accent" : "border-ui-control bg-transparent"}`}>
                           {checked && (
-                            <Check className="w-2.5 h-2.5 text-brand-dark" strokeWidth={2.5} />
+                            <Check className="w-2.5 h-2.5 text-ui-on-accent" strokeWidth={2.5} />
                           )}
                         </div>
                         <input type="checkbox" className="sr-only" checked={checked} onChange={() => toggleRoute(r.id)} />
-                        <span className={`text-sm font-semibold ${checked ? "text-white" : "text-white/50"}`}>{r.name}</span>
+                        <span className={`text-sm font-semibold ${checked ? "text-ui-ink" : "text-ui-muted"}`}>{r.name}</span>
                       </label>
                     );
                   })
@@ -413,7 +413,7 @@ export default function FleetManagementPanel({ mode = "combined" }: Props) {
               onClick={handleAddBus}
               aria-label="Add new vehicle"
               disabled={saving}
-              className="btn-rc-primary h-11 flex items-center justify-center gap-2 font-semibold uppercase text-[11px] tracking-widest px-4"
+              className="btn-rc-primary h-11 flex items-center justify-center gap-2 font-semibold uppercase text-xs tracking-widest px-4"
             >
               <Plus className="w-4 h-4" /> {saving ? "Saving…" : "Add Vehicle"}
             </button>
@@ -424,20 +424,20 @@ export default function FleetManagementPanel({ mode = "combined" }: Props) {
             <button
               onClick={() => setBusListOpen((o) => !o)}
               aria-label={busListOpen ? "Collapse saved vehicles" : "Expand saved vehicles"}
-              className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/5 transition-colors"
+              className="w-full flex items-center justify-between px-4 py-3 hover:bg-ui-soft transition-colors"
             >
               <div className="flex items-center gap-2">
-                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-white/50">Saved Vehicles</span>
-                <span className="text-[9px] bg-white/10 text-white/50 font-black px-2 py-0.5 rounded-full">{buses.length}</span>
+                <span className="text-xs font-bold uppercase tracking-[0.2em] text-ui-muted">Saved Vehicles</span>
+                <span className="text-xs bg-ui-hover text-ui-muted font-bold px-2 py-0.5 rounded-full">{buses.length}</span>
               </div>
-              {busListOpen ? <ChevronUp className="w-3.5 h-3.5 text-white/20" /> : <ChevronDown className="w-3.5 h-3.5 text-white/20" />}
+              {busListOpen ? <ChevronUp className="w-3.5 h-3.5 text-ui-quiet" /> : <ChevronDown className="w-3.5 h-3.5 text-ui-quiet" />}
             </button>
             {busListOpen && (
-              <div className="px-3 pb-3 flex flex-col gap-2 border-t border-white/5">
+              <div className="px-3 pb-3 flex flex-col gap-2 border-t border-ui-line">
                 {busesLoading
-                  ? <p className="text-white/20 text-xs text-center py-4 font-semibold">Loading…</p>
+                  ? <p className="text-ui-quiet text-xs text-center py-4 font-semibold">Loading…</p>
                   : buses.length === 0
-                  ? <p className="text-white/20 text-xs text-center py-4 font-semibold uppercase tracking-widest">No vehicles registered.</p>
+                  ? <p className="text-ui-quiet text-xs text-center py-4 font-semibold uppercase tracking-widest">No vehicles registered.</p>
                   : buses.map((bus) => {
                     const isOnline = onlineBusIds.has(bus.id);
                     const isEditing = editingBusId === bus.id;
@@ -447,38 +447,38 @@ export default function FleetManagementPanel({ mode = "combined" }: Props) {
                       : null;
 
                     return (
-                      <div key={bus.id} className="bg-brand-dark/40 border border-white/5 rounded-2xl overflow-hidden">
+                      <div key={bus.id} className="bg-brand-dark/40 border border-ui-line rounded-2xl overflow-hidden">
                         {/* Card header row */}
                         <div className="p-3.5 flex items-center justify-between gap-2 group">
                           <div className="flex items-center gap-3 min-w-0">
-                            <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${isOnline ? "bg-emerald-500/20" : "bg-white/5"}`}>
-                              <Bus className={`w-4 h-4 ${isOnline ? "text-emerald-400" : "text-white/30"}`} />
+                            <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${isOnline ? "bg-ui-success/20" : "bg-ui-soft"}`}>
+                              <Bus className={`w-4 h-4 ${isOnline ? "text-ui-success" : "text-ui-quiet"}`} />
                             </div>
                             <div className="flex flex-col min-w-0">
-                              <span className="font-semibold text-white text-sm truncate">{bus.name}</span>
-                              <span className="text-[10px] text-white/30 tabular-nums tracking-widest">{bus.id}</span>
+                              <span className="font-semibold text-ui-ink text-sm truncate">{bus.name}</span>
+                              <span className="text-xs text-ui-quiet tabular-nums tracking-widest">{bus.id}</span>
                               <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                                 {liveEntry && ts ? (
-                                  <span className={`text-[9px] font-black uppercase tracking-widest flex items-center gap-1 ${ts.color}`}>
+                                  <span className={`text-xs font-bold uppercase tracking-widest flex items-center gap-1 ${ts.color}`}>
                                     <span className={`w-1.5 h-1.5 rounded-full inline-block ${ts.color.replace("text-","bg-")} ${liveEntry?.motionState === "moving" ? "animate-pulse" : ""}`} />
                                     {ts.label}
                                   </span>
                                 ) : (
-                                  <span className="text-[9px] text-white/20 font-black uppercase tracking-widest">No live state</span>
+                                  <span className="text-xs text-ui-quiet font-bold uppercase tracking-widest">No live state</span>
                                 )}
-                                <span className={`text-[9px] font-black uppercase tracking-widest ${isOnline ? "text-emerald-400" : "text-white/25"}`}>
+                                <span className={`text-xs font-bold uppercase tracking-widest ${isOnline ? "text-ui-success" : "text-ui-quiet"}`}>
                                   {isOnline ? "Device online" : liveEntry ? "Device offline / stale" : "Device offline"}
                                 </span>
                                 {isOnline && liveEntry?.speed != null && (
-                                  <span className="text-[9px] text-white/30 tabular-nums">{Math.round(liveEntry.speed)} km/h</span>
+                                  <span className="text-xs text-ui-quiet tabular-nums">{Math.round(liveEntry.speed)} km/h</span>
                                 )}
                                 {bus.assignedRoutes && bus.assignedRoutes.length > 0 ? (
-                                  <span className="text-[9px] text-blue-400 font-semibold flex items-center gap-1">
+                                  <span className="text-xs text-brand-accent font-semibold flex items-center gap-1">
                                     <ArrowRight className="w-2.5 h-2.5" />
                                     {bus.assignedRoutes.length} Route{bus.assignedRoutes.length !== 1 ? "s" : ""}
                                   </span>
                                 ) : bus.assignedRouteId ? (
-                                  <span className="text-[9px] text-blue-400 font-semibold flex items-center gap-1">
+                                  <span className="text-xs text-brand-accent font-semibold flex items-center gap-1">
                                     <ArrowRight className="w-2.5 h-2.5" />
                                     {routes.find(r => r.id === bus.assignedRouteId)?.name || bus.assignedRouteId}
                                   </span>
@@ -490,14 +490,14 @@ export default function FleetManagementPanel({ mode = "combined" }: Props) {
                             <button
                               onClick={() => isEditing ? setEditingBusId(null) : startEditBus(bus)}
                               aria-label={isEditing ? "Cancel editing vehicle" : `Edit vehicle ${bus.name}`}
-                              className="p-3 rounded-lg text-white/20 hover:text-blue-400 hover:bg-blue-500/10 transition-all"
+                              className="p-3 rounded-lg text-ui-quiet hover:text-brand-accent hover:bg-brand-accent/10 transition-all"
                             >
                               {isEditing ? <X className="w-4 h-4" /> : <Pencil className="w-4 h-4" />}
                             </button>
                             <button
                               onClick={() => handleDeleteBus(bus.id)}
                               aria-label={`Delete vehicle ${bus.name}`}
-                              className="p-3 rounded-lg text-white/20 hover:text-red-400 hover:bg-red-500/10 transition-all"
+                              className="p-3 rounded-lg text-ui-quiet hover:text-ui-danger hover:bg-ui-danger/10 transition-all"
                             >
                               <Trash2 className="w-4 h-4" />
                             </button>
@@ -506,29 +506,29 @@ export default function FleetManagementPanel({ mode = "combined" }: Props) {
 
                         {/* Inline edit panel */}
                         {isEditing && (
-                          <div className="border-t border-white/5 px-4 pb-4 pt-3 flex flex-col gap-2.5 bg-brand-dark/30">
-                            <p className="text-[9px] text-blue-400 font-black uppercase tracking-[0.2em]">Editing Vehicle</p>
+                          <div className="border-t border-ui-line px-4 pb-4 pt-3 flex flex-col gap-2.5 bg-brand-dark/30">
+                            <p className="text-xs text-brand-accent font-bold uppercase tracking-[0.2em]">Editing Vehicle</p>
                             <input
                               value={editBusName}
                               onChange={(e) => setEditBusName(e.target.value)}
                               placeholder="Display Name"
                               aria-label="Edit vehicle display name"
-                              className="w-full h-11 bg-brand-dark/60 border border-white/10 rounded-xl px-3 text-sm text-white focus:border-blue-400/60 outline-none transition-colors placeholder:text-white/20 font-semibold"
+                              className="w-full h-11 bg-brand-dark/60 border border-ui-line rounded-xl px-3 text-sm text-ui-ink focus:border-brand-accent/60 outline-none transition-colors placeholder:text-ui-quiet font-semibold"
                             />
                             <div className="flex flex-col gap-1">
-                              <span className="text-[9px] text-white/30 uppercase tracking-[0.2em] font-black">Assigned Routes</span>
-                              <div className="max-h-32 overflow-y-auto bg-brand-dark/60 border border-white/10 rounded-xl p-2 flex flex-col gap-0.5">
+                              <span className="text-xs text-ui-quiet uppercase tracking-[0.2em] font-bold">Assigned Routes</span>
+                              <div className="max-h-32 overflow-y-auto bg-brand-dark/60 border border-ui-line rounded-xl p-2 flex flex-col gap-0.5">
                                 {routes.length === 0
-                                  ? <p className="text-white/20 text-[10px] text-center py-3 font-semibold">No routes available</p>
+                                  ? <p className="text-ui-quiet text-xs text-center py-3 font-semibold">No routes available</p>
                                   : routes.map((r) => {
                                     const checked = editBusRoutes.includes(r.id);
                                     return (
-                                      <label key={r.id} className={`flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer transition-colors ${checked ? "bg-white/10" : "hover:bg-white/5"}`}>
-                                        <div className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition-all ${checked ? "border-white bg-white" : "border-white/20 bg-transparent"}`}>
-                                          {checked && <Check className="w-2.5 h-2.5 text-brand-dark" strokeWidth={2.5} />}
+                                      <label key={r.id} className={`flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer transition-colors ${checked ? "bg-ui-hover" : "hover:bg-ui-soft"}`}>
+                                        <div className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition-all ${checked ? "border-ui-control bg-brand-accent" : "border-ui-control bg-transparent"}`}>
+                                          {checked && <Check className="w-2.5 h-2.5 text-ui-on-accent" strokeWidth={2.5} />}
                                         </div>
                                         <input type="checkbox" className="sr-only" checked={checked} onChange={() => toggleEditRoute(r.id)} />
-                                        <span className={`text-sm font-semibold ${checked ? "text-white" : "text-white/50"}`}>{r.name}</span>
+                                        <span className={`text-sm font-semibold ${checked ? "text-ui-ink" : "text-ui-muted"}`}>{r.name}</span>
                                       </label>
                                     );
                                   })
@@ -539,7 +539,7 @@ export default function FleetManagementPanel({ mode = "combined" }: Props) {
                               onClick={() => handleSaveBus(bus.id)}
                               aria-label="Save vehicle changes"
                               disabled={saving}
-                              className="btn-rc-primary h-11 flex items-center justify-center gap-2 font-semibold uppercase text-[11px] tracking-widest px-4"
+                              className="btn-rc-primary h-11 flex items-center justify-center gap-2 font-semibold uppercase text-xs tracking-widest px-4"
                             >
                               <Check className="w-4 h-4" /> {saving ? "Saving…" : "Save Changes"}
                             </button>
@@ -559,20 +559,20 @@ export default function FleetManagementPanel({ mode = "combined" }: Props) {
         {(mode === "personnel" || mode === "combined") && (
           <div className="flex flex-col gap-4">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-white/5 flex items-center justify-center shrink-0">
-              <User className="w-4 h-4 text-white/50" />
+            <div className="w-9 h-9 rounded-xl bg-ui-soft flex items-center justify-center shrink-0">
+              <User className="w-4 h-4 text-ui-muted" />
             </div>
             <div>
               <h2 className="font-extrabold text-lg tracking-tight">Driver Personnel</h2>
-              <p className="text-[10px] text-white/30 uppercase tracking-[0.2em] font-black">Manage Operator IDs</p>
+              <p className="text-xs text-ui-quiet uppercase tracking-[0.2em] font-bold">Manage Operator IDs</p>
             </div>
           </div>
 
           {/* Add form */}
           <div className="panel-rc p-6 flex flex-col gap-4">
-            <p className="text-[9px] text-white/20 font-black uppercase tracking-[0.2em]">Register new operator</p>
+            <p className="text-xs text-ui-quiet font-bold uppercase tracking-[0.2em]">Register new operator</p>
             {operatorError && (
-              <div ref={operatorErrorRef} id="operator-create-error" role="alert" tabIndex={-1} className="rounded-xl border border-red-400/30 bg-red-400/10 p-3 text-sm text-red-200 focus:outline-2 focus:outline-red-300">
+              <div ref={operatorErrorRef} id="operator-create-error" role="alert" tabIndex={-1} className="rounded-xl border border-ui-danger/30 bg-ui-danger/10 p-3 text-sm text-ui-danger focus:outline-2 focus:outline-red-300">
                 {operatorError}
               </div>
             )}
@@ -581,21 +581,21 @@ export default function FleetManagementPanel({ mode = "combined" }: Props) {
               placeholder="Operator ID (e.g. drv_1)"
               aria-label="New operator ID"
               aria-describedby={operatorError ? "operator-create-error" : undefined}
-              className="w-full h-11 bg-brand-dark/60 border border-white/10 rounded-xl px-3 text-sm text-white focus:border-white/40 outline-none transition-colors placeholder:text-white/20 font-semibold"
+              className="w-full h-11 bg-brand-dark/60 border border-ui-line rounded-xl px-3 text-sm text-ui-ink focus:border-ui-control outline-none transition-colors placeholder:text-ui-quiet font-semibold"
             />
             <input
               value={newDriverName} onChange={(e) => setNewDriverName(e.target.value)}
               placeholder="Display Name (e.g. Ravi Kumar)"
               aria-label="New operator display name"
               aria-describedby={operatorError ? "operator-create-error" : undefined}
-              className="w-full h-11 bg-brand-dark/60 border border-white/10 rounded-xl px-3 text-sm text-white focus:border-white/40 outline-none transition-colors placeholder:text-white/20 font-semibold"
+              className="w-full h-11 bg-brand-dark/60 border border-ui-line rounded-xl px-3 text-sm text-ui-ink focus:border-ui-control outline-none transition-colors placeholder:text-ui-quiet font-semibold"
             />
             <input
               value={newDriverAuthUid} onChange={(e) => setNewDriverAuthUid(e.target.value)}
               placeholder="Firebase Auth UID"
               aria-label="Firebase Auth UID for new operator"
               aria-describedby={operatorError ? "operator-create-error" : undefined}
-              className="w-full h-11 bg-brand-dark/60 border border-white/10 rounded-xl px-3 text-sm text-white focus:border-white/40 outline-none transition-colors placeholder:text-white/20 font-semibold"
+              className="w-full h-11 bg-brand-dark/60 border border-ui-line rounded-xl px-3 text-sm text-ui-ink focus:border-ui-control outline-none transition-colors placeholder:text-ui-quiet font-semibold"
             />
             <CustomSelect
               name="new-operator-vehicle"
@@ -607,43 +607,43 @@ export default function FleetManagementPanel({ mode = "combined" }: Props) {
                 { value: "", label: "— Assign Vehicle —" },
                 ...buses.map((b) => ({ value: b.id, label: `${b.name} (${b.id})` })),
               ]}
-              style={{ background: "rgba(10, 12, 20, 0.6)", border: "1px solid rgba(255, 255, 255, 0.1)" }}
+              style={{ background: "var(--surface-1)", border: "1px solid var(--border-default)" }}
             />
             <button
               onClick={handleAddDriver}
               aria-label="Add new operator"
               disabled={saving}
-              className="btn-rc-primary h-11 flex items-center justify-center gap-2 font-semibold uppercase text-[11px] tracking-widest px-4"
+              className="btn-rc-primary h-11 flex items-center justify-center gap-2 font-semibold uppercase text-xs tracking-widest px-4"
             >
               <Plus className="w-4 h-4" /> {saving ? "Saving…" : "Add Operator"}
             </button>
           </div>
 
           {/* Saved drivers */}
-          <div className="bg-brand-surface/40 border border-white/5 rounded-[1.5rem] overflow-hidden">
+          <div className="bg-brand-surface/40 border border-ui-line rounded-2xl overflow-hidden">
             <button
               onClick={() => setDriverListOpen((o) => !o)}
               aria-label={driverListOpen ? "Collapse saved operators" : "Expand saved operators"}
-              className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/5 transition-colors"
+              className="w-full flex items-center justify-between px-4 py-3 hover:bg-ui-soft transition-colors"
             >
               <div className="flex items-center gap-2">
-                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-white/50">Saved Operators</span>
-                <span className="text-[9px] bg-white/10 text-white/50 font-black px-2 py-0.5 rounded-full">{drivers.length}</span>
+                <span className="text-xs font-bold uppercase tracking-[0.2em] text-ui-muted">Saved Operators</span>
+                <span className="text-xs bg-ui-hover text-ui-muted font-bold px-2 py-0.5 rounded-full">{drivers.length}</span>
                 {liveDrivers.length > 0 && (
-                  <span className="text-[9px] bg-emerald-500/20 text-emerald-400 font-black px-2 py-0.5 rounded-full flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse inline-block" />
+                  <span className="text-xs bg-ui-success/20 text-ui-success font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-ui-success animate-pulse inline-block" />
                     {liveDrivers.length} Live
                   </span>
                 )}
               </div>
-              {driverListOpen ? <ChevronUp className="w-3.5 h-3.5 text-white/20" /> : <ChevronDown className="w-3.5 h-3.5 text-white/20" />}
+              {driverListOpen ? <ChevronUp className="w-3.5 h-3.5 text-ui-quiet" /> : <ChevronDown className="w-3.5 h-3.5 text-ui-quiet" />}
             </button>
             {driverListOpen && (
-              <div className="px-3 pb-3 flex flex-col gap-2 border-t border-white/5">
+              <div className="px-3 pb-3 flex flex-col gap-2 border-t border-ui-line">
                 {driversLoading
-                  ? <p className="text-white/20 text-xs text-center py-4 font-semibold">Loading…</p>
+                  ? <p className="text-ui-quiet text-xs text-center py-4 font-semibold">Loading…</p>
                   : drivers.length === 0
-                  ? <p className="text-white/20 text-xs text-center py-4 font-semibold uppercase tracking-widest">No operators registered.</p>
+                  ? <p className="text-ui-quiet text-xs text-center py-4 font-semibold uppercase tracking-widest">No operators registered.</p>
                   : drivers.map((driver) => {
                     const assignedBus = buses.find((b) => b.id === driver.assignedBusId);
                     const isDriving = liveDriverIds.has(driver.id);
@@ -656,31 +656,31 @@ export default function FleetManagementPanel({ mode = "combined" }: Props) {
                     return (
                       <div
                         key={driver.id}
-                        className={`border rounded-2xl overflow-hidden transition-all ${isDriving ? "bg-emerald-500/5 border-emerald-500/20" : "bg-brand-dark/40 border-white/5"}`}
+                        className={`border rounded-2xl overflow-hidden transition-all ${isDriving ? "bg-ui-success/5 border-ui-success/20" : "bg-brand-dark/40 border-ui-line"}`}
                       >
                         {/* Card header row */}
                         <div className="p-3.5 flex items-center justify-between gap-2">
                           <div className="flex items-center gap-3 min-w-0">
-                            <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${isDriving ? "bg-emerald-500/20" : "bg-white/5"}`}>
-                              <User className={`w-4 h-4 ${isDriving ? "text-emerald-400" : "text-white/30"}`} />
+                            <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${isDriving ? "bg-ui-success/20" : "bg-ui-soft"}`}>
+                              <User className={`w-4 h-4 ${isDriving ? "text-ui-success" : "text-ui-quiet"}`} />
                             </div>
                             <div className="flex flex-col min-w-0">
-                              <span className="font-semibold text-white text-sm truncate">{driver.name}</span>
-                              <span className="text-[10px] text-white/30 tabular-nums tracking-widest">{driver.id}</span>
+                              <span className="font-semibold text-ui-ink text-sm truncate">{driver.name}</span>
+                              <span className="text-xs text-ui-quiet tabular-nums tracking-widest">{driver.id}</span>
                               <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                                 {isDriving && dTs ? (
-                                  <span className={`text-[9px] font-black uppercase tracking-widest flex items-center gap-1 ${dTs.color}`}>
+                                  <span className={`text-xs font-bold uppercase tracking-widest flex items-center gap-1 ${dTs.color}`}>
                                     <span className={`w-1.5 h-1.5 rounded-full inline-block ${dTs.color.replace("text-","bg-")} ${liveEntry?.motionState === "moving" ? "animate-pulse" : ""}`} />
                                     {dTs.label}
                                   </span>
                                 ) : (
-                                  <span className="text-[9px] text-white/20 font-black uppercase tracking-widest">Offline</span>
+                                  <span className="text-xs text-ui-quiet font-bold uppercase tracking-widest">Offline</span>
                                 )}
                                 {isDriving && liveEntry?.speed != null && (
-                                  <span className="text-[9px] text-white/30 tabular-nums">{Math.round(liveEntry.speed)} km/h</span>
+                                  <span className="text-xs text-ui-quiet tabular-nums">{Math.round(liveEntry.speed)} km/h</span>
                                 )}
                                 {assignedBus && (
-                                  <span className="text-[9px] text-blue-400 font-semibold flex items-center gap-1">
+                                  <span className="text-xs text-brand-accent font-semibold flex items-center gap-1">
                                     <ArrowRight className="w-2.5 h-2.5" /> {assignedBus.name}
                                   </span>
                                 )}
@@ -691,14 +691,14 @@ export default function FleetManagementPanel({ mode = "combined" }: Props) {
                             <button
                               onClick={() => isEditing ? setEditingDriverId(null) : startEditDriver(driver)}
                               aria-label={isEditing ? "Cancel editing operator" : `Edit operator ${driver.name}`}
-                              className="p-3 rounded-lg text-white/20 hover:text-blue-400 hover:bg-blue-500/10 transition-all"
+                              className="p-3 rounded-lg text-ui-quiet hover:text-brand-accent hover:bg-brand-accent/10 transition-all"
                             >
                               {isEditing ? <X className="w-4 h-4" /> : <Pencil className="w-4 h-4" />}
                             </button>
                             <button
                               onClick={() => handleDeleteDriver(driver.id)}
                               aria-label={`Delete operator ${driver.name}`}
-                              className="p-3 rounded-lg text-white/20 hover:text-red-400 hover:bg-red-500/10 transition-all"
+                              className="p-3 rounded-lg text-ui-quiet hover:text-ui-danger hover:bg-ui-danger/10 transition-all"
                             >
                               <Trash2 className="w-4 h-4" />
                             </button>
@@ -707,21 +707,21 @@ export default function FleetManagementPanel({ mode = "combined" }: Props) {
 
                         {/* Inline edit panel */}
                         {isEditing && (
-                          <div className="border-t border-white/5 px-4 pb-4 pt-3 flex flex-col gap-2.5 bg-brand-dark/30">
-                            <p className="text-[9px] text-blue-400 font-black uppercase tracking-[0.2em]">Editing Operator</p>
+                          <div className="border-t border-ui-line px-4 pb-4 pt-3 flex flex-col gap-2.5 bg-brand-dark/30">
+                            <p className="text-xs text-brand-accent font-bold uppercase tracking-[0.2em]">Editing Operator</p>
                             <input
                               value={editDriverName}
                               onChange={(e) => setEditDriverName(e.target.value)}
                               placeholder="Display Name"
                               aria-label="Edit operator display name"
-                              className="w-full h-11 bg-brand-dark/60 border border-white/10 rounded-xl px-3 text-sm text-white focus:border-blue-400/60 outline-none transition-colors placeholder:text-white/20 font-semibold"
+                              className="w-full h-11 bg-brand-dark/60 border border-ui-line rounded-xl px-3 text-sm text-ui-ink focus:border-brand-accent/60 outline-none transition-colors placeholder:text-ui-quiet font-semibold"
                             />
                             <input
                               value={editDriverAuthUid}
                               onChange={(e) => setEditDriverAuthUid(e.target.value)}
                               placeholder="Firebase Auth UID"
                               aria-label="Firebase Auth UID for operator"
-                              className="w-full h-11 bg-brand-dark/60 border border-white/10 rounded-xl px-3 text-sm text-white focus:border-white/40 outline-none transition-colors placeholder:text-white/20 font-semibold"
+                              className="w-full h-11 bg-brand-dark/60 border border-ui-line rounded-xl px-3 text-sm text-ui-ink focus:border-ui-control outline-none transition-colors placeholder:text-ui-quiet font-semibold"
                             />
                             <CustomSelect
                               name="edit-operator-vehicle"
@@ -733,13 +733,13 @@ export default function FleetManagementPanel({ mode = "combined" }: Props) {
                                 { value: "", label: "— Unassign Vehicle —" },
                                 ...buses.map((b) => ({ value: b.id, label: `${b.name} (${b.id})` })),
                               ]}
-                              style={{ background: "rgba(10, 12, 20, 0.6)", border: "1px solid rgba(255, 255, 255, 0.1)" }}
+                              style={{ background: "var(--surface-1)", border: "1px solid var(--border-default)" }}
                             />
                             <button
                               onClick={() => handleSaveDriver(driver.id)}
                               aria-label="Save operator changes"
                               disabled={saving}
-                              className="h-11 bg-blue-500 text-white rounded-xl font-black uppercase text-xs tracking-widest shadow-xl hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2"
+                              className="h-11 bg-brand-accent text-ui-on-accent rounded-xl font-bold uppercase text-xs tracking-widest shadow-xl hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2"
                             >
                               <Check className="w-4 h-4" /> {saving ? "Saving…" : "Save Changes"}
                             </button>

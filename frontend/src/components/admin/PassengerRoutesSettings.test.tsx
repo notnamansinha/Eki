@@ -70,11 +70,17 @@ describe("admin passenger routes settings", () => {
     render(<PassengerRoutesSettings />); const user = userEvent.setup();
     await user.click(screen.getByRole("checkbox", { name: /1A/ }));
     const card = screen.getByRole("region", { name: "1A" });
-    const inputs = within(card).getAllByLabelText(/^Time for .* on 1A$/) as HTMLInputElement[];
+    const inputs = within(card).getAllByRole("textbox") as HTMLInputElement[];
     expect(inputs.map(input => input.getAttribute("aria-label"))).toEqual([
       "Time for Main Gate on 1A", "Time for Library on 1A", "Time for Hostel on 1A",
     ]);
-    expect(inputs.every(input => input.type === "time" && input.value === "")).toBe(true);
+    // A plain text box the admin types into, not the browser's time picker.
+    expect(inputs.every(input => input.type === "text" && input.value === "")).toBe(true);
+    expect(inputs.every(input =>
+      input.getAttribute("inputmode") === "numeric" && input.getAttribute("autocomplete") === "off"
+      // No maxlength: truncating a pasted "9:45 pm" to "9:45 " would save the wrong time of day.
+      && input.placeholder === "HH:MM" && !input.hasAttribute("maxlength"),
+    )).toBe(true);
     expect(new Set(inputs.map(input => input.id)).size).toBe(3);
     expect(within(card).getAllByRole("listitem").map(item => item.textContent)).toEqual(["1Main Gate", "2Library", "3Hostel"]);
     expect(hasUnsavedChanges()).toBe(true);
@@ -92,6 +98,140 @@ describe("admin passenger routes settings", () => {
     expect(missing.getAttribute("aria-invalid")).toBe("true");
     expect(document.getElementById(missing.getAttribute("aria-describedby")!)?.textContent).toBe("Time required");
     expect(screen.getByLabelText("Time for Stadium on 2B").getAttribute("aria-invalid")).toBeNull();
+  });
+
+  it.each([
+    ["0945", "09:45"], ["945", "09:45"], ["9:45", "09:45"], ["9.45", "09:45"], ["9", "09:00"], ["2359", "23:59"], ["0:00", "00:00"],
+  ])("lets the admin type %j and stores %j once they leave the field", async (typed, expected) => {
+    mocks.save.mockResolvedValue(undefined);
+    render(<PassengerRoutesSettings />); const user = userEvent.setup();
+    await user.click(screen.getByRole("checkbox", { name: /2B/ }));
+    const stadium = screen.getByLabelText("Time for Stadium on 2B") as HTMLInputElement;
+    await user.click(stadium);
+    await user.keyboard(typed);
+    // Nothing is reformatted under the cursor while typing.
+    expect(stadium.value).toBe(typed);
+    await user.tab();
+    expect(stadium.value).toBe(expected);
+    expect(stadium.getAttribute("aria-invalid")).toBeNull();
+    setTime("Time for Hospital on 2B", "10:00");
+    await user.click(screen.getByRole("button", { name: "Save routes" }));
+    await screen.findByText("Passenger routes saved");
+    expect(mocks.save).toHaveBeenCalledWith({ routes: [{ routeId: "route_b", stopTimes: { b1: expected, b2: "10:00" } }] });
+  });
+
+  it.each([
+    ["9:45 pm", "21:45"], ["9.45PM", "21:45"], ["945pm", "21:45"], ["12:30 am", "00:30"], ["12:30 PM", "12:30"],
+    ["12 p.m.", "12:00"], ["7:05 A.M.", "07:05"], ["21:45", "21:45"], ["09:45", "09:45"], ["09:45:00", "09:45"],
+  ])("keeps the time of day when the admin pastes %j, storing %j", async (pasted, expected) => {
+    mocks.save.mockResolvedValue(undefined);
+    render(<PassengerRoutesSettings />); const user = userEvent.setup();
+    await user.click(screen.getByRole("checkbox", { name: /2B/ }));
+    const stadium = screen.getByLabelText("Time for Stadium on 2B") as HTMLInputElement;
+    await user.click(stadium);
+    await user.paste(pasted);
+    // The whole paste arrives, so the am/pm suffix is not cut off.
+    expect(stadium.value).toBe(pasted);
+    await user.tab();
+    expect(stadium.value).toBe(expected);
+    expect(stadium.getAttribute("aria-invalid")).toBeNull();
+    setTime("Time for Hospital on 2B", "10:00");
+    await user.click(screen.getByRole("button", { name: "Save routes" }));
+    await screen.findByText("Passenger routes saved");
+    expect(mocks.save).toHaveBeenCalledWith({ routes: [{ routeId: "route_b", stopTimes: { b1: expected, b2: "10:00" } }] });
+  });
+
+  it("selects the whole published time on click so typing replaces it", async () => {
+    mocks.save.mockResolvedValue(undefined);
+    mocks.config = { routes: [{ routeId: "route_b", stopTimes: { b1: "07:30", b2: "07:45" } }] };
+    render(<PassengerRoutesSettings />); const user = userEvent.setup();
+    const stadium = screen.getByLabelText("Time for Stadium on 2B") as HTMLInputElement;
+    await user.click(stadium);
+    expect([stadium.selectionStart, stadium.selectionEnd]).toEqual([0, 5]);
+    await user.keyboard("0815");
+    expect(stadium.value).toBe("0815");
+    await user.tab();
+    expect(stadium.value).toBe("08:15");
+    await user.click(screen.getByRole("button", { name: "Save routes" }));
+    await screen.findByText("Passenger routes saved");
+    expect(mocks.save).toHaveBeenCalledWith({ routes: [{ routeId: "route_b", stopTimes: { b1: "08:15", b2: "07:45" } }] });
+  });
+
+  it.each(["25:00", "ab", "8:5", "12:60", "13:00 pm", "0:30 am", "09:45:30"])("flags %j as invalid once the admin leaves the field, and blocks saving until fixed", async typed => {
+    mocks.save.mockResolvedValue(undefined);
+    render(<PassengerRoutesSettings />); const user = userEvent.setup();
+    await user.click(screen.getByRole("checkbox", { name: /2B/ }));
+    setTime("Time for Stadium on 2B", "07:30");
+    const hospital = screen.getByLabelText("Time for Hospital on 2B") as HTMLInputElement;
+    await user.click(hospital);
+    await user.keyboard(typed);
+    expect(hospital.getAttribute("aria-invalid")).toBeNull();
+    await user.tab();
+    expect(hospital.value).toBe(typed);
+    expect(hospital.getAttribute("aria-invalid")).toBe("true");
+    expect(hospital.style.borderColor).toBe("var(--status-danger)");
+    expect(document.getElementById(hospital.getAttribute("aria-describedby")!)?.textContent).toBe("Enter a valid time");
+
+    await user.click(screen.getByRole("button", { name: "Save routes" }));
+    expect((await screen.findByRole("dialog")).textContent).toContain('"Hospital" on 2B has an invalid time. Use HH:mm.');
+    expect(mocks.save).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "OK" }));
+
+    // The flag clears as soon as the time is edited, and the fixed time saves.
+    await user.click(hospital);
+    await user.keyboard("0745");
+    expect(hospital.getAttribute("aria-invalid")).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Save routes" }));
+    await screen.findByText("Passenger routes saved");
+    expect(mocks.save).toHaveBeenCalledWith({ routes: [{ routeId: "route_b", stopTimes: { b1: "07:30", b2: "07:45" } }] });
+  });
+
+  it("clears invalid-time flags once a save succeeds", async () => {
+    mocks.save.mockResolvedValue(undefined);
+    render(<PassengerRoutesSettings />); const user = userEvent.setup();
+    await user.click(screen.getByRole("checkbox", { name: /2B/ }));
+    setTime("Time for Stadium on 2B", "07:30");
+    const hospital = screen.getByLabelText("Time for Hospital on 2B") as HTMLInputElement;
+    await user.click(hospital);
+    await user.keyboard("ab");
+    await user.tab();
+    expect(hospital.getAttribute("aria-invalid")).toBe("true");
+    // Fixed and saved without leaving the field, so no blur clears the flag.
+    setTime("Time for Hospital on 2B", "07:45");
+    fireEvent.click(screen.getByRole("button", { name: "Save routes" }));
+    await screen.findByText("Passenger routes saved");
+    // Typing the old text again must not resurrect the flag before the field is left.
+    setTime("Time for Hospital on 2B", "ab");
+    expect(hospital.getAttribute("aria-invalid")).toBeNull();
+  });
+
+  it("tidies a time that is still being typed when Save is pressed", async () => {
+    mocks.save.mockResolvedValue(undefined);
+    render(<PassengerRoutesSettings />); const user = userEvent.setup();
+    await user.click(screen.getByRole("checkbox", { name: /2B/ }));
+    setTime("Time for Stadium on 2B", "730");
+    setTime("Time for Hospital on 2B", "0745");
+    fireEvent.click(screen.getByRole("button", { name: "Save routes" }));
+    await screen.findByText("Passenger routes saved");
+    expect(mocks.save).toHaveBeenCalledWith({ routes: [{ routeId: "route_b", stopTimes: { b1: "07:30", b2: "07:45" } }] });
+  });
+
+  it("returns to unchanged when a typed time is put back to the published one", async () => {
+    mocks.config = { routes: [{ routeId: "route_b", stopTimes: { b1: "07:30", b2: "07:45" } }] };
+    render(<PassengerRoutesSettings />); const user = userEvent.setup();
+    const stadium = screen.getByLabelText("Time for Stadium on 2B") as HTMLInputElement;
+    await user.click(stadium);
+    await user.keyboard("0800");
+    await user.tab();
+    expect(stadium.value).toBe("08:00");
+    expect(screen.getByRole("button", { name: "Save routes" })).toBeTruthy();
+    expect(hasUnsavedChanges()).toBe(true);
+    await user.click(stadium);
+    await user.keyboard("730");
+    await user.tab();
+    expect(stadium.value).toBe("07:30");
+    expect((screen.getByRole("button", { name: "No route changes" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(hasUnsavedChanges()).toBe(false);
   });
 
   it("saves the exact payload in selection order with every current stop of each route", async () => {

@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-API-005 | 2.0 | Current | 2026-10-30 |
+| EKI-API-005 | 2.1 | Current | 2026-11-06 |
 
 ## 1. Purpose
 
@@ -27,7 +27,7 @@ The backend serves its original command-style paths (for example `POST /api/shif
 | `POST /api/privacy/deletion-request` | `POST /api/v2/privacy-deletion-requests` | Rejects a non-empty body | Resource-style |
 | `POST /api/shifts/start` | `POST /api/v2/ride-sessions` | Requires `Idempotency-Key`; returns `Location` | Resource-style (Resume tracking) |
 | `PATCH /api/shifts/delay` | `PATCH /api/v2/ride-sessions/:sessionId` | Body is only `delayMinutes`; bus, route and operator come from the session; a failed assignment check returns 403 instead of 400 | Original |
-| `POST /api/sessions/:sessionId/boarding-code` | `POST /api/v2/ride-sessions/:sessionId/boarding-code` | None | Original |
+| `POST /api/sessions/:sessionId/boarding-code` | `POST /api/v2/ride-sessions/:sessionId/boarding-code` | None | Neither |
 | `POST /api/sessions/:sessionId/join` | `PUT /api/v2/ride-sessions/:sessionId/passengers/me` | None | Original |
 | `POST /api/sessions/:sessionId/messages` | `POST /api/v2/ride-sessions/:sessionId/messages` | None | Original |
 | `DELETE /api/shifts/:sessionId/messages` | `DELETE /api/v2/ride-sessions/:sessionId/messages` | None | Original |

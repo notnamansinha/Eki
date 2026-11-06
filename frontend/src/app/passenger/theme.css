@@ -3,9 +3,8 @@
    Tokens follow AU_RULES_AND_BRAND_GUIDELINES.md, Part 6: AU Red for actions,
    Dark Grey for text, Off-white pages and Gold for decoration only, with
    4.5:1 text contrast, 3:1 control edges, 12px minimum text and 44px touch
-   targets. Scoped with :has() so the admin console and landing page keep
-   their own theme, while portalled dialogs (feedback, confirm) still inherit
-   these values from the root.
+   targets. The shared palette lives in ../brand-theme.css; passenger surface
+   rules stay scoped here, while portalled dialogs inherit the root tokens.
 
    Phones use iOS-style grouped lists, sheets and a translucent tab bar;
    pointer devices keep the approved centred Live Routes panel with paper
@@ -14,51 +13,6 @@
    ═══════════════════════════════════════════════════════════════════════════ */
 
 :root:has(.passenger-layout) {
-  color-scheme: light;
-
-  /* Surfaces */
-  --surface-0: #f2efec;
-  --surface-1: #ffffff;
-  --surface-2: #ffffff;
-  --surface-3: #f8f6f3;
-  --surface-4: #ece8e3;
-
-  /* Brand */
-  --accent: #801214;
-  --accent-hover: #6a0f11;
-  --accent-subtle: #f7e9e9;
-  --accent-glow: rgba(128, 18, 20, 0.18);
-  --accent-contrast: #ffffff;
-  --decor-gold: #ae9562;
-  --announcement-bg: #f4eee2;
-
-  /* Text — no lighter text colour exists */
-  --text-primary: #434747;
-  --text-secondary: #5c6060;
-  --text-tertiary: #626666;
-  --text-ghost: #626666;
-
-  /* Borders */
-  --border-subtle: #e2ddd6;
-  --border-default: #858789;
-  --border-hover: #5c6060;
-  --hairline: rgb(67 71 71 / 0.18);
-
-  /* Status: outside the brand palette, pending Communications sign-off */
-  --status-live: #256b42;
-  --status-live-bg: #e6f2ea;
-  --status-warning: #8c5a0b;
-  --status-warning-bg: #fbf0df;
-  --status-danger: #b42318;
-  --status-danger-bg: #fbe9e7;
-
-  /* Map */
-  --route-color: #801214;
-  --route-passed: #939598;
-
-  --font-ui: var(--font-roboto, "Roboto"), system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-heading: var(--font-playfair, "Playfair Display"), Georgia, "Times New Roman", serif;
-
   /* Surface hooks */
   --pp-page: #f2efec;
   --pp-art-scrim: linear-gradient(180deg, rgb(0 0 0 / 0) 45%, rgb(0 0 0 / 0.18) 100%);
@@ -88,7 +42,7 @@
   --pp-float-shadow: 0 8px 24px -12px rgb(0 0 0 / 0.3);
   --pp-float-radius: 14px;
   --pp-float-filter: blur(20px) saturate(180%);
-  --pp-tracking-scrim: linear-gradient(180deg, rgb(242 239 236 / 0.9), rgb(242 239 236 / 0));
+  --pp-tracking-scrim: var(--brand-surface-gradient);
   --pp-sheet-bg: rgb(249 248 246 / 0.96);
   --pp-sheet-filter: blur(20px) saturate(180%);
   --pp-sheet-radius: 14px;

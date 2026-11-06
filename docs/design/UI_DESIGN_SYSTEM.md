@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-UIX-001 | 2.3 | Current | 2026-11-04 |
+| EKI-UIX-001 | 2.4 | Current | 2026-11-06 |
 
 ## 1. Purpose
 
@@ -16,12 +16,12 @@ This reference lists the visual tokens, semantic colours, layout rules, screens,
 | Design tokens | CSS custom properties on `:root` in `app/globals.css` (Section 2). Components read them through inline styles, for example `style={{ color: "var(--text-secondary)" }}`, or arbitrary values such as `bg-[var(--surface-0)]`. |
 | Theme aliases | A `@theme inline` block maps some tokens to Tailwind utility names (Section 2.7). |
 | Palette classes and hex values | Status, alert and map code also uses Tailwind palette classes (`text-amber-300`, `bg-red-500/10`) and literal colours (Section 3). |
-| Themes | One dark theme. There is no light theme and no `prefers-color-scheme` rule. |
+| Themes | `app/globals.css` defines the original dark tokens on `:root`, which the landing page keeps. `app/brand-theme.css` re-tokens the Passenger and Admin workspaces with the light Ahmedabad University palette (`:root:has(.passenger-layout, .admin-layout)`), and each workspace's `theme.css` holds its surface rules. The one dark exception inside those workspaces is Admin Live Ops (Section 2.8). There is no `prefers-color-scheme` rule. |
 | `frontend/tailwind.config.ts` | Not loaded. Tailwind 4 reads a JavaScript configuration only through an `@config` directive [2], and `globals.css` has none. Its values (`brand.primary` `#0F4C81`, `brand.accent` `#F5A623`, the `transit` and `status` colours, the `glass`, `glow` and `premium` shadows, the `pulse-slow` animation and the font `var(--font-sora)`) do not reach the compiled CSS. |
 
 ## 2. Colour tokens
 
-All tokens are defined in `app/globals.css`.
+All tokens are defined in `app/globals.css`; Sections 2.1 to 2.6 list those default values. `app/brand-theme.css` overrides them for the Passenger and Admin workspaces, and Section 2.8 lists the Admin Live Ops dark scope.
 
 ### 2.1 Surfaces
 
@@ -95,6 +95,32 @@ The `@theme inline` block in `app/globals.css` defines:
 | `--color-status-idle` | `var(--status-warning)` | `bg-status-idle` |
 | `--font-sans`, `--font-display` | `system-ui, -apple-system, "Segoe UI", sans-serif` | `font-sans` |
 | `--radius-xl` | `var(--radius-lg)` | `rounded-xl` |
+
+### 2.8 Admin Live Ops dark scope
+
+Senior faculty found a light Live Ops panel beside the light Google Map hard to read, so Live Ops alone returns to the original Eki warm blacks. Every other Admin tab keeps the light Ahmedabad University palette. `app/admin/theme.css` re-tokens the shared palette under `.admin-layout :is(.admin-live-ops, [data-tone="dark"])` and sets `color-scheme: dark`; the `brand-*` and `ui-*` utilities read the new values through `@theme inline`.
+
+| Part | Hook | Dark when |
+|---|---|---|
+| Live Ops panel: map overlays, side column, fleet cards, bus markers, live details drawer and chat overlay | `.admin-live-ops` on the root of `components/admin/DashboardPanel.tsx` (`DashboardPanel.tsx:787`) | Always |
+| Admin tab panel frame, including its loading and error states | `[role="tabpanel"][data-tone="dark"]` (`app/admin/page.tsx:130`) | Live Ops is the active tab |
+| Admin tab bar | `.admin-navigation[data-tone="dark"]` (`app/admin/page.tsx:76`), a solid `#0f0f12` with no backdrop blur | Live Ops is the active tab |
+
+| Token | Live Ops value | Note |
+|---|---|---|
+| `--surface-0` | `#09090b` | Panel and tab panel background |
+| `--surface-1`, `--surface-2` | `#16161a` | Cards, map overlays, marker border and bus ID chip |
+| `--surface-3`, `--surface-4` | `#1c1c21`, `#26262c` | Soft and hover fills |
+| `--text-primary` | `#ececef` | 16.87:1 on `#09090b` |
+| `--text-secondary` | `#c9c9cf` | Brighter than the original `#94949C` for readability |
+| `--text-tertiary`, `--text-ghost` | `#b1b1b9` | Brighter than the original values |
+| `--border-subtle`, `--border-default`, `--border-hover` | White at 12, 24 and 36 % | `--hairline` is white at 12 % |
+| `--accent`, `--accent-hover` | `#b3262a`, `#9a1f23` | Buttons keep an AU Red fill, lifted from `#801214` to `#b3262a` so the fill reaches 3.06:1 against `#09090b`; white text on it is 6.51:1 |
+| `--accent-subtle`, `--accent-glow` | `--accent-text` at 12 % and 30 % | Selected tab and soft accent fills |
+| `--accent-text` | `#f3a4a5` | AU Red tint for `text-brand-accent` text, the active-tab underline, the selected fleet card border, the `brand-accent` focus rings and outlines, and focused field borders and outlines; 10.10:1 on `#09090b`, 9.72:1 on `#0f0f12`, 9.16:1 on `#16161a`. AU Red `#801214` is 1.91:1 on `#09090b`, too dark for text, thin rules or focus indicators. The global `:focus-visible` outline still uses `--accent` (3.06:1 on `#09090b`, above the 3:1 non-text minimum). |
+| `--status-live`, `--status-warning`, `--status-danger` | `#34d399`, `#fbbf24`, `#f87171` | The original status colours; their `-bg` tokens are the same colours at 12 % |
+
+`--accent-text` exists only inside this scope. `components/shared/MessagingPanel.tsx` reads `var(--accent-text, var(--accent))` for its sender labels, so the chat overlay uses the tint on black and AU Red elsewhere. Google's own map UI keeps its light scheme (`.admin-live-ops .gm-style { color-scheme: light; }`), and the map tiles stay light. The **End ride early?** confirmation is portalled outside the panel, so it keeps the light admin dialog style.
 
 ## 3. Semantic colours
 
@@ -173,7 +199,7 @@ Passenger marker (`components/maps/BusPositionGlyph.tsx`, colour chosen in `comp
 
 The glyph has `role="img"` and an `aria-label` made of the bus ID and its state, for example "GPS signal lost, last known location" or "updates delayed". The marker sits at z-index 40 and animates between fixes (Section 8.3).
 
-Admin marker (`components/admin/DashboardPanel.tsx`): a 36 px circle with a 3 px `#09090b` border, dashed when the position is approximate, a `Navigation2` icon in `#09090b` rotated to the heading, and a bus ID chip below.
+Admin marker (`components/admin/DashboardPanel.tsx`): a 36 px circle with a 3 px `--surface-1` border (`#16161a` in the Live Ops dark scope, Section 2.8), dashed when the position is approximate, a `Navigation2` icon in `#09090b` rotated to the heading, and a bus ID chip below in `--text-primary` on `--surface-1`.
 
 | Condition | Fill |
 |---|---|
@@ -216,7 +242,7 @@ The dot pulses while an online bus is moving. "Service paused" replaces the trip
 | Dialog surface | `rgba(18, 20, 29, 0.98)`, `border-white/10`, backdrop `bg-black/70` with `backdrop-blur-sm` | both dialogs |
 | Success | **On board** in `--status-live`; "Messages cleared" in `text-emerald-400` | boarding card, live details drawer |
 | Inline errors | `--status-danger` with `role="alert"` | boarding card, profile |
-| Feedback console rows | New `bg-blue-500/[0.04]`, reviewed `bg-amber-500/[0.03]`, resolved transparent | `components/admin/FeedbackPanel.tsx` |
+| Feedback console cards | Same patterns as History, Fleet and Live Ops: separate `rounded-2xl` `bg-ui-paper` cards (`border-brand-accent/40` when new) with a whole-row toggle (`hover:bg-ui-soft`), a 36 px status-tinted icon tile (new AU Red, reviewed `ui-warning`, resolved `ui-success` at 10 to 15%), tinted `rounded-full` status pills, a `bg-ui-soft` expanded body with `rounded-xl` detail tiles, and **reviewed** (secondary) / **resolved** (primary AU Red) buttons | `components/admin/FeedbackPanel.tsx` |
 
 ### 3.8 Other literal colours
 
@@ -348,6 +374,8 @@ Short touch screens, at most 480 px tall without a fine pointer (landscape phone
 
 `rounded-3xl` keeps the Tailwind default of 1.5 rem (24 px). Arbitrary radii: 32 px for the home panel, 20 px for route cards and navigation items, 24 px for the top of the navigation frame.
 
+**Admin continuous corners (2026-11-06).** The admin panel and its dialogs use Apple’s continuous corner curve (`CALayer` `.continuous`, the SwiftUI default) instead of circular arcs. Inside `@supports (corner-shape: superellipse(1.7))`, `app/admin/theme.css` multiplies the radius tokens (and the fixed 20 px dialog, 12 px dialog-button and 24 px `.panel-rc` radii) by 1.528665, the distance at which Apple’s curve leaves each edge, and sets `corner-shape: superellipse(1.7)` on every `rounded-*` element except `rounded-full`. That keeps the same visual corner size, follows Apple’s outline to within about 0.013r and eases in from zero curvature. Circles, dots, switches and pills stay round because Apple draws capsule ends as circular arcs. Browsers without `corner-shape` (Safari before 27.3, Firefox release builds) keep plain round corners at the original radius. Inline radii (map markers, chat bubbles) are unchanged.
+
 ### 6.3 Shadows and elevation
 
 Elevation is shown first by surface lightness (`--surface-0` to `--surface-4`) and then by shadow. Tailwind's default `shadow-sm` to `shadow-2xl` are used unchanged. Literal shadows:
@@ -453,23 +481,23 @@ The published timetable uses flat rows with compact bus-front line badges. Searc
 
 | Area | Structure |
 |---|---|
-| Tab bar | `role="tablist"` with Live Ops, Routes, Fleet & People, History, Feedback and, after a divider, Settings. The active tab is white with a 2 px `--accent` underline; others are `text-white/50`. **Passenger Panel** follows the tabs; on narrow screens the row scrolls horizontally. |
-| Live Ops: map | Google map with the traffic layer and bus markers; it draws no route lines, which appear only in the route editor. A top-left stack holds data-error, reconnect and "<n> devices online · <m> services" overlays. |
+| Tab bar | `role="tablist"` with Live Ops, Routes, Fleet & People, History, Feedback and, after a divider, Settings. The active tab is `text-brand-accent` on `bg-ui-accent-soft` with a 2 px `bg-brand-accent` underline; others are `text-ui-muted`. **Passenger Panel** follows the tabs; on narrow screens the row scrolls horizontally. While Live Ops is active the bar is dark and the active label and underline use `--accent-text` (Section 2.8). |
+| Live Ops: map | Google map with the traffic layer and bus markers; it draws no route lines, which appear only in the route editor. A top-left stack holds data-error, reconnect and "<n> devices online · <m> services" overlays. The map and Google's own controls stay light; the side column, overlays and markers use the dark scope (Section 2.8). |
 | Live Ops: side column | "Automatic service" explanation with **Resume tracking** buttons for paused buses, a five-column stats row, and the "Live Fleet" list of fleet cards. |
-| Fleet card | Header button (status tile, bus name, state, delay, motion and speed chips) that expands the card, an eye button for live details and a chat button. Expanded: speed, heading, last update and next stop; route progress with next and following stop; driver and route; delay buttons (-2, -1, +1, +2); **Boarding code**; **End ride early**; coordinates. |
+| Fleet card | Header button (status tile, bus name, state, delay, motion and speed chips) that expands the card, an eye button for live details and a chat button. Expanded: speed, heading, last update and next stop; route progress with next and following stop; driver and route; delay buttons (-2, -1, +1, +2); **End ride early**; coordinates. |
 | Live details drawer | Modal dialog: trip state, signal, next stop, delay, route matching, match confidence, route context, distance to route, raw and matched location diagnostics, **Clear Messages** and **End ride early**. |
 | End ride | `ConfirmModal`, warning variant: "End ride early?", **End ride** and **Keep running**. |
 | Routes | Route list with colour swatches, and an editor with a map, place search, draggable lettered stops, per-stop rename, reorder and remove buttons, and the colour picker. |
 | Fleet & People | "Fleet Vehicles" and "Driver Personnel" lists with add, edit and delete. |
 | History | "Ride History" list with chat history, deletion and **Load older rides**. |
-| Settings | Announcement toggle and text, no-buses message and sub-message, service start time, and a save button that reads **No changes** until something changes. Below it, the **Passenger Routes** section ("Choose which routes passengers can browse and set the time at each stop") has its own save button: a checkbox list of every route sorted by name (colour dot, name, stop count), then, for each selected route in selection order, a card with a 4 px left border in the route colour, numbered stop circles in the route colour and a 44 px `<input type="time">` per stop. The button reads **Save routes**, **No route changes**, **Saving…** or **Saved!**. A notice in amber counts previously published routes that were deleted and will be removed on save. |
+| Settings | A header save button that reads **No changes** until something changes, then **Save changes**, **Saving…** or **Saved!**. The **Service Hours & No-Bus Message** card edits the service start time, the no-buses headline and the subtext (`{time}` is replaced with the start time) together, and its **Passengers see** preview shows the headline and subtext with the same fallbacks as the passenger empty state. The **Live Announcement Banner** card follows with the text, the visibility switch and a banner preview. Below them, the **Passenger Routes** section ("Choose which routes passengers can browse and set the time at each stop") has its own save button: a checkbox list of every route sorted by name (colour dot, name, stop count), then, for each selected route in selection order, a card with a 4 px left border in the route colour, numbered stop circles in the route colour and a 44 px typed 24-hour `HH:MM` text field per stop. The button reads **Save routes**, **No route changes**, **Saving…** or **Saved!**. A notice in amber counts previously published routes that were deleted and will be removed on save. |
 
 ### 7.5 Feedback
 
 | Screen | Structure |
 |---|---|
 | Feedback modal | `components/shared/FeedbackModal.tsx`. A bottom sheet below `sm`, a centred 448 px dialog above. Header with close button, five rating stars (`aria-pressed`), a comment field with a live "<n> / 200 words" count, a status line, and a full-width 48 px submit button. A cooldown keeps submit disabled. Success shows a centred confirmation card. |
-| `/feedback` console | `components/admin/FeedbackPanel.tsx`. A sticky header ("Feedback Console", "Admin Only", **← Admin Panel**), a search field, type and status filters, and expandable feedback rows with **reviewed** and **resolved** actions. The admin Feedback tab shows the same panel without the header. |
+| `/feedback` console | `components/admin/FeedbackPanel.tsx`. A sticky header ("Feedback Console", "Admin Only", **← Admin Panel**), a search field, type and status filters, and expandable feedback cards (status-tinted icon tile, status pill, comment preview) with **reviewed** and **resolved** actions. Embedded in the admin page it adds the usual title row ("Feedback") and `max-w-4xl` column. The admin Feedback tab shows the same panel without the header. |
 
 ## 8. Components, icons and motion
 
@@ -571,7 +599,7 @@ Under `prefers-reduced-motion: reduce`, `app/globals.css` sets every animation a
 
 | Rule | Implementation |
 |---|---|
-| Visible focus | `:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }` in `app/globals.css`. Some controls replace it with a ring (`focus-visible:ring-red-400` on **End ride early**, `ring-brand-accent/50` on fleet cards, `outline-blue-400` on `InAppSelect`). |
+| Visible focus | `:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }` in `app/globals.css`. Some controls replace it with a ring (`focus-visible:ring-ui-danger` on **End ride early**, `ring-brand-accent/50` on fleet cards) or their own outline (`outline-[var(--accent)]` on `InAppSelect`). Inside the Admin Live Ops dark scope the `brand-accent` rings and outlines use `--accent-text` (Section 2.8). |
 | Dialogs | `hooks/useDialogFocus.ts` moves focus to `[data-autofocus]` or the first focusable element, keeps Tab inside the dialog, closes the top-most dialog on Escape, locks body scrolling and returns focus to the previous element. Dialogs set `role="dialog"`, `aria-modal="true"` and `aria-labelledby`. **Cancel** receives initial focus in `ConfirmModal`. |
 | Tabs | The admin tab bar uses `role="tab"`, `aria-selected`, `aria-controls`, roving `tabIndex` and Left, Right, Home and End keys. |
 | Listbox | `InAppSelect` uses `role="combobox"` with `aria-expanded`, `aria-controls` and `aria-activedescendant`; keys: Up, Down, Page Up and Page Down (10 options), Home, End, Enter, Space, Escape and Tab. |
@@ -589,7 +617,7 @@ Under `prefers-reduced-motion: reduce`, `app/globals.css` sets every animation a
 | Gap | Location |
 |---|---|
 | Text contrast below AA for stop letters, admin labels at 25 to 40 % white, the `.input-rc` placeholder, the danger dialog button and the feedback submit button (Section 4). | `PassengerMap.tsx`, `DashboardPanel.tsx`, `app/globals.css`, `ConfirmModal.tsx`, `FeedbackModal.tsx` |
-| Controls below the 44 px convention: the fleet card eye button (36 px), delay buttons (36 px minimum), **Boarding code** and **End ride early** in the card (40 px), and the passenger **Board** button (12 px text with 8 px vertical padding, 32 px high). All exceed the 24 px minimum of SC 2.5.8 [1]. | `DashboardPanel.tsx:475`, `:568`, `:580`, `:589`; `PassengerBoardingView.tsx` |
+| Controls below the 44 px convention: the fleet card eye button (36 px), delay buttons (36 px minimum), **End ride early** in the card (40 px), and the passenger **Board** button (12 px text with 8 px vertical padding, 32 px high). All exceed the 24 px minimum of SC 2.5.8 [1]. | `DashboardPanel.tsx:473`, `:566`, `:578`; `PassengerBoardingView.tsx` |
 | `.input-rc` removes the outline and signals focus only by a border change from 10 % to 30 % white. | `app/globals.css` |
 | `html { scroll-behavior: smooth; }` is not reset under reduced motion. | `app/globals.css` |
 | `animate-in fade-in` on both dialogs produces no CSS, because no plugin defines these classes. | `ConfirmModal.tsx`, `AlertModal.tsx` |

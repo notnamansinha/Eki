@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-OPS-012 | 1.1 | Current | 2026-10-30 |
+| EKI-OPS-012 | 1.2 | Current | 2026-11-06 |
 
 ## 1. Purpose
 
@@ -64,7 +64,7 @@ Admin health (`GET /api/health`) exposes these counters as `telemetry.apiCompati
 | `frontend/src/lib/joinedRideStatus.ts` | `GET /api/sessions/{sessionId}/status` | Legacy only; no v2 form exists |
 | `frontend/src/hooks/useAuth.ts` | `POST /api/users/bootstrap` | Legacy only; no v2 form exists |
 | `frontend/src/lib/telemetryTrace.ts` | `GET /api/health` (trace health export) | Not applicable |
-| `frontend/src/components/admin/DashboardPanel.tsx` | `POST /api/v2/ride-sessions`; `PATCH /api/shifts/delay`, `POST /api/shifts/stop`, `POST /api/sessions/{sessionId}/boarding-code`, `DELETE /api/shifts/{sessionId}/messages` | v2 for ride start, legacy for the rest |
+| `frontend/src/components/admin/DashboardPanel.tsx` | `POST /api/v2/ride-sessions`; `PATCH /api/shifts/delay`, `POST /api/shifts/stop`, `DELETE /api/shifts/{sessionId}/messages` | v2 for ride start, legacy for the rest |
 | `frontend/src/components/admin/RideHistoryPanel.tsx` | `DELETE /api/shifts/{sessionId}/history` | Legacy |
 | `frontend/src/components/admin/FleetManagementPanel.tsx` | `PUT` and `DELETE` on `/api/fleet/...` | Legacy only |
 | `frontend/src/hooks/useSettings.ts` | `PATCH /api/v2/settings/global` | v2 |
@@ -73,7 +73,7 @@ Admin health (`GET /api/health`) exposes these counters as `telemetry.apiCompati
 | `frontend/src/lib/feedbackStore.ts` | None: feedback and its review status are written to Firestore directly | Not applicable |
 | Firmware | `POST /api/devices/{deviceId}/telemetry`, diagnostics and firmware endpoints | Device API, outside the web migration |
 
-No production frontend code calls the analytics, route catalog or bus list endpoints; the browser reads that data through Firebase SDK listeners. Unknown external clients may still call them, so they remain supported.
+No production frontend code calls the analytics, route catalog or bus list endpoints; the browser reads that data through Firebase SDK listeners. Unknown external clients may still call them, so they remain supported. No frontend code calls `POST /api/sessions/{sessionId}/boarding-code` or its v2 alias either; both remain served for older clients.
 
 ## 4. Configuration
 
