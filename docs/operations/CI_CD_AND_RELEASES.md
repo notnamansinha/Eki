@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-OPS-001 | 3.6 | Current | 2026-11-03 |
+| EKI-OPS-001 | 3.7 | Current | 2026-11-06 |
 
 ## 1. Purpose
 
@@ -38,6 +38,7 @@ A green push to `main` releases the frontend and security rules to `bustrack-be1
 | `ci.yml` | Production verification | Every push to any branch; every pull request | Nothing |
 | `codeql.yml` | CodeQL | Every push except `dependabot/**`; every pull request | Nothing |
 | `deploy.yml` | Deploy | Completion of Production verification; manual dispatch | Hosting, Firestore rules, RTDB rules and Firestore indexes; the staging backend to Cloud Run on manual dispatch with `deploy_backend: true` |
+| `publish-backend-image.yml` | Publish backend image | Completion of Production verification on a push to `main`; manual dispatch from `main` | The backend image to Docker Hub as `<commit-sha>` and `latest`, once the `DOCKERHUB_*` secrets exist ([VPS backup path](../../deploy/vps/README.md)) |
 | `deep-qa.yml` | Isolated nightly QA | Daily at 20:17 UTC (01:47 IST); manual dispatch; pushes to six `codex/qa-*` branches | Nothing |
 | `weekly-reliability.yml` | Isolated weekly reliability baseline | Saturdays at 20:41 UTC (Sundays 02:11 IST); manual dispatch; pushes to `codex/qa-nightly-reliability` | Nothing |
 

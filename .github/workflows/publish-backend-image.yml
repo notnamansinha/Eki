@@ -2,8 +2,9 @@ name: Publish backend image
 
 # Backup deployment path (not used by the Cloud Run staging deploy): publishes
 # the backend image to Docker Hub so any Docker host, such as a VPS, can pull
-# it. It runs only after "Production verification" succeeds on main, and it
-# does nothing until the DOCKERHUB_* secrets exist, so merging it is safe.
+# it. It runs only after "Production verification" succeeds on a push to main,
+# or on a manual dispatch from main, and it does nothing until the DOCKERHUB_*
+# secrets exist, so merging it is safe. See deploy/vps/README.md.
 on:
   workflow_run:
     workflows: ["Production verification"]
@@ -20,17 +21,29 @@ concurrency:
 
 jobs:
   publish:
-    # Manual runs publish the dispatched commit; automatic runs only follow a green main.
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    # The branches filter matches head_branch only, and a pull request from a fork
+    # branch named "main" also reports head_branch main. Publish only a green push
+    # in this repository, or a manual dispatch from main, as deploy.yml does.
+    if: >
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_branch == 'main' &&
+       github.event.workflow_run.head_repository.full_name == github.repository) ||
+      (github.event_name == 'workflow_dispatch' &&
+       github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
-      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
-      SOURCE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+      SOURCE_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
     steps:
+      # Docker Hub secrets reach only this step and the push step, never the
+      # build or the third-party scan action.
       - name: Check for Docker Hub credentials
         id: creds
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
         run: |
           if [ -n "$DOCKERHUB_USERNAME" ] && [ -n "$DOCKERHUB_TOKEN" ]; then
             echo "enabled=true" >> "$GITHUB_OUTPUT"
@@ -38,6 +51,19 @@ jobs:
             echo "::notice::DOCKERHUB_USERNAME / DOCKERHUB_TOKEN are not set; skipping publish."
             echo "enabled=false" >> "$GITHUB_OUTPUT"
           fi
+      - name: Refuse a commit that main does not contain
+        if: steps.creds.outputs.enabled == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # A tag push reports the tag name as head_branch, and tags have no ruleset,
+          # so a tag named "main" could satisfy the condition above. Compare against
+          # heads/main, the branch: "identical" or "ahead" means main contains the commit.
+          status="$(gh api "repos/${GITHUB_REPOSITORY}/compare/${SOURCE_SHA}...heads/main" --jq .status)"
+          case "$status" in
+            identical|ahead) echo "${SOURCE_SHA} is on main (${status})." ;;
+            *) echo "::error::${SOURCE_SHA} is not on main (compare status: ${status}); refusing to publish."; exit 1 ;;
+          esac
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: steps.creds.outputs.enabled == 'true'
         with:
@@ -45,22 +71,26 @@ jobs:
           persist-credentials: false
       - name: Build backend image
         if: steps.creds.outputs.enabled == 'true'
-        run: |
-          image="${DOCKERHUB_USERNAME}/eki-backend"
-          docker build -f backend/Dockerfile -t "${image}:${SOURCE_SHA}" -t "${image}:latest" .
+        run: docker build -f backend/Dockerfile -t "eki-backend:${SOURCE_SHA}" .
       - name: Scan image for high-severity vulnerabilities
         if: steps.creds.outputs.enabled == 'true'
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          image-ref: ${{ env.DOCKERHUB_USERNAME }}/eki-backend:${{ env.SOURCE_SHA }}
+          image-ref: eki-backend:${{ env.SOURCE_SHA }}
           format: table
           exit-code: "1"
           severity: CRITICAL,HIGH
       - name: Push to Docker Hub
         if: steps.creds.outputs.enabled == 'true'
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
         run: |
           image="${DOCKERHUB_USERNAME}/eki-backend"
+          docker tag "eki-backend:${SOURCE_SHA}" "${image}:${SOURCE_SHA}"
+          docker tag "eki-backend:${SOURCE_SHA}" "${image}:latest"
           printf '%s' "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
+          trap 'docker logout' EXIT
           docker push "${image}:${SOURCE_SHA}"
           docker push "${image}:latest"
           {
