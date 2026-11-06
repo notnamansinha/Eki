@@ -214,11 +214,9 @@ describe("admin service creation", () => {
     const card = (name: string) => within(screen.getByText(name, { selector: "p" }).closest("[data-fleet-card]") as HTMLElement);
     const live = card("QA bus"), paused = card("qa-bus-2");
     expect((live.getByRole("button", { name: "Increase delay by 1 minutes for qa-bus" }) as HTMLButtonElement).disabled).toBe(false);
-    expect((live.getByRole("button", { name: "Boarding code" }) as HTMLButtonElement).disabled).toBe(false);
-    expect(live.queryByText("Delay and boarding code return when the receiver reports again.")).toBeNull();
+    expect(live.queryByText("Delay returns when the receiver reports again.")).toBeNull();
     expect((paused.getByRole("button", { name: "Increase delay by 1 minutes for qa-bus-2" }) as HTMLButtonElement).disabled).toBe(true);
-    expect((paused.getByRole("button", { name: "Boarding code" }) as HTMLButtonElement).disabled).toBe(true);
-    expect(paused.getByText("Delay and boarding code return when the receiver reports again.")).toBeTruthy();
+    expect(paused.getByText("Delay returns when the receiver reports again.")).toBeTruthy();
     // Ending the stale ride stays available as the recovery action.
     expect(paused.getByRole("button", { name: "End ride early" })).toBeTruthy();
   });
@@ -230,14 +228,23 @@ describe("admin service creation", () => {
     const user = userEvent.setup(); const view = render(<DashboardPanel />);
     await user.click(screen.getByText("QA bus").closest("button")!);
     const delay = () => screen.getByRole("button", { name: "Increase delay by 1 minutes for qa-bus" }) as HTMLButtonElement;
-    const boarding = () => screen.getByRole("button", { name: "Boarding code" }) as HTMLButtonElement;
-    expect([delay().disabled, boarding().disabled]).toEqual([true, true]);
-    expect(screen.getByText("Delay and boarding code return when the receiver reports again.")).toBeTruthy();
+    expect(delay().disabled).toBe(true);
+    expect(screen.getByText("Delay returns when the receiver reports again.")).toBeTruthy();
     state.entries = at(0);
     view.rerender(<DashboardPanel />);
-    expect([delay().disabled, boarding().disabled]).toEqual([false, false]);
-    expect(screen.queryByText("Delay and boarding code return when the receiver reports again.")).toBeNull();
+    expect(delay().disabled).toBe(false);
+    expect(screen.queryByText("Delay returns when the receiver reports again.")).toBeNull();
     expect(markerColour("qa-bus")).toBe(cssColour("#FBBF24"));
+  });
+  it("offers no boarding code on a live ride now that passengers board without one (25 Oct 2026)", async () => {
+    state.entries = [{ ...fixtureBus("forward") } as ActiveBusEntry];
+    const user = userEvent.setup(); render(<DashboardPanel />);
+    await user.click(screen.getByRole("button", { expanded: false }));
+    const card = within(screen.getByText("QA bus", { selector: "p" }).closest("[data-fleet-card]") as HTMLElement);
+    expect((card.getByRole("button", { name: "Increase delay by 1 minutes for qa-bus" }) as HTMLButtonElement).disabled).toBe(false);
+    expect(card.getByRole("button", { name: "End ride early" })).toBeTruthy();
+    expect(card.queryByRole("button", { name: /boarding code/i })).toBeNull();
+    expect(card.queryByText(/boarding code/i)).toBeNull();
   });
   it("does not count a ride without confirmed receiver presence as live service", async () => {
     state.entries = [{ ...fixtureBus("forward"), deviceState: undefined } as unknown as ActiveBusEntry];
@@ -247,7 +254,6 @@ describe("admin service creation", () => {
     expect(markerColour("qa-bus")).toBe(cssColour("#FB923C"));
     await user.click(screen.getByText("QA bus").closest("button")!);
     expect((screen.getByRole("button", { name: "Increase delay by 1 minutes for qa-bus" }) as HTMLButtonElement).disabled).toBe(true);
-    expect((screen.getByRole("button", { name: "Boarding code" }) as HTMLButtonElement).disabled).toBe(true);
   });
   it("centers the bus glyph on its coordinate while its label stays outside the anchor box", () => {
     state.entries = [{ busId: "qa-bus", routeId: "qa-route", lat: 23, lng: 72, timestamp: Date.now(), deviceState: "online", motionState: "stopped", speed: 0 }];

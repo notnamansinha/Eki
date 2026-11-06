@@ -23,7 +23,7 @@ import { serverNow } from "@/lib/serverClock";
 import {
   Activity, Navigation2, Clock, AlertTriangle,
   TrendingUp, X, ChevronDown, ChevronUp,
-  Eye, Wifi, WifiOff, MessageCircle, TicketCheck,
+  Eye, Wifi, WifiOff, MessageCircle,
 } from "lucide-react";
 import ConfirmModal from "@/components/ui/ConfirmModal";
 import { useDialogFocus } from "@/hooks/useDialogFocus";
@@ -73,7 +73,7 @@ function isServicePaused(entry: ActiveBusEntry): boolean {
   return Boolean(entry.sessionId) && entry.tripState !== "completed" &&
     (entry.deviceState !== "online" || isLiveBusSignalLost(liveBusFreshnessTimestamp(entry)));
 }
-/** Delay and boarding-code changes act on a live ride only. */
+/** Delay changes act on a live ride only. */
 function isLiveService(entry: ActiveBusEntry): boolean {
   return isActiveService(entry) && !isServicePaused(entry);
 }
@@ -382,8 +382,8 @@ function BusMarker({
 /* â”€â”€ Fleet card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 function FleetCard({
   entry, buses, routes, drivers,
-  onSelect, selected, onChangeDelay, delayPending, boardingCode,
-  onLoadBoardingCode, onOpenChat, canChat,
+  onSelect, selected, onChangeDelay, delayPending,
+  onOpenChat, canChat,
   onEndRide,
 }: {
   entry: ActiveBusEntry;
@@ -394,8 +394,6 @@ function FleetCard({
   selected: boolean;
   onChangeDelay: (entry: ActiveBusEntry, delta: number) => void;
   delayPending: boolean;
-  boardingCode?: string;
-  onLoadBoardingCode: (entry: ActiveBusEntry) => void;
   onOpenChat: (entry: ActiveBusEntry) => void;
   canChat: boolean;
   onEndRide: (entry: ActiveBusEntry) => void;
@@ -572,17 +570,8 @@ function FleetCard({
                 </button>
               ))}
             </div>
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                disabled={!isLiveService(entry) || !entry.sessionId}
-                onClick={() => onLoadBoardingCode(entry)}
-                className="flex min-h-10 items-center gap-2 rounded-xl border border-ui-line bg-ui-soft px-3 text-xs font-bold text-ui-ink disabled:opacity-40"
-              >
-                <TicketCheck className="size-4" />
-                {boardingCode ? `${boardingCode.slice(0, 4)}-${boardingCode.slice(4)}` : "Boarding code"}
-              </button>
-              {canEndRide && (
+            {canEndRide && (
+              <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
                   onClick={() => onEndRide(entry)}
@@ -591,10 +580,10 @@ function FleetCard({
                   <X className="size-4" aria-hidden="true" />
                   End ride early
                 </button>
-              )}
-            </div>
+              </div>
+            )}
             {isActiveService(entry) && isServicePaused(entry) && (
-              <p className="text-xs text-ui-warning">Delay and boarding code return when the receiver reports again.</p>
+              <p className="text-xs text-ui-warning">Delay returns when the receiver reports again.</p>
             )}
             {hasValidBusCoordinates(entry.lat, entry.lng) && (
               <p className="text-xs text-ui-quiet tabular-nums">
@@ -645,7 +634,6 @@ export default function DashboardPanel() {
   const resumeKeys = useRef(new Map<string, string>());
   // Per ride: one bus finishing must not unlock another bus's in-flight change.
   const [delayPending, setDelayPending] = useState<ReadonlySet<string>>(() => new Set());
-  const [boardingCodes, setBoardingCodes] = useState<Record<string, string>>({});
   const [chatEntry, setChatEntry] = useState<ActiveBusEntry | null>(null);
   const [endRideEntry, setEndRideEntry] = useState<ActiveBusEntry | null>(null);
   const [endRidePending, setEndRidePending] = useState(false);
@@ -735,20 +723,6 @@ export default function DashboardPanel() {
         next.delete(operationId);
         return next;
       });
-    }
-  };
-
-  const loadBoardingCode = async (entry: ActiveBusEntry) => {
-    if (!entry.sessionId) return;
-    try {
-      const result = await requestAdmin<{ boardingCode?: string }>(
-        `/api/sessions/${encodeURIComponent(entry.sessionId)}/boarding-code`,
-        { method: "POST", validateResponse: value => isApiRecord(value) && value.sessionId === entry.sessionId && typeof value.boardingCode === "string" && /^[A-Z0-9]{8}$/.test(value.boardingCode) },
-      );
-      if (!result.boardingCode) throw new Error("Boarding code was not returned.");
-      setBoardingCodes((current) => ({ ...current, [entry.sessionId as string]: result.boardingCode as string }));
-    } catch (error) {
-      setArmStatus(errorMessage(error));
     }
   };
 
@@ -935,8 +909,6 @@ export default function DashboardPanel() {
                 onSelect={() => handleSelectBus(entry)}
                 onChangeDelay={(ride, delta) => void changeDelay(ride, delta)}
                 delayPending={delayPending.has(`${entry.busId}_${entry.routeId}`)}
-                boardingCode={entry.sessionId ? boardingCodes[entry.sessionId] : undefined}
-                onLoadBoardingCode={(ride) => void loadBoardingCode(ride)}
                 onOpenChat={setChatEntry}
                 canChat={Boolean(user?.uid)}
                 onEndRide={setEndRideEntry}
