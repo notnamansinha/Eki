@@ -78,3 +78,13 @@ cards, adding the line code and gold rule only when the window is at least
 rail and AU Red terminals. Keep text at 12px or more, touch targets at 44px,
 and pair every colour signal with text or an icon. Show location use in a
 notice before the browser prompt; tracking must work without location.
+
+## Phone Live routes sheet (2026-11-06)
+
+On touch screens the Live routes panel rests as a peek above the tab bar
+(date, title, route count and hint) so the passenger artwork shows in full.
+The whole peek is one button ("Show live routes" / "Hide live routes") that
+raises the list; while lowered the list is inert. Choosing a route leaves the
+sheet raised for Back. In portrait the artwork slides up 30% while the sheet
+is raised, so the band above it frames the passengers and trees rather than
+the ceiling straps. Pointer devices keep the centred panel with no toggle.

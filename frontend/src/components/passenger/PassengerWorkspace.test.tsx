@@ -364,3 +364,51 @@ describe("passenger tab switching and footer", () => {
     expect(frame.classList.contains("passenger-nav-frame")).toBe(true);
   });
 });
+describe("phone Live routes sheet", () => {
+  // jsdom has no matchMedia; a stub decides whether this is a touch screen.
+  const useTouchScreen = (touch: boolean) => vi.stubGlobal("matchMedia", (query: string) => ({
+    matches: touch && query === "not all and (any-pointer: fine)",
+    media: query,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+  }));
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("rests low on touch screens, keeping the hidden list out of reach until the peek is tapped", async () => {
+    useTouchScreen(true);
+    render(<PassengerWorkspace />); const user = userEvent.setup();
+    const card = await screen.findByRole("button", { name: "Track QA route" });
+    const toggle = screen.getByRole("button", { name: "Show live routes" });
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(card.closest("[inert]")).not.toBeNull();
+    expect(document.getElementById(toggle.getAttribute("aria-controls") ?? "")?.contains(card)).toBe(true);
+
+    await user.click(toggle);
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    expect(toggle.getAttribute("aria-label")).toBe("Hide live routes");
+    expect(card.closest("[inert]")).toBeNull();
+    expect(card.closest("[data-home-sheet]")?.getAttribute("data-home-sheet")).toBe("open");
+
+    await user.click(toggle);
+    expect(toggle.getAttribute("aria-label")).toBe("Show live routes");
+    expect(card.closest("[inert]")).not.toBeNull();
+  });
+
+  it("returns from tracking to the raised list with the chosen route", async () => {
+    useTouchScreen(true);
+    render(<PassengerWorkspace />); const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Show live routes" }));
+    await user.click(await screen.findByRole("button", { name: "Track QA route" }));
+    await user.click(await screen.findByRole("button", { name: "Back to home" }));
+    const card = await screen.findByRole("button", { name: "Track QA route" });
+    expect(card.closest("[inert]")).toBeNull();
+    expect(screen.getByRole("button", { name: "Hide live routes" }).getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("never hides the list on pointer devices", async () => {
+    useTouchScreen(false);
+    render(<PassengerWorkspace />);
+    const card = await screen.findByRole("button", { name: "Track QA route" });
+    expect(card.closest("[inert]")).toBeNull();
+  });
+});

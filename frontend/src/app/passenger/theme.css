@@ -433,6 +433,67 @@
   .passenger-layout .pp-home-heading { padding-bottom: 0.5rem; }
 }
 
+/* Phones: the Live routes sheet rests as a peek above the tab bar so the
+   painting shows, and the whole peek raises or lowers it. The clip keeps the
+   lowered list from showing through the translucent tab bar. */
+.pp-home-sheet-toggle { display: none; }
+
+@media not all and (any-pointer: fine) {
+  .passenger-layout .passenger-home-panel {
+    clip-path: inset(-40px 0 0);
+    transition: transform 0.45s cubic-bezier(0.32, 0.72, 0, 1), clip-path 0.45s cubic-bezier(0.32, 0.72, 0, 1);
+  }
+
+  .passenger-layout .passenger-home-panel[data-sheet="closed"] {
+    clip-path: inset(-40px 0 calc(100% - var(--home-peek, 9rem)));
+    transform: translateY(calc(100% - var(--home-peek, 9rem)));
+  }
+
+  .pp-home-sheet-toggle {
+    position: absolute;
+    inset: 0 0 auto;
+    z-index: 2;
+    display: block;
+    height: var(--home-peek, 9rem);
+    border-radius: var(--pp-panel-radius) var(--pp-panel-radius) 0 0;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .pp-home-sheet-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: -4px; }
+
+  .pp-home-sheet-chevron {
+    position: absolute;
+    top: 1.125rem;
+    right: 1.25rem;
+    width: 1.25rem;
+    height: 1.25rem;
+    color: var(--text-secondary);
+    transition: transform 0.3s ease;
+  }
+
+  .passenger-home-panel[data-sheet="open"] .pp-home-sheet-chevron { transform: rotate(180deg); }
+
+  /* The peek says how many routes are live before it is raised. */
+  .passenger-layout .passenger-home-title {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    column-gap: 0.75rem;
+  }
+
+  .passenger-layout .passenger-home-count { display: inline; color: var(--text-secondary); font-size: 0.875rem; }
+}
+
+/* While the sheet is raised in portrait, the painting slides up with it so the
+   band above the sheet shows the passengers and the trees outside, not just
+   the ceiling straps. The sheet is opaque, so the vacated bottom never shows. */
+@media (not (any-pointer: fine)) and (orientation: portrait) {
+  .passenger-layout .transit-artwork img { transition: transform 0.45s cubic-bezier(0.32, 0.72, 0, 1); }
+  .passenger-layout:has(.passenger-home[data-home-sheet="open"][aria-hidden="false"]) .transit-artwork img { transform: translateY(-30%); }
+}
+
 /* Pointer devices: paper cards with the line code and a circled arrow. */
 @media (any-pointer: fine) {
   .passenger-layout [data-passenger-route]:active .passenger-live-route-card { transform: scale(0.985); }
@@ -989,4 +1050,8 @@
   :is(.pp-btn-primary, .pp-btn-secondary, .pp-icon-button, .pp-map-button):active,
   .pp-star:hover,
   .pp-list-row:hover .pp-list-chevron { transform: none; }
+
+  .passenger-layout .passenger-home-panel,
+  .passenger-layout .transit-artwork img,
+  .pp-home-sheet-chevron { transition: none; }
 }
