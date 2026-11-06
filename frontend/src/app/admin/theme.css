@@ -19,6 +19,10 @@
   letter-spacing: normal;
 }
 
+/* globals.css sets `* { border-color }` outside any layer, which beats the
+   border-brand-accent/40 utility, so mark new feedback here. */
+.admin-layout article[data-status="new"] { border-color: color-mix(in oklab, var(--accent) 40%, transparent); }
+
 .admin-navigation {
   background: var(--brand-surface-gradient), rgb(249 248 246 / 0.94);
   backdrop-filter: blur(20px) saturate(180%);
