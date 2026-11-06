@@ -781,6 +781,14 @@
   .pp-list-icon { border-radius: 35.8%; corner-shape: squircle; }
 }
 
+/* A little more room, in iOS Settings proportions: 56px rows, 32px glyph
+   tiles, hairlines that start at the label, and 24px between blocks. */
+.pp-page-inner { gap: 1.5rem; }
+.pp-profile-card { gap: 1.125rem; padding: 1.25rem; }
+.pp-list-row { min-height: 3.5rem; gap: 1rem; padding-block: 0.75rem; }
+.pp-list-icon { width: 2rem; height: 2rem; }
+.pp-list > * + *::before { left: 4rem; }
+
 /* iOS weights. Roboto Regular renders far lighter than SF on most screens, so
    rows use Medium; names, chips and buttons use Bold, the heaviest weight
    loaded, where iOS uses Semibold. */

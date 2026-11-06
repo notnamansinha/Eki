@@ -98,17 +98,17 @@ export default function AccountTab() {
           </div>
         </section>
 
-        <div className="pp-list">
-          {user?.role === "admin" && (
-            <WorkspaceLink href="/admin" className="pp-list-row" data-tone="accent">
-              <span className="pp-list-icon" data-tone="accent">
-                <ShieldUser className="w-[18px] h-[18px]" aria-hidden="true" />
-              </span>
-              <span className="pp-list-label">Admin panel</span>
-              <ChevronRight className="pp-list-chevron w-4 h-4" aria-hidden="true" />
-            </WorkspaceLink>
-          )}
-          {user && (
+        {user && (
+          <div className="pp-list">
+            {user.role === "admin" && (
+              <WorkspaceLink href="/admin" className="pp-list-row" data-tone="accent">
+                <span className="pp-list-icon" data-tone="accent">
+                  <ShieldUser className="w-[18px] h-[18px]" aria-hidden="true" />
+                </span>
+                <span className="pp-list-label">Admin panel</span>
+                <ChevronRight className="pp-list-chevron w-4 h-4" aria-hidden="true" />
+              </WorkspaceLink>
+            )}
             <button type="button" className="pp-list-row" onClick={() => setShowFeedback(true)}>
               <span className="pp-list-icon">
                 <MessageSquareText className="w-[18px] h-[18px]" aria-hidden="true" />
@@ -116,8 +116,11 @@ export default function AccountTab() {
               <span className="pp-list-label">Send feedback</span>
               <ChevronRight className="pp-list-chevron w-4 h-4" aria-hidden="true" />
             </button>
-          )}
+          </div>
+        )}
 
+        {/* Sign out and Delete account sit in their own group, apart from everyday actions. */}
+        <div className="pp-list">
           {user ? (
             <>
               <button type="button" className="pp-list-row" data-tone="danger" onClick={() => setShowLogoutConfirm(true)}>
