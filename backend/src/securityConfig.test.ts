@@ -775,7 +775,9 @@ describe("production security configuration", () => {
     expect(boarding).toContain('Authorization: `Bearer ${token}`');
     expect(boarding).toContain("position.coords.accuracy");
     expect(boarding).toContain("updatingExistingPassenger ? Promise.resolve(null)");
-    expect(operations).toContain("/boarding-code");
+    // Live Ops no longer issues boarding codes (passengers board without one);
+    // the endpoint above stays authenticated for older clients.
+    expect(operations).not.toContain("/boarding-code");
     expect(cspBuild).toContain("backendOrigin");
     expect(cspBuild).toContain("const connectSources");
     expect(cspBuild).not.toContain("currentSources");
