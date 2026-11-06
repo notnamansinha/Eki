@@ -1,0 +1,12 @@
+# Backup way to run the Eki backend on any Docker host (VPS).
+# Cloud Run is the primary staging host; see deploy/vps/README.md.
+services:
+  backend:
+    # Pin a commit tag in real use, for example yourname/eki-backend:<sha>.
+    image: ${EKI_BACKEND_IMAGE:?set EKI_BACKEND_IMAGE, e.g. yourname/eki-backend:latest}
+    pull_policy: always
+    restart: unless-stopped
+    env_file: backend.env # copy backend/.env.example to deploy/vps/backend.env and fill it in
+    # Bind to localhost only; put a TLS reverse proxy (Caddy or nginx) in front.
+    ports:
+      - "127.0.0.1:8080:8080"
