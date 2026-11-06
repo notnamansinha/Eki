@@ -316,11 +316,25 @@ function PassengerMapInner({
   useEffect(() => {
     if (!navigator.geolocation) return;
     let active = true;
-    const fallback: LocationChoice = locationDeclined() ? "declined" : "ask";
+    let status: PermissionStatus | undefined;
+    const fallback = (): LocationChoice => locationDeclined() ? "declined" : "ask";
+    // A blocked permission cannot reopen the browser prompt, so do not offer it.
+    const apply = (state: PermissionState | undefined) =>
+      setLocationChoice(state === "granted" ? "allowed" : state === "denied" ? "declined" : fallback());
+    // Follow changes made in browser settings while the map stays open.
+    const onChange = () => { if (active) apply(status?.state); };
     Promise.resolve(navigator.permissions?.query({ name: "geolocation" }))
-      .then(status => { if (active) setLocationChoice(status?.state === "granted" ? "allowed" : fallback); })
-      .catch(() => { if (active) setLocationChoice(fallback); });
-    return () => { active = false; };
+      .then(result => {
+        if (!active) return;
+        status = result;
+        apply(result?.state);
+        result?.addEventListener?.("change", onChange);
+      })
+      .catch(() => { if (active) setLocationChoice(fallback()); });
+    return () => {
+      active = false;
+      status?.removeEventListener?.("change", onChange);
+    };
   }, []);
   const declineLocation = () => {
     try {
@@ -731,14 +745,14 @@ function PassengerMapInner({
             const visitLabel = stopVisitLabel(visit)?.toLowerCase();
             const showLabel = isTarget || isAt || i === activeBusProgress?.nextStopIndex || stop.id === inspectedStopId;
             return <AdvancedMarker key={`stop-${stop.id || i}`} position={{lat:stop.lat,lng:stop.lng}} anchorLeft="-50%" anchorTop="-50%" zIndex={isAt ? 30 : undefined}>
-              <button type="button" aria-label={`Show stop ${stop.name}`} title={`${stop.name}${visitLabel ? ` — ${visitLabel}` : ""}`}
+              <button type="button" aria-label={`Show stop ${stop.name}${visitLabel ? ` — ${visitLabel}` : ""}`} title={`${stop.name}${visitLabel ? ` — ${visitLabel}` : ""}`}
                 onClick={() => setInspectedStopId(stop.id)} onFocus={() => setInspectedStopId(stop.id)}
                 // Inspecting a stop is not a manual pan; keep following the bus.
                 onPointerDown={event => event.stopPropagation()} onTouchStart={event => event.stopPropagation()}
                 className="relative flex size-11 items-center justify-center">
-                <span aria-label={visitLabel ? `${stop.name} — ${visitLabel}` : undefined} className="flex size-6 items-center justify-center rounded-full border-2 text-[12px] font-bold text-white shadow-sm"
-                  style={{background:isAt ? "var(--status-live)" : isPast ? "#626666" : "var(--accent)",
-                    borderColor: "white", borderStyle: visit === "unobserved" ? "dashed" : "solid",
+                <span className="pp-stop-dot flex size-6 items-center justify-center rounded-full border-2 text-[12px] font-bold shadow-sm"
+                  data-state={isAt ? "here" : isPast ? "passed" : "upcoming"}
+                  style={{borderStyle: visit === "unobserved" ? "dashed" : "solid",
                     outline:isTarget ? "2px solid var(--text-primary)" : undefined, outlineOffset: 1}}>{stopLabel(i)}</span>
                 {showLabel && <span className="pp-stop-label">{isAt ? `At ${stop.shortName || stop.name}` : isPast ? `${stop.shortName || stop.name} · Passed` : stop.shortName || stop.name}</span>}
               </button>

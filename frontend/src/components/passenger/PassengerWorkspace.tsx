@@ -106,6 +106,14 @@ export default function PassengerWorkspace() {
   }, []);
 
   useEffect(() => {
+    // Download the tracking map's code while the passenger picks a route, without
+    // mounting it: Google Maps loads only when its APIProvider mounts. A lost
+    // connection at the moment of Track then cannot fail the import and unmount
+    // the workspace. A failed download here is retried by Track itself.
+    void import("@/components/maps/PassengerTrackingMap").catch(() => {});
+  }, []);
+
+  useEffect(() => {
     const syncSection = () => {
       const hash = window.location.hash;
       showSection(hash === "#routes" ? "routes" : hash === "#profile" ? "profile" : "home");
