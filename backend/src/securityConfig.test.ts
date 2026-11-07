@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -962,6 +962,29 @@ describe("production security configuration", () => {
     expect(headers.get("X-Content-Type-Options")).toBe("nosniff");
     expect(headers.get("X-Frame-Options")).toBe("DENY");
     expect(headers.get("Referrer-Policy")).toBe("strict-origin-when-cross-origin");
+  });
+
+  it("keeps exactly the exported pages out of HTTP caches", () => {
+    const firebase = JSON.parse(workspaceFile("firebase.json"));
+    const pageRule = (firebase.hosting.headers as Array<{
+      source: string;
+      headers: Array<{ key: string; value: string }>;
+    }>).find((entry) => /^\/\{[^}]*\}$/.test(entry.source));
+    const cacheControl = pageRule?.headers.find(({ key }) => key === "Cache-Control")?.value;
+    const covered = new Set(pageRule?.source.slice(2, -1).split(","));
+    // Each top-level folder with a page.tsx exports one HTML page (cleanUrls
+    // serves it without .html); "" is the landing page.
+    const pages = new Set(
+      readdirSync(resolve(__dirname, "../../frontend/src/app"), { withFileTypes: true })
+        .filter((entry) => entry.isDirectory() &&
+          existsSync(resolve(__dirname, "../../frontend/src/app", entry.name, "page.tsx")))
+        .map((entry) => entry.name)
+        .concat(""),
+    );
+
+    expect(firebase.hosting.cleanUrls).toBe(true);
+    expect(cacheControl).toBe("no-cache, no-store, must-revalidate");
+    expect([...covered].sort()).toEqual([...pages].sort());
   });
 
   it("ships every Firestore index manifest referenced by Firebase", () => {

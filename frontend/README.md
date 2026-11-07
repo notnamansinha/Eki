@@ -209,7 +209,7 @@ For work on this package:
 
 With `EKI_STRICT_PRODUCTION_BUILD=true`, which `npm run build:production` sets, `next.config.ts` fails if any required `NEXT_PUBLIC_*` value is missing, or if `NEXT_PUBLIC_FIREBASE_DATABASE_URL` or `NEXT_PUBLIC_BACKEND_URL` is not a non-local HTTPS URL.
 
-Firebase Hosting serves `frontend/out` with `cleanUrls: true`. The header rule for `/`, `/admin`, `/driver`, `/feedback` and `/passenger` sends `Cache-Control: no-cache, no-store, must-revalidate`; it does not list `/install`. `/_next/static/**` is sent as immutable for one year, and images for 30 days with one day of stale-while-revalidate. `/sw.js` is never cached and carries `Service-Worker-Allowed: /`. The release procedure is in [CI/CD and releases](../docs/operations/CI_CD_AND_RELEASES.md).
+Firebase Hosting serves `frontend/out` with `cleanUrls: true`. The header rule for `/`, `/admin`, `/feedback`, `/install` and `/passenger` sends `Cache-Control: no-cache, no-store, must-revalidate`. It lists every top-level page folder in `src/app`, and `backend/src/securityConfig.test.ts` fails when a new page is not added to it. `/_next/static/**` is sent as immutable for one year, and images for 30 days with one day of stale-while-revalidate. `/sw.js` is never cached and carries `Service-Worker-Allowed: /`. The release procedure is in [CI/CD and releases](../docs/operations/CI_CD_AND_RELEASES.md).
 
 ## 12. Next.js 16 specifics
 

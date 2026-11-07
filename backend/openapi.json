@@ -5047,7 +5047,7 @@
           "Sessions"
         ],
         "summary": "Return the legacy session boarding code",
-        "description": "Legacy code for older clients and Live Ops. An administrator with current authority, or the operator whose driverId and assignedBusId claims match the session; the session must be armed or active (otherwise 403). Creates on the first call, then returns, the same eight-character 40-bit code stored on the session record. It never appears in passenger RTDB. Passenger boarding does not use the code.",
+        "description": "Legacy code for older clients; the web app, including Live Ops, does not call this operation. An administrator with current authority, or the operator whose driverId and assignedBusId claims match the session; the session must be armed or active (otherwise 403). Creates on the first call, then returns, the same eight-character 40-bit code stored on the session record. It never appears in passenger RTDB. Passenger boarding does not use the code.",
         "security": [
           {
             "FirebaseBearer": []
@@ -8510,7 +8510,7 @@
           "Sessions"
         ],
         "summary": "Return the legacy session boarding code",
-        "description": "Legacy code for older clients and Live Ops. An administrator with current authority, or the operator whose driverId and assignedBusId claims match the session; the session must be armed or active (otherwise 403). Creates on the first call, then returns, the same eight-character 40-bit code stored on the session record. It never appears in passenger RTDB. Passenger boarding does not use the code.",
+        "description": "Legacy code for older clients; the web app, including Live Ops, does not call this operation. An administrator with current authority, or the operator whose driverId and assignedBusId claims match the session; the session must be armed or active (otherwise 403). Creates on the first call, then returns, the same eight-character 40-bit code stored on the session record. It never appears in passenger RTDB. Passenger boarding does not use the code.",
         "security": [
           {
             "FirebaseBearer": []
