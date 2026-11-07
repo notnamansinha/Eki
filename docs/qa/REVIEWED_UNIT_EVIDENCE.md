@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-TST-012 | 1.0 | Current | 2026-10-30 |
+| EKI-TST-012 | 1.1 | Current | 2026-11-07 |
 
 ## 1. Purpose
 
@@ -19,11 +19,12 @@ Node 24 and locked dependencies are enough; no Java, browser or credential is ne
 
 ## 3. Selection and mappings
 
-`qa/reviewed-unit-test-map.mjs` holds the file list for each workspace (`reviewedUnitFiles`) and the case links (`reviewedUnitTestMap`). The runner blocks the family when the set of files Vitest reports differs from that list.
+`qa/reviewed-unit-test-map.mjs` exports the case links (`reviewedUnitTestMap`) and the file list for each workspace (`reviewedUnitFiles`). The case links merge the file's own rows with `qa/component-test-map.mjs`, `qa/http-unit-test-map.mjs` and `qa/critical-source-test-map.mjs`; the file list is every test file those links name. The runner blocks the family when the set of files Vitest reports differs from that list.
 
 The selected files use pure functions, mocked SDKs and datastores, loopback Express handlers with mocked authentication, or React components mounted in jsdom. Mapped requirements fall in the AUTH, BOARD, TRIP, DATA, PAX, MAP, FEED, HIST, SEC, SET, CHAT, FLEET and OBS categories. Examples:
 
 - authentication token verification, caching and readiness, including `AuthProvider` and `useAuth` mounted in jsdom;
+- current administrator authority in handlers shared with operators and passengers: `backend/src/middleware/adminAuthority.test.ts`, and the ride status, boarding-code and early-end route tests that deny a revoked administrator;
 - boarding policy boundaries and the mounted boarding view, including preparation budgets with a controlled clock;
 - trip reducer transitions, ride progress history and lifecycle shutdown;
 - worker fencing, retention sweeps and privacy deletion queue recovery;
@@ -42,7 +43,7 @@ Mocks define what these tests cannot prove:
 
 | Area | Proven | Not proven |
 |---|---|---|
-| Authentication | Cache, coalescing, expiry and fresh privileged verification policy | Firebase revocation propagation in a deployment |
+| Authentication | Cache, coalescing, expiry and fresh privileged verification policy; current administrator authority for ride status, the boarding code and an early ride end | Firebase revocation propagation in a deployment |
 | Privacy | Scheduling bounds, recovery generations, refusal of operator and changed identities | Cloud deletion outcomes |
 | Trip reducer | Ordered state transitions | Worker persistence, field progression |
 | Components | Mounted state, selectors, Escape handling, late callbacks, account transitions | Chromium behaviour, real permissions, durable membership |

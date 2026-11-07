@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-ARC-003 | 3.1 | Current | 2026-11-06 |
+| EKI-ARC-003 | 3.2 | Current | 2026-11-07 |
 
 ## 1. Introduction
 
@@ -74,11 +74,11 @@ Figure 1. Packages and their dependencies. Arrows point from the caller to the m
 
 `server.ts` applies middleware in this order:
 
-1. Helmet with a deny-all content security policy, then CORS for the origins in `CORS_ORIGIN` (`server.ts:116`, `server.ts:134`).
-2. Browser ingress guard: 1000 requests per minute per IP. `OPTIONS`, `/health`, `/live` and device paths are exempt (`server.ts:135`, `backend/src/lib/browserAdmission.ts:19`). `TRACE` and `CONNECT` get `405`.
-3. Body parsers: 512 bytes for telemetry, 1 KiB for diagnostics, 64 KiB for route saves, 16 KiB for everything else (`server.ts:168`, `server.ts:172`, `server.ts:179`, `backend/src/lib/routeSaveBody.ts:12`).
-4. Browser admission on `/api`: Firebase token verification, then 200 reads and 30 mutations per minute per verified UID (`server.ts:180`, `browserAdmission.ts:26`). Device paths skip it and use their own limiters (Section 4.2).
-5. Route-specific limiters: route computation and Places per verified UID, route planning 30 per minute (`server.ts:148`).
+1. Helmet with a deny-all content security policy, then `Cache-Control: no-store` on every `/api` response, including rejections that no route handler reaches (a route that needs another policy sets its own header), then CORS for the origins in `CORS_ORIGIN` (`server.ts:116`, `server.ts:131`, `server.ts:143`).
+2. Browser ingress guard: 1000 requests per minute per IP. `OPTIONS`, `/health`, `/live` and device paths are exempt (`server.ts:144`, `backend/src/lib/browserAdmission.ts:19`). `TRACE` and `CONNECT` get `405`.
+3. Body parsers: 512 bytes for telemetry, 1 KiB for diagnostics, 64 KiB for route saves, 16 KiB for everything else (`server.ts:177`, `server.ts:181`, `server.ts:188`, `backend/src/lib/routeSaveBody.ts:12`).
+4. Browser admission on `/api`: Firebase token verification, then 200 reads and 30 mutations per minute per verified UID (`server.ts:189`, `browserAdmission.ts:26`). Device paths skip it and use their own limiters (Section 4.2).
+5. Route-specific limiters per verified UID: route computation 10 per minute (reads exempt), Places search 20 per minute and route planning 30 per minute (`backend/src/lib/routeComputeLimiter.ts:9`, `backend/src/routes/places.ts:21`, `server.ts:157`).
 6. Routers (Section 3.4).
 7. Terminal handlers: JSON `404` for unmatched paths, fixed `400`, `413` or `415` messages for parser and path errors, and an opaque logged `500` (`backend/src/lib/requestErrors.ts`).
 
@@ -98,8 +98,8 @@ All request budgets are divided by the replica shard factor (`backend/src/lib/ra
 | Module | Mount points | Responsibility | Collaborators |
 |---|---|---|---|
 | `devices.ts` | `/api/devices`, `/api/v2/devices` | Device telemetry and diagnostics ingestion, signed firmware manifest and install reservation, admin registry update and disable | `deviceTelemetryService`, `deviceDiagnostics`, `firmwareRelease` |
-| `shifts.ts` | `/api/shifts`, `/api/v2/ride-sessions` | Ride start and resume, delay, End ride early, message clear, terminal history deletion | `rideSessionStart`, `rideHistoryDeletion`, `userAuthorization` |
-| `sessions.ts` | `/api/sessions`, `/api/v2/ride-sessions` | Ride status for members, boarding code issue for operators, passenger boarding (no code needed; the passenger must be within 150 m of a fresh bus fix), chat messages | `boardingPolicy`, `chatRateLimit` |
+| `shifts.ts` | `/api/shifts`, `/api/v2/ride-sessions` | Ride start and resume, ride read, delay, End ride early, message clear, terminal history deletion | `rideSessionStart`, `rideHistoryDeletion`, `adminAuthority` |
+| `sessions.ts` | `/api/sessions`, `/api/v2/ride-sessions` | Ride status for members, boarding code issue for the assigned operator or an administrator (no web client calls it), passenger boarding (no code needed; the passenger must be within 150 m of a fresh bus fix), chat messages | `boardingPolicy`, `chatRateLimit`, `adminAuthority` |
 | `fleet.ts` | `/api/fleet`, `/api/v2/fleet-reconciliation-jobs` | Bus and driver administration with Auth claims and RTDB mirrors; fleet reconciliation and lock recovery | `fleetMutationLock`, `httpOperations`, `userAuthorization` |
 | `polyline.ts` | `/api/routes`, `/api/v2/routes`, `/api/v2/route-geometry-previews` | Route save with geometry, deletion, geometry read and preview operations | `lib/googleMaps`, `lib/routeSaveContract`, `routeGeometryReads`, `httpOperations` |
 | `plan.ts` | `/api/plan`, `/api/v2/routes/{routeId}/segments` | Route segment between two stops from stored geometry; no Google call | `lib/routeSegment` |
@@ -139,7 +139,7 @@ All request budgets are divided by the replica shard factor (`backend/src/lib/ra
 | `rideSessionStart.ts` | Idempotent ride start and resume, bus lock, live claim | `startAssignedService`, `RideSessionStartError` | Every replica |
 | `automaticServiceAdmission.ts` | Automatic ride start from telemetry | `scheduleAutomaticServiceAdmission` | Every replica |
 | `durableRideRecovery.ts`, `durableRideRecoveryPolicy.ts` | Restore a lock-owned ride onto a live node that lost its lifecycle | `restoreDurableRide` | Every replica and leader |
-| `tripStateEngine.ts` | Listens to `activeBuses`, runs the reducer, persists progress, completion, automatic turnaround, stale sweep and lifecycle replay | `startTripStateEngine` | Leader |
+| `tripStateEngine.ts` | Listens to `activeBuses`, runs the reducer, persists progress, completion, signal-loss history, automatic turnaround, stale sweep and lifecycle replay | `startTripStateEngine` | Leader |
 | `tripStateReducer.ts` | Pure stop progression and current-stop decision | `reduceTripState`, `visitedStopIndex` | Leader |
 | `tripStateLifecycle.ts` | Identifier and live-record normalization, shutdown draining | `normalizeLiveBusData`, `drainDynamicPromises` | Leader |
 | `rideProgressHistory.ts` | `stopsReached` entries with evidence | `missingStopHistory` | Leader |
@@ -237,7 +237,7 @@ The whole request has an 8 s response deadline and 5 s per dependency stage (`ba
 
 | Work | Runs on | Schedule | Bound | Source |
 |---|---|---|---|---|
-| Health probes of Firestore and RTDB | Every replica | 30 s | 5 s per probe; result fresh for 65 s | `server.ts:227`, `backend/src/lib/healthState.ts:39` |
+| Health probes of Firestore and RTDB | Every replica | 30 s | 5 s per probe; result fresh for 65 s | `server.ts:236`, `backend/src/lib/healthState.ts:39` |
 | Route catalog watcher | Every replica | Firestore listener | Entries cached 5 min, 1,000 routes | `backend/src/services/telemetryRouteService.ts:54` |
 | Matching scheduler | Every replica | Per accepted fix | 1 running and 1 newest waiting per node; 8 running, 256 waiting nodes, 5 s queue age | `telemetryRouteService.ts:1290`, `backend/src/lib/boundedKeyedExecutor.ts:43` |
 | Reroute scheduler | Every replica | On confirmed deviation | 2 running, 64 waiting nodes | `telemetryRouteService.ts:1335` |
@@ -258,7 +258,7 @@ Admission limits and their evidence are in [work admission](../operations/WORK_A
 
 ### 4.4 Shutdown
 
-On `SIGTERM` or `SIGINT`, `server.ts` stops the health timer and the route watcher, closes the HTTP server, and stops the workers and HTTP operations in parallel. It then drains matching, durable recovery, automatic start and telemetry export, and deletes the Firebase app (`server.ts:317`). The engine gives handlers 6 s and lifecycle writes 8 s in total (`tripStateEngine.ts:120`). A 10 s backstop forces exit, and the process exits 500 ms after the drains settle (`server.ts:315`, `server.ts:321`). An orderly shutdown releases the lease and keeps its generation (`workerCoordinator.ts:216`).
+On `SIGTERM` or `SIGINT`, `server.ts` stops the health timer and the route watcher, closes the HTTP server, and in parallel stops the workers and drains HTTP operations, fleet mutations and privacy deletions. It then drains matching, durable recovery, automatic start and telemetry export, and deletes the Firebase app (`server.ts:326`). The engine gives handlers 6 s and lifecycle writes 8 s in total (`tripStateEngine.ts:120`). A 10 s backstop forces exit, and the process exits 500 ms after the drains settle (`server.ts:330`, `server.ts:324`). An orderly shutdown releases the lease and keeps its generation (`workerCoordinator.ts:216`).
 
 ## 5. Frontend logical view
 
@@ -268,11 +268,12 @@ The frontend is a Next.js App Router project built as a static export.
 
 | Module | Responsibility | Collaborators |
 |---|---|---|
-| `layout.tsx`, `globals.css` | Root metadata, service worker registration, providers; design tokens and responsive layout | `components/Providers.tsx`, `ServiceWorkerRegistrar.tsx` |
-| `page.tsx` | Public landing page, Google sign-in and routing to a workspace. The sign-in button reads "Preparing sign-in…" until sign-in is usable; a slow restoration shows "Still checking your sign-in" with **Reload** instead of an access error | `hooks/useAuth.ts`, `lib/googleSignInFlow.ts` |
-| `passenger/` (`layout.tsx`, `loading.tsx`, `page.tsx`) | Passenger workspace behind `RoleGuard` for passenger, driver and admin roles | `components/passenger/PassengerWorkspace.tsx` |
-| `admin/` (`layout.tsx`, `loading.tsx`, `page.tsx`) | Admin shell with tabs: operations, routes, fleet, history, feedback, settings; `RoleGuard` for admin | `components/admin/*` |
+| `layout.tsx`, `globals.css`, `brand-theme.css` | Root metadata, the Roboto and Playfair Display font variables (self-hosted at build time by `next/font`), service worker registration, providers; design tokens and responsive layout. `globals.css` imports `brand-theme.css`, the palette, font and gradient tokens shared by Passenger and Admin, scoped to `:root:has(.passenger-layout, .admin-layout)` | `components/Providers.tsx`, `ServiceWorkerRegistrar.tsx` |
+| `page.tsx` | Public landing page over the shared `TransitArtwork`, Google sign-in and routing to a workspace. The sign-in button reads "Preparing sign-in…" until sign-in is usable; a slow restoration shows "Still checking your sign-in" with **Reload** instead of an access error | `hooks/useAuth.ts`, `lib/googleSignInFlow.ts`, `components/shared/TransitArtwork.tsx` |
+| `passenger/` (`layout.tsx`, `loading.tsx`, `page.tsx`, `theme.css`) | Passenger workspace behind `RoleGuard` for passenger, driver and admin roles, layered over `PassengerLoadingShell`; `theme.css` holds the passenger surface rules | `components/passenger/PassengerWorkspace.tsx`, `components/passenger/PassengerLoadingShell.tsx` |
+| `admin/` (`layout.tsx`, `loading.tsx`, `page.tsx`, `theme.css`) | Admin shell with tabs: operations (Live Ops), routes, fleet, history, feedback, settings; a tab switch asks first when the open panel has unsaved changes; `RoleGuard` for admin. `theme.css` holds the admin surface rules, including the dark tone of the Live Ops panel and of the tab bar while Live Ops is open | `components/admin/*`, `lib/unsavedChanges.ts` |
 | `feedback/` (`layout.tsx`, `page.tsx`) | Stand-alone admin feedback review | `components/admin/FeedbackPanel.tsx` |
+| `install/` (`page.tsx`, `InstallClient.tsx`) | `/install`: steps for adding Eki to the home screen, chosen by platform (installed, iOS Safari, another iOS browser with a **Copy link** button, Android with the browser install prompt when offered, desktop) | `lib/installPlatform.ts` |
 | `manifest.ts`, `robots.ts`, `sitemap.ts`, `icon.png`, `apple-icon.png` | Web app manifest and indexing metadata | `lib/siteMetadata.ts` |
 
 `RoleGuard` controls presentation only; the security boundary is the Firebase rules and the backend.
@@ -282,11 +283,11 @@ The frontend is a Next.js App Router project built as a static export.
 | Group | Modules | Responsibility |
 |---|---|---|
 | Root | `Providers.tsx`, `MapProviders.tsx`, `ServiceWorkerRegistrar.tsx`, `TelemetryTraceControls.tsx` | Auth provider; Maps API provider for the admin layout and the passenger tracking view, whose SDK script loads once per page; service worker update and one-time reload; opt-in telemetry trace controls |
-| `admin/` | `DashboardPanel.tsx`, `FleetManagementPanel.tsx`, `RouteManagementPanel.tsx`, `RideHistoryPanel.tsx`, `SettingsPanel.tsx`, `PassengerRoutesSettings.tsx`, `SettingsSection.tsx`, `FeedbackPanel.tsx`, `AdminPanelErrorBoundary.tsx` | Live Ops map and ride cards (delay, chat, End ride in the card and the live-details drawer); bus and driver administration; route editor; ride history with stop evidence; settings; passenger route schedules with their own save button and unsaved-change guard; shared settings field and section header; feedback review; per-panel error isolation |
-| `maps/` | `PassengerMap.tsx`, `PassengerTrackingMap.tsx`, `DirectionsRoute.tsx`, `BusPositionGlyph.tsx`, `TrafficLayer.tsx` | Passenger map with live health, arrival estimates and stop progress; route drawing from stored or reroute geometry; bus glyph; traffic layer. Every `<GoogleMap>` (passenger, Live Ops, route editor) sets `reuseMaps` with the shared map ID and `MAP_OPTIONS`, so a remount reattaches one cached `google.maps.Map`: one map construction per page load, not per tracking open, route, direction, bus, tab or editor change ([EKI-ADR-004](GOOGLE_MAP_REUSE_DECISION.md)) |
-| `passenger/` | `PassengerWorkspace.tsx`, `PassengerBoardingView.tsx`, `RouteTimelineSheet.tsx`, `RoutesTab.tsx`, `AccountTab.tsx`, `PassengerLoadingShell.tsx`, `passengerFrame.ts` | Route selection, boarding, ride card and header, stop timeline, published route schedules (the **Routes** tab), account and deletion request, loading shell, layout frame. The bottom navigation has **Live**, **Routes** and **Profile**; Routes and Profile mount on first visit and stay mounted |
-| `passenger/ui/` | `BottomSheet.tsx`, `RouteCarousel.tsx` | Draggable sheet and route carousel |
-| `shared/` | `RoleGuard.tsx`, `MessagingPanel.tsx`, `FeedbackModal.tsx`, `WorkspaceLink.tsx`, `WorkspaceLoading.tsx`, `WorkspacePrefetch.tsx` | Role-based presentation, ride chat (latest 200 messages), feedback submission, workspace navigation and prefetch. `RoleGuard` mounts nothing protected while verification runs, and after a slow restoration or 10 s of loading shows "Still signing you in" with **Reload** |
+| `admin/` | `DashboardPanel.tsx`, `FleetManagementPanel.tsx`, `RouteManagementPanel.tsx`, `RideHistoryPanel.tsx`, `SettingsPanel.tsx`, `PassengerRoutesSettings.tsx`, `SettingsSection.tsx`, `FeedbackPanel.tsx`, `AdminPanelErrorBoundary.tsx` | Live Ops map with the traffic layer and bus markers only, no route lines (`frontend/src/components/admin/DashboardPanel.tsx:798`), ride cards (delay, chat, End ride in the card and the live-details drawer), and in the Automatic service section a **Resume tracking** button for each paused bus whose receiver is online; bus and driver administration; route editor; ride history with stop evidence; settings; passenger route schedules with their own save button and unsaved-change guard; shared settings field and section header; feedback review; per-panel error isolation |
+| `maps/` | `PassengerMap.tsx`, `PassengerTrackingMap.tsx`, `DirectionsRoute.tsx`, `BusPositionGlyph.tsx`, `TrafficLayer.tsx` | Passenger map with live health, arrival estimates and stop progress; route drawing from stored or reroute geometry with no browser Directions call, coloured by an optional `palette` of casing, line, active-leg and passed colours (the route editor keeps the default and draws the route's own colour; the passenger map passes an AU Red palette); bus glyph; traffic layer for Live Ops and the route editor. Every `<GoogleMap>` (passenger, Live Ops, route editor) sets `reuseMaps` with the shared map ID and `MAP_OPTIONS`, so a remount reattaches one cached `google.maps.Map`: one map construction per page load, not per tracking open, route, direction, bus, tab or editor change ([EKI-ADR-004](GOOGLE_MAP_REUSE_DECISION.md)) |
+| `passenger/` | `PassengerWorkspace.tsx`, `PassengerBoardingView.tsx`, `RouteTimelineSheet.tsx`, `RoutesTab.tsx`, `AccountTab.tsx`, `PassengerLoadingShell.tsx`, `passengerFrame.ts` | Route selection, boarding, ride card and header, stop timeline, published route schedules (the **Routes** tab: a searchable route list, then the stop timetable of one route), Profile (account card, feedback, sign-out, deletion request, University links and build label), loading shell, layout frame. The bottom navigation has **Live**, **Routes** and **Profile**; Routes and Profile mount on first visit and stay mounted. `passengerFrame.ts` clears the navigation by `--passenger-nav-height`, 81 px or 69 px on touch screens (`frontend/src/app/globals.css:468`). On touch screens (`not all and (any-pointer: fine)`) the Live routes panel is a sheet that rests as a peek ending below its heading, measured before first paint; one chevron button over the peek, named **Show live routes** or **Hide live routes**, raises or lowers it, and the lowered list is inert. Until the passenger toggles it, the sheet opens for an announcement or when no route can be chosen, and choosing a route leaves it raised. Route taps are ignored during the 450 ms rise, and the panel stays open with no toggle when less than 56 px of it would be hidden (`frontend/src/components/passenger/PassengerWorkspace.tsx:86`, `PassengerWorkspace.tsx:623`). Pointer devices keep the centred panel |
+| `passenger/ui/` | `BottomSheet.tsx`, `RouteCarousel.tsx`, `PassengerDate.tsx` | Stop timeline sheet that toggles between its 56 px header and open, clips to the header and makes its body inert when collapsed, and closes on Escape or a backdrop tap; route carousel with line labels; today's date above the Live routes title, refreshed every minute |
+| `shared/` | `RoleGuard.tsx`, `MessagingPanel.tsx`, `FeedbackModal.tsx`, `WorkspaceLink.tsx`, `WorkspaceLoading.tsx`, `WorkspacePrefetch.tsx`, `TransitArtwork.tsx` | Role-based presentation, ride chat (latest 200 messages), feedback submission, workspace navigation and prefetch, and the portrait and landscape WebP artwork shared by the landing page and the passenger shell. `RoleGuard` mounts nothing protected while verification runs, and after a slow restoration or 10 s of loading shows "Still signing you in" with **Reload** |
 | `ui/` | `AlertModal.tsx`, `ConfirmModal.tsx`, `CustomSelect.tsx`, `InAppSelect.tsx` | Accessible dialogs and listboxes |
 
 ### 5.3 Hooks (`frontend/src/hooks`)
@@ -311,8 +312,8 @@ The frontend is a Next.js App Router project built as a static export.
 | Ride progress and estimates | `busEta.ts`, `etaConstants.ts`, `passengerStopEstimates.ts`, `publishedStopIndex.ts`, `stopProgress.ts`, `stopLabel.ts`, `rideDirection.ts`, `passengerRouteStatus.ts`, `joinedRidePointer.ts`, `joinedRideStatus.ts` | Arrival estimates, per-stop states, direction handling, deviation notice, the joined ride kept for 24 h in local storage |
 | History and feedback | `rideHistory.ts`, `rideFeedbackEligibility.ts`, `feedback.ts`, `feedbackStore.ts` | Ride history normalization and observed-arrival test; feedback eligibility; direct Firestore feedback create, list and review |
 | Administration | `adminValidation.ts`, `routeSaveClient.ts`, `routeStopPayload.ts`, `unsavedChanges.ts`, `predefinedRoutes.ts` | Form validation, including the passenger route schedule rules that mirror the backend (at most 50 routes, each existing once, a valid time for every stop); idempotent route save; unsaved-change guard; seed route definitions |
-| Route schedules | `passengerRouteSchedule.ts` | Normalizes the untrusted `settings/passengerRoutes` document, joins approvals with route documents in approval order and the route's stop order, and formats `HH:mm` as "7:05 am" |
-| Site and diagnostics | `siteMetadata.ts`, `serviceMessages.ts`, `telemetryTrace.ts` | Origin and indexing flags, service message text, opt-in browser telemetry trace ([browser telemetry trace](../operations/BROWSER_TELEMETRY_TRACE.md)) |
+| Route schedules | `passengerRouteSchedule.ts`, `routeLineLabel.ts` | Normalizes the untrusted `settings/passengerRoutes` document, joins approvals with route documents in approval order and the route's stop order, and formats `HH:mm` as "7:05 am". `routeLineLabel` gives the short line label used by the **Routes** tab and the route carousel: "Line 7" for a numbered name, else, in capitals, the initials of up to four words or the first six characters of a one-word name |
+| Site and diagnostics | `siteMetadata.ts`, `serviceMessages.ts`, `telemetryTrace.ts`, `installPlatform.ts` | Origin and indexing flags, service message text, opt-in browser telemetry trace ([browser telemetry trace](../operations/BROWSER_TELEMETRY_TRACE.md)), and the platform classification for `/install` (an iPad that reports itself as a Mac counts as iOS) |
 
 ### 5.5 Configuration and service worker
 
@@ -320,6 +321,7 @@ The frontend is a Next.js App Router project built as a static export.
 |---|---|
 | `config/maps.ts` | Maps API key and map ID from public environment variables, default map center, map options shared by every map, and the map reuse policy |
 | `config/passenger.ts` | Service start time text and the 200-word feedback limit |
+| `config/university.ts` | Ahmedabad University links for Profile and the passenger location notice, each hidden while its URL is empty, and the build version and date from `NEXT_PUBLIC_BUILD_VERSION` and `NEXT_PUBLIC_BUILD_DATE` |
 | `sw.js` | Workbox service worker: network-first navigation (10 entries, 7 days) that waits at most 2.5 s for Hosting and then serves the HTML shell precached by this worker, or else the cached copy (`frontend/src/sw.js:77`); cache-first hashed chunks; network-only Google Maps, Firebase, Auth and backend traffic |
 
 ## 6. Firmware logical view
@@ -362,6 +364,7 @@ The fix queue holds 100 entries in RTC memory that survives warm resets (`main.c
 | `platformio.ini` | Environments: `esp32dev` (development, OTA disabled), `esp32dev-quiet` (fleet traces off), `esp32dev-journal` (app-only build for boards with the original partition table), `esp32dev-secure` (the only fleet build: Secure Boot V2, flash encryption, signed OTA) and `native` (host unit tests) |
 | `CMakeLists.txt`, `src/CMakeLists.txt`, `sdkconfig.defaults`, `sdkconfig.journal.defaults` | ESP-IDF project and component definitions and SDK configuration for the IDF-based builds |
 | `partitions_development.csv`, `partitions_secure.csv` | Flash partition tables for the development and secure builds |
+| `requirements.txt` | PlatformIO version pin (`platformio==6.2.0`) that CI installs before the native tests; `scripts/qa/run-native.mjs` refuses any other version |
 | `scripts/verify_secure_fleet.py` | Pre-build check for `esp32dev-secure`: positive `EKI_FIRMWARE_SEQUENCE`, signed OTA enabled, an explicit `PROJECT_VER`, and the required Secure Boot V2 and flash-encryption settings in `sdkconfig.defaults` |
 | `scripts/test_verify_secure_fleet.py`, `scripts/test_signed_image.py`, `scripts/test_host_protocols.py` | Host tests of the fleet verifier, Secure Boot V2 signature checks, and checkpoint cryptography, TLS wrapper and NMEA parsing |
 | `keys/` | Location of the Secure Boot V2 signing key, which is never committed ([fleet signing keys](../../hardware/keys/README.md)) |
@@ -380,7 +383,7 @@ Native tests are described in the [hardware test guide](../../hardware/test/READ
 | Background work | Matching, rerouting, recovery, admission, projection failures | `recordBackgroundFailure` counts per source and flags sustained failures in `/api/health` without failing readiness | `backend/src/lib/backgroundFailureTracker.ts` |
 | Leader writes | Lost lease during a write | The fence aborts the transaction; the job stops | `backend/src/lib/workerFence.ts:83` |
 | Lifecycle persistence | Firestore write fails or lock check fails | The fingerprint is released for retry and a paged replay is requested | `backend/src/services/tripStateEngine.ts:775` |
-| RTDB transactions | Cold local cache returns `null` | The update returns `null` so the SDK retries against the server value | `backend/src/routes/shifts.ts:400` |
+| RTDB transactions | Cold local cache returns `null` | The update returns `null` so the SDK retries against the server value | `backend/src/routes/shifts.ts:398` |
 | Reroute | Provider error, bad geometry, lost publication | Node back to `OFF_ROUTE` with persisted backoff; circuit counts provider failures only | `backend/src/services/telemetryRouteService.ts:991` |
 | Browser | RTDB disconnect, listener error | "Live tracking paused" notice, cache invalidation, jittered resubscription | `frontend/src/hooks/useRTDBResume.ts`, `frontend/src/lib/liveBusRetry.ts` |
 | Browser | Admin panel exception | Isolated by `AdminPanelErrorBoundary` | `frontend/src/components/admin/AdminPanelErrorBoundary.tsx` |
@@ -396,8 +399,8 @@ Native tests are described in the [hardware test guide](../../hardware/test/READ
 | Telemetry retry | Fix ordering by time and sequence; a repeat returns `200 duplicate` | `backend/src/services/deviceTelemetryService.ts:246` |
 | Ride start | `Idempotency-Key` header (16 to 128 characters) bound in `_ride_session_creation_keys`; the bus lock admits one non-terminal ride per bus; the RTDB claim admits one live session per node | `backend/src/routes/shifts.ts:476`, `backend/src/services/rideSessionStart.ts:138` |
 | Automatic start | Key `automatic-service-v1` scoped to device, assignment revision and `automaticServiceEpoch` | `backend/src/services/automaticServiceAdmission.ts:103` |
-| Boarding | Firestore transaction updates only the caller's manifest entry | `backend/src/routes/sessions.ts:256` |
-| Chat message | Document ID from UID and client `requestId`; message and rate record in one transaction | `sessions.ts:366` |
+| Boarding | Firestore transaction updates only the caller's manifest entry | `backend/src/routes/sessions.ts:263` |
+| Chat message | Document ID from UID and client `requestId`; message and rate record in one transaction | `sessions.ts:376` |
 | Feedback | Document ID from UID and client `requestId`; cooldown in the same transaction | `frontend/src/lib/feedbackStore.ts:76` |
 | Route save | `saveId` with payload hash and lease in `_route_save_operations`, committed with the route | `backend/src/routes/polyline.ts:700` |
 | Geometry preview, fleet reconciliation | `Idempotency-Key` operation records with executor identity and generation | `backend/src/services/httpOperations.ts:124` |
@@ -405,6 +408,7 @@ Native tests are described in the [hardware test guide](../../hardware/test/READ
 | Stop progress | `active_rides.currentStopIndex` never decreases; existing `stopsReached` entries are not rewritten | `backend/src/services/tripStateEngine.ts:732`, `backend/src/services/rideProgressHistory.ts:38` |
 | Completion | One transaction writes history and deletes only the lock and recovery record of the completing session | `tripStateEngine.ts:1082` |
 | Turnaround | RTDB claim plus a Firestore transaction that checks the lock and `terminalJourney.consumedBy` | `tripStateEngine.ts:213` |
+| Signal-loss record | One `connectionEvents.lost_<sampledAt>_<seq>` entry per raw fix (`<seq>` is 0 when the fix has none), checked inside the session transaction; when the entry exists, a later write for the same fix (an engine restart replay or the node's removal) leaves `lastSignalLostAt` and the event time unchanged | `tripStateEngine.ts:433` |
 
 RTDB holds the latest state and Firestore the durable record; no transaction spans both. Each cross-store sequence is ordered so that a retry or the paged replay converges, and session IDs guard every write against a newer ride. Recovery limits across stores are in [reconciliation](../operations/RECONCILIATION.md).
 
@@ -421,7 +425,7 @@ Environment variables and their defaults are listed in [configuration](../CONFIG
 | Device rate limit default | 90 per minute, leases of 5, 1,000 tracked devices | `backend/src/services/deviceRateLimiter.ts:3` |
 | Auth revocation cache | 15 s default, 60 s maximum | `backend/src/services/authTokenVerifier.ts:5` |
 | Browser API budgets | 1000 per IP, 200 reads and 30 mutations per UID, per minute | `backend/src/lib/browserAdmission.ts:19` |
-| Body limits | 512 B, 1 KiB, 64 KiB, 16 KiB | `backend/src/server.ts:168` |
+| Body limits | 512 B, 1 KiB, 64 KiB, 16 KiB | `backend/src/server.ts:177` |
 | Google Routes timeouts | 10 s for saves, 3.5 s for live reroutes | `backend/src/lib/googleMaps.ts:23` |
 | Route stops per route | 2 to 100 | `backend/src/lib/orderedRouteGeometry.ts:3` |
 | Stale node threshold | `BUS_STALE_MS`, 300 s, minimum 90 s | `backend/src/services/tripStateEngine.ts:110` |
@@ -430,6 +434,7 @@ Environment variables and their defaults are listed in [configuration](../CONFIG
 | Passenger route schedules | At most 50 routes; times match `^([01]\d\|2[0-3]):[0-5]\d$` | `backend/src/routes/settings.ts:100`, `frontend/src/lib/passengerRouteSchedule.ts:12` |
 | Slow sign-in restoration notice | 8 s | `frontend/src/hooks/useAuth.ts:27` |
 | Navigation network budget in the service worker | 2.5 s | `frontend/src/sw.js:77` |
+| Passenger Live routes sheet on touch screens | 450 ms rise guard; used only when at least 56 px of the panel would be hidden | `frontend/src/components/passenger/PassengerWorkspace.tsx:95` |
 | Browser live retry | 1 s to 30 s, equal jitter | `frontend/src/lib/liveBusRetry.ts:1` |
 | Firmware fix queue | 100 fixes | `hardware/src/main.cpp:119` |
 | Firmware watchdog | 25 s | `hardware/src/main.cpp:108` |

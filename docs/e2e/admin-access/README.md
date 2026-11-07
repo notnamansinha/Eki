@@ -2,11 +2,11 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-PKG-007 | 2.0 | Current | 2026-10-30 |
+| EKI-PKG-007 | 2.1 | Current | 2026-11-07 |
 
 ## 1. Purpose
 
-This fixture renders the real `AuthProvider`, `RoleGuard`, landing page, admin collection hooks, `FeedbackPanel`, `DashboardPanel`, live fleet store and application CSS in Chromium. The Firebase SDK transport and HTTP responses are synthetic adapters, so the checks need no credentials, console settings or Firebase data. CI runs them in Production verification.
+This fixture renders the real `AuthProvider`, `RoleGuard`, landing page, admin collection hooks, `FeedbackPanel`, `DashboardPanel`, live fleet store and application CSS in Chromium, and serves the static files in `frontend/public`, such as the landing artwork. The Firebase SDK transport and HTTP responses are synthetic adapters, so the checks need no credentials, console settings or Firebase data. CI runs them in Production verification.
 
 ## 2. Run
 
@@ -17,7 +17,7 @@ npx playwright install chromium
 npm run test:e2e:admin
 ```
 
-`npm run test:e2e:admin` uses `playwright.admin-access.config.ts`. It starts the Vite fixture in this folder on `http://127.0.0.1:3105` and runs `e2e/admin-access.spec.ts` and every `e2e/admin-access/*.spec.ts` (`resilience.spec.ts` and `cold-open.spec.ts`) in two projects: mobile (390 x 844) and desktop (1280 x 800). The default `playwright.config.ts` ignores these files.
+`npm run test:e2e:admin` uses `playwright.admin-access.config.ts`. It starts the Vite fixture in this folder on `http://127.0.0.1:3105` and runs `e2e/admin-access.spec.ts` and every `e2e/admin-access/*.spec.ts` (`resilience.spec.ts`, `cold-open.spec.ts` and `landing-layout.spec.ts`) in two projects: mobile (390 x 844) and desktop (1280 x 800). The default `playwright.config.ts` ignores these files.
 
 To run the same checks against another revision for an A/B baseline, set `EKI_ADMIN_ACCESS_SRC` to that checkout's `frontend/src`, with its `node_modules` reachable from it.
 
@@ -33,8 +33,8 @@ The fixture selects a scenario from the query string.
 | `?resume` | The real RTDB resume hook and shared fleet store: a short healthy tab switch keeps fleet data with no new handshake or read; a 31 s suspension produces one debounced handshake and a fresh snapshot |
 | `?projection` | Route projection freshness in preview and catalog, silent expiry, and coalesced return completion hidden during re-verification |
 | `?dashboard`, `?dashboard&fleet` | Live fleet details stay reachable below the service controls on a short screen; End ride early stays reachable by wheel scrolling among several expanded rides on desktop and is offered in the live details drawer (`/api/shifts/stop` is intercepted) |
-| `?traceExport` | Passenger, driver and admin each download their own tab's opt-in telemetry trace without a protected health request; traces record the browser online and reduced-motion state |
-| `?restoreHang`, `?landing&restoreHang` | Cold open while a saved session is still restoring (`cold-open.spec.ts`, Section 3.1) |
+| `?traceExport`, `?telemetryTrace=1` | Passenger, driver and admin each download their own tab's opt-in telemetry trace without a protected health request; traces record the browser online and reduced-motion state |
+| `?restoreHang`, `?landing&restoreHang` | Cold open while a saved session is still restoring (`cold-open.spec.ts`, Section 3.1); the landing page fit (`landing-layout.spec.ts`, Section 3.2) |
 
 `resilience.spec.ts` races feedback reads and status writes against sign-out and account switches: a late result never reaches the next account, a dropped read recovers through Retry, and rapid offline and online flapping settles on one ready fleet.
 
@@ -47,6 +47,10 @@ The fixture selects a scenario from the query string.
 - `window.qaAuthCalls` records each OAuth SDK call and whether it received the shared `popupRedirectResolver`; `window.qaRouterReplacements` records navigations.
 
 `firebase/auth` resolves to `firebaseAuthSdk.ts`, which re-exports the same synthetic adapter from its own URL. Only the lazy sign-in code load in `useAuth` requests it, so the tests for a reconnect "while the sign-in code is still downloading" hold that response with `page.route`, fire `online` (a real `context.setOffline` drop and return, or dispatched events) and then release it. Exactly one load must run: `window.qaAuthObservers` (`registered` and `active` auth-state observers) stays at one, the restored admin is verified once (counted from the fixture's `qa-verification` events), and a pending Google redirect calls `getRedirectResult` once. **Try again** cannot be reached before the first load completes, so only the `online` retry is driven.
+
+### 3.2 Landing layout
+
+`landing-layout.spec.ts` opens `?landing&restoreHang` with a fixed virtual clock and waits for the transit artwork and the Google mark on **Continue with Google** to decode. At 1280 x 585, 1280 x 720, 1920 x 878 and 390 x 844 it checks that the heading, the introduction, the enabled **Continue with Google** button and the footer lie inside the viewport without scrolling or horizontal overflow, that no other element covers the centre of the button, and that the landing page renders no university logo image. The 1280 x 585 viewport is about what Chrome leaves on a 1920 x 1080 Windows display at 150 % scaling; a separate test runs it with a device scale factor of 1.5 and checks that the button and footer stay fully visible and the page does not scroll.
 
 ## 4. Boundaries
 

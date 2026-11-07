@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-DAT-002 | 2.0 | Current | 2026-10-30 |
+| EKI-DAT-002 | 2.1 | Current | 2026-11-07 |
 
 ## 1. Purpose
 
@@ -33,6 +33,8 @@ RTDB keeps one current point per bus and route, not a coordinate history. Firest
 
 The root rule denies everything not listed. Legacy `users` and `messages` trees have no consumer in the current code; the RTDB retention sweep removes them only when `LEGACY_RTDB_RETIRED=true` ([RTDB retention](../operations/RTDB_RETENTION.md)).
 
+Eki uses one RTDB instance per Firebase project, and the backend and the web app must name the same one. `database.rules.json` deploys only to the instance that `.firebaserc` maps to the `rtdb` deploy target; for `bustrack-be165` that is `bustrack-be165-asia-rtdb` in `asia-southeast1` ([instances and rule deployment](FIREBASE_DATA_MODEL.md#26-database-instances-and-rule-deployment)).
+
 ## 4. Firestore
 
 | Group | Collections | Purpose |
@@ -45,7 +47,7 @@ The root rule denies everything not listed. Legacy `users` and `messages` trees 
 | History | `completed_trips` | Compact record of each completed ride for analytics |
 | Feedback | `feedbacks`, `feedbackCooldowns` | Passenger feedback, written by the browser in one transaction with its 24 h cooldown record |
 | Operations | `_fleet_operations`, `_route_save_operations`, `_route_geometry_previews`, `_fleet_reconciliation_jobs`, `_fleet_reconciliation_locks`, `_fleet_lock_recoveries`, `_reconciliation_cursors`, `_worker_leases`, `_health` | Recoverable administrative operations, reconciliation progress, the worker lease, readiness probes |
-| Deletion | `_privacy_deletion_requests`, `_retention_deletion_jobs`, `_ride_history_deletion_jobs` | Durable markers that let interrupted deletions resume |
+| Deletion | `_privacy_deletion_requests`, `_retention_deletion_jobs`, `_ride_history_deletion_jobs`, `_rtdb_retention_inventory` | Durable markers that let interrupted deletions resume; first-seen records with which the RTDB retention sweep ages undated entries and unreferenced geometry |
 | Legacy | `passenger_requests` | No current producer; administrators may update or delete existing records |
 
 A catch-all rule denies every collection not explicitly matched. Collections whose names start with `_`, together with `devices` and `active_rides`, deny all client access.
@@ -58,10 +60,11 @@ A catch-all rule denies every collection not explicitly matched. Collections who
 4. When an accepted fix finds no ride on the live record, the backend checks `active_rides` and the session in the background and restores the lifecycle fields of a ride that is still open.
 5. Completion writes `completed_trips`, completes the session and deletes the matching recovery record and lock in one transaction. A retried completion reuses the original completion time and leaves a replacement ride's lock untouched.
 6. A recovered stop records when the missing history was repaired; Eki does not invent an arrival time. Stops crossed between two fixes share the observation time.
+7. When the leader replays a live record whose `deviceState` is `offline`, as the stale sweep leaves a silent ride, and its fix is more than 60 s old, for example after an engine restart, it changes neither the live record's lifecycle fields nor the `active_rides` checkpoint. The abandoned-ride reconciler therefore still sees the ride as silent. A replayed signal loss that the session already records keeps its original time.
 
 ## 6. Retention and deletion
 
-The retention sweep runs on the worker leader at start and every 24 h. Production startup fails unless `RETENTION_SWEEPER_ENABLED=true`; development and tests leave it off unless set. The periods below are defaults and need approval by the university's data owner.
+The retention sweep runs on the worker leader when it takes the lease and every 24 h while it holds it. Production startup fails unless `RETENTION_SWEEPER_ENABLED=true`; development and tests leave it off unless set. The periods below are defaults and need approval by the university's data owner. The staging Cloud Run manifest ([`deploy/cloud-run/staging.service.yaml`](../../deploy/cloud-run/staging.service.yaml)) enables the sweep, sets the four day values to these defaults and sets `LEGACY_RTDB_RETIRED=false`.
 
 | Data | Kept for | Removed by | Setting |
 |---|---|---|---|

@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-SEC-002 | 3.1 | Current | 2026-11-02 |
+| EKI-SEC-002 | 4.0 | Current | 2026-11-07 |
 
 ## 1. Introduction
 
@@ -12,7 +12,7 @@ This document describes how Eki protects its users, buses and data: the trust bo
 
 ### 1.2 Scope
 
-The description covers the browser app (`frontend/`), the Express backend (`backend/`), the Firestore and Realtime Database (RTDB) security rules, Firebase Hosting configuration (`firebase.json`), the ESP32 firmware (`hardware/`), and the build and deployment workflows (`.github/workflows/`). Infrastructure that this repository does not configure, such as the backend load balancer, an edge web application firewall (WAF) or Google Cloud API key restrictions, is named only where a control depends on it.
+The description covers the browser app (`frontend/`), the Express backend (`backend/`), the Firestore and Realtime Database (RTDB) security rules, Firebase Hosting configuration (`firebase.json`), the ESP32 firmware (`hardware/`), the build and deployment workflows (`.github/workflows/`) with the Dependabot configuration (`.github/dependabot.yml`), and the backend deployment files (`deploy/cloud-run/staging.service.yaml` and `deploy/vps/`). Infrastructure that this repository does not configure, such as an edge web application firewall (WAF), the TLS reverse proxy in front of a VPS host, the workload identity provider or Google Cloud API key restrictions, is named only where a control depends on it.
 
 ### 1.3 Related documents
 
@@ -31,7 +31,7 @@ The description covers the browser app (`frontend/`), the Express backend (`back
 
 ### 2.1 Components and trust boundaries
 
-Browsers and trackers are untrusted clients. Browsers load the static app from Firebase Hosting, sign in with Firebase Authentication, read Firestore and RTDB directly under security rules, and call the backend API with a Firebase ID token. Trackers call only the backend, with a per-device secret. The backend is the only writer of authoritative state; it uses the Firebase Admin SDK, which bypasses security rules. Operators run command-line tools with the same Admin SDK credential, and GitHub Actions deploys Hosting and rules.
+Browsers and trackers are untrusted clients. Browsers load the static app from Firebase Hosting, sign in with Firebase Authentication, read Firestore and RTDB directly under security rules, and call the backend API with a Firebase ID token. Trackers call only the backend, with a per-device secret. The backend is the only writer of authoritative state; it uses the Firebase Admin SDK, which bypasses security rules. Operators run command-line tools that load the same Admin SDK module with an operator-held credential (`FIREBASE_SERVICE_ACCOUNT` or Application Default Credentials). GitHub Actions deploys Hosting, rules and the staging backend on Cloud Run, and publishes a backup backend image to Docker Hub.
 
 ```mermaid
 flowchart LR
@@ -52,8 +52,9 @@ flowchart LR
   end
   subgraph ops["Operators and CI"]
     CLI["Operator CLI<br/>provision-device, sync-role-claims"]
-    CI["GitHub Actions<br/>CI, CodeQL, Deploy"]
+    CI["GitHub Actions<br/>CI, CodeQL, Deploy,<br/>image publish"]
   end
+  HUB["Docker Hub<br/>backup backend image"]
   BR -->|"B1 HTTPS"| HOST
   BR -->|"B2 OAuth popup or redirect"| AUTH
   BR -->|"B3 SDK with ID token"| FS
@@ -68,6 +69,8 @@ flowchart LR
   WORK -->|"B6 Admin SDK"| FS
   CLI -->|"B7 Admin SDK"| FS
   CI -->|"B8 FIREBASE_TOKEN"| HOST
+  CI -->|"B8 workload identity, Cloud Run deploy"| API
+  CI -->|"B8 DOCKERHUB_TOKEN"| HUB
 ```
 Figure 1. Eki components and trust boundaries B1 to B8.
 
@@ -80,7 +83,7 @@ Figure 1. Eki components and trust boundaries B1 to B8.
 | B5 | Tracker and backend API | Per-device secret in `Authorization: Device` |
 | B6 | Backend and Google services | Firebase Admin SDK credential; server Google Maps API key |
 | B7 | Operator workstation and Firebase | Firebase Admin SDK credential |
-| B8 | GitHub Actions and Firebase or Google Cloud | Environment-scoped `FIREBASE_TOKEN`; for the Cloud Run deploy, workload identity federation: the provider accepts only repository ID `1270866720` on `refs/heads/main`, and the account `eki-github-deployer` trusts only the `staging` environment |
+| B8 | GitHub Actions and Firebase, Google Cloud or Docker Hub | Environment-scoped `FIREBASE_TOKEN`; for the Cloud Run deploy, workload identity federation: the provider accepts only repository ID `1270866720` on `refs/heads/main`, and the account `eki-github-deployer` trusts only the `staging` environment; for the backup image publish, the repository secrets `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` |
 
 ### 2.2 Assets
 
@@ -88,7 +91,7 @@ Figure 1. Eki components and trust boundaries B1 to B8.
 |---|---|---|
 | Firebase ID and refresh tokens | Browser storage (local storage, IndexedDB or session storage) | Impersonation of the signed-in user |
 | Role claims and authorization records | Auth custom claims; `_userAuthorization/{uid}` in Firestore and RTDB | Administrator or driver authority |
-| Backend Admin SDK credential | Backend runtime environment | Unrestricted read and write of all Firebase data and Auth accounts |
+| Backend Admin SDK credential | Backend runtime environment; on Cloud Run, the runtime service account `eki-backend-runtime` without a key file (Section 4.4) | Unrestricted read and write of all Firebase data and Auth accounts |
 | Device secrets | Ignored `hardware/include/secrets.h`, the flash-encrypted firmware image and any published signed OTA image (Section 11); only a scrypt verifier in `devices/{deviceId}.secretHash` | Forged telemetry for that bus |
 | Secure Boot signing key | Offline signing environment, never in the repository | Arbitrary firmware on fleet trackers |
 | Live bus positions | RTDB `activeBuses`, `publicRouteBuses`; Firestore `bus_locations`, ride session `lastKnownLocation` | Tracking of a vehicle and its operator |
@@ -96,6 +99,7 @@ Figure 1. Eki components and trust boundaries B1 to B8.
 | Deploy token | GitHub environment secret `FIREBASE_TOKEN` | Replacement of the hosted app or security rules |
 | Cloud Run deploy access | No stored key; `deploy-backend-staging` authenticates as `eki-github-deployer` through workload identity federation | Control of Cloud Run services in `bustrack-be165` (project role `roles/run.admin`) |
 | Server Google Maps key | Backend variable `GOOGLE_MAPS_API_KEY` | Billable API use |
+| Docker Hub publish credentials | Repository secrets `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` | Replacement of the backup backend image `<user>/eki-backend` that a VPS host pulls |
 
 ### 2.3 Principals
 
@@ -129,7 +133,7 @@ Threats are classified with STRIDE (spoofing, tampering, repudiation, informatio
 |---|---|---|---|
 | S | Sign-in with a stolen or phished account | Google handles credentials; Eki never receives passwords | Any Google account can sign in. Institutional affiliation is not checked. |
 | I | Theft of ID or refresh tokens | CSP limits script origins; tokens are sent as headers, not cookies | Script running in the app origin can read tokens from browser storage. |
-| E | Client asserts its own role | Roles exist only as custom claims set through the Admin SDK; the browser forces a token refresh and requires matching claims before it shows a driver or administrator workspace | `RoleGuard` controls rendering only; data access depends on rules and the backend. |
+| E | Client asserts its own role | Roles exist only as custom claims set through the Admin SDK; the browser forces a token refresh and requires matching claims before it publishes a driver or administrator role to the app | `RoleGuard` controls rendering only; data access depends on rules and the backend. |
 
 ### 3.4 B3: Browser and Firestore or RTDB
 
@@ -151,7 +155,7 @@ Threats are classified with STRIDE (spoofing, tampering, repudiation, informatio
 | E | Remote boarding of a ride | Boarding requires a passenger profile, a boarding ride, a browser fix with accuracy of 100 m or better, and a distance of at most 150 m to a bus fix no older than 60 s | The browser fix is client-supplied; a spoofed position passes. |
 | T | Malformed or oversized bodies | Strict JSON parsers with size caps; per-route validation; `TRACE` and `CONNECT` return 405. The passenger route schedule handler keeps request stop IDs in a `Map` and builds the stored object only from the stop IDs of the stored route, so request keys never become object properties | None identified. |
 | R | Administrator denies a change | Fleet mutations record `adminUid`, method and path in `_fleet_operations`; route geometry previews, fleet reconciliation jobs, operation recovery and privacy recovery record the acting administrator; settings record `updatedBy`, ride interruptions `interruptedBy` and feedback review `reviewedBy` | Device registry changes, route saves and deletions, chat clearing and ride-history deletion store no record of the acting administrator. |
-| I | Leakage through errors or diagnostics | Generic error bodies; public `/health` and `/live` return status only; `/api/health` requires `requireAdmin`; private responses carry `Cache-Control: no-store` | None identified. |
+| I | Leakage through errors or diagnostics | Generic error bodies; public `/health` and `/live` return status only; `/api/health` requires `requireAdmin`; every `/api` response, including authentication failures, rate-limit rejections and CORS preflights, carries `Cache-Control: no-store` | None identified. |
 | D | Request floods | Limits in Section 7 | Limiters are in memory per replica; the global cap depends on an edge WAF that this repository does not configure. |
 
 ### 3.6 B5: Tracker and backend API
@@ -176,7 +180,7 @@ Threats are classified with STRIDE (spoofing, tampering, repudiation, informatio
 
 | STRIDE | Threat | Implemented mitigation | Residual risk |
 |---|---|---|---|
-| E | Unauthorized role or device changes | The CLIs require the Admin SDK credential | Anyone with that credential can change roles and provision devices. |
+| E | Unauthorized role or device changes | The CLIs require an Admin SDK credential for the project | Anyone with such a credential can change roles and provision devices. |
 | I | Device secret disclosure | `provision-device` prints the secret once and stores only its verifier | The plaintext remains in terminal history and the signing environment. |
 | T | Concurrent role publication | `sync-role-claims` holds the fleet mutex and fails when it is busy | None identified. |
 
@@ -184,10 +188,12 @@ Threats are classified with STRIDE (spoofing, tampering, repudiation, informatio
 
 | STRIDE | Threat | Implemented mitigation | Residual risk |
 |---|---|---|---|
-| T | Compromised third-party action | Every `uses:` reference is pinned to a full commit SHA; workflows default to `contents: read` | None identified. |
+| T | Compromised third-party action | Every `uses:` reference is pinned to a full commit SHA; workflows default to read-only tokens (`contents: read`, plus `actions: read` in `deploy.yml`), and `footer.yml` to no permissions | None identified. |
 | E | Untrusted code reaches staging or production | Staging deploys only the commit of a successful same-repository push build on `main` or a manual dispatch from `main`; production deploys only by manual dispatch from `main` in the `production` environment. `deploy-staging` refuses a commit that `main` does not contain, and Google Cloud accepts the backend job's token only from `refs/heads/main` and the `staging` environment | Required reviewers for that environment are configured in GitHub, not in this repository. |
-| I | Secret leakage from CI | Deploy secrets are environment-scoped; the verification build uses placeholders | `FIREBASE_TOKEN` is a long-lived Firebase CLI token. |
-| T | Vulnerable dependency | `npm audit`, CodeQL, Trivy, an SBOM (Section 10) and Dependabot updates (`.github/dependabot.yml`, [dependency updates](../operations/CI_CD_AND_RELEASES.md#12-dependency-updates)) | GitHub generates no Actions vulnerability alerts for full SHA pins, so those pins need separate monitoring. |
+| I | Secret leakage from CI | Deploy secrets are environment-scoped; the Docker Hub secrets reach only the credential check and push steps of `publish-backend-image.yml`, never the image build or the Trivy scan (`scripts/publish-backend-image-workflow.test.mjs`); the verification build uses placeholders | `FIREBASE_TOKEN` is a long-lived Firebase CLI token. `DOCKERHUB_TOKEN` is a repository secret, not an environment secret, so a workflow that anyone with write access pushes to any branch of this repository can read it. |
+| T | Vulnerable dependency | `npm audit`, CodeQL, Trivy on the CI image and again before each Docker Hub push, an SBOM (Section 10) and Dependabot updates (`.github/dependabot.yml`, [dependency updates](../operations/CI_CD_AND_RELEASES.md#12-dependency-updates)) | GitHub generates no Actions vulnerability alerts for full SHA pins, so those pins need separate monitoring. |
+| E | Pull request content runs with a write token | `footer.yml` is the only `pull_request_target` workflow. It grants `issues: write` and `pull-requests: write` to one job, acts only on items opened by one named account, interpolates no workflow expressions into its script and never checks out or runs pull request code (`scripts/footer-workflow.test.mjs`) | None identified. |
+| T | Tampered or unreviewed backup image | `publish-backend-image.yml` publishes only after a successful same-repository push build on `main` or a manual dispatch from `main`, refuses a commit that `main` does not contain, scans the image with the CI Trivy policy, tags it with the commit SHA and moves `latest` only while that commit is the head of `main` | Docker Hub tags are mutable. The VPS compose file pulls the reference in `EKI_BACKEND_IMAGE` on every `up` (`pull_policy: always`), and the [VPS backup path](../../deploy/vps/README.md) sets it to a tag, not a digest. Anyone who holds `DOCKERHUB_TOKEN` can replace the image behind that tag. |
 
 ## 4. Authentication
 
@@ -227,6 +233,8 @@ Bus and route identity always come from the registry, never from the request bod
 
 `backend/src/lib/firebaseAdmin.ts` uses the service-account JSON in `FIREBASE_SERVICE_ACCOUNT` when it is set and Application Default Credentials otherwise. In production the backend refuses to start without `FIREBASE_DATABASE_URL`, without `CORS_ORIGIN`, or without `RETENTION_SWEEPER_ENABLED=true`.
 
+The staging service manifest ([`deploy/cloud-run/staging.service.yaml`](../../deploy/cloud-run/staging.service.yaml)) runs the backend as the runtime service account `eki-backend-runtime` and sets no `FIREBASE_SERVICE_ACCOUNT`, so Application Default Credentials supply that account's identity and no key file exists. It reads `GOOGLE_MAPS_API_KEY` from the Secret Manager secret `google-maps-server-key` at the fixed version `1` and holds no other secret value. The manifest sets ingress `all`, and `deploy-backend-staging` grants `allUsers` the `roles/run.invoker` role, so Cloud Run admits every request and the backend's own authentication (Sections 4.1 and 4.3) decides access. The runtime account's project roles are listed in [Staging runtime configuration](../operations/STAGING_RUNTIME_CONFIG.md). A VPS host runs the published image with the variables in its `backend.env` file, including `FIREBASE_SERVICE_ACCOUNT` ([VPS backup path](../../deploy/vps/README.md)).
+
 ### 4.5 App Check
 
 Firebase App Check is not used. The browser initializes no App Check provider and sends no App Check token, the backend has no App Check middleware, and the Firestore rules contain no App Check condition (`backend/src/securityConfig.test.ts` asserts this). Because enforcement left on in a Firebase project would reject this browser, both deploy jobs run `node scripts/disable-appcheck-enforcement.mjs --project <project-id> --disable`, which sets Firestore and RTDB enforcement to `UNENFORCED` and fails unless both services report that mode. Without `--disable` the script only verifies the mode.
@@ -237,12 +245,14 @@ Firebase App Check is not used. The browser initializes no App Check provider an
 
 `backend/src/server.ts` applies middleware in this order:
 
-1. Metrics, `trust proxy` (from `TRUST_PROXY`), Helmet and CORS.
-2. The pre-authentication browser limiter, keyed by client IP.
-3. Rejection of `TRACE` and `CONNECT`.
-4. JSON body parsers with route-specific size caps.
-5. Browser admission on `/api`: `requireAuth`, then the per-user read or mutation limiter. Tracker paths skip this step and authenticate inside their handlers.
-6. Route handlers, which add `requireAdmin` or a role check.
+1. Metrics, `trust proxy` (from `TRUST_PROXY`) and Helmet.
+2. A default `Cache-Control: no-store` on every `/api` response.
+3. CORS.
+4. The pre-authentication browser limiter, keyed by client IP.
+5. Rejection of `TRACE` and `CONNECT`.
+6. JSON body parsers with route-specific size caps.
+7. Browser admission on `/api`: `requireAuth`, then the per-user read or mutation limiter. Tracker paths skip this step and authenticate inside their handlers.
+8. Route handlers, which add `requireAdmin` or a role check.
 
 | Principal check | Implementation | Additional conditions |
 |---|---|---|
@@ -301,7 +311,9 @@ Firebase App Check is not used. The browser initializes no App Check provider an
 | `Referrer-Policy` | `strict-origin-when-cross-origin` |
 | `Permissions-Policy` | `camera=(), microphone=(), geolocation=(self), payment=(), usb=()` |
 
-The HTML routes `/`, `/admin`, `/driver`, `/feedback`, `/passenger` and the service worker `/sw.js` are served with `Cache-Control: no-cache, no-store, must-revalidate`.
+The paths `/`, `/admin`, `/driver`, `/feedback`, `/passenger` and the service worker `/sw.js` are served with `Cache-Control: no-cache, no-store, must-revalidate`; `/sw.js` also carries `Service-Worker-Allowed: /`. The static export has no `/driver` page. The `/install` page, which holds no account data, is outside this rule and receives no `Cache-Control` header from `firebase.json`. Hashed `/_next/static/` assets are cached as `public, max-age=31536000, immutable`, and images as `public, max-age=2592000, stale-while-revalidate=86400`.
+
+`firebase.json` defines no rewrites. Hosting serves only the static export, and the browser calls the backend at the origin in `NEXT_PUBLIC_BACKEND_URL` (Section 6.4). `npm run verify:hosting-rewrites` (`scripts/verify-hosting-rewrites.mjs`) is a read-only check for a future rewrite to the backend; the [HTTP contract](../api/HTTP_CONTRACT.md#34-hosting-rewrite-check) records why rewrites are not used.
 
 ### 6.2 Content Security Policy generation
 
@@ -322,15 +334,15 @@ Scripts allow RTDB hosts only at `/.lp`, the long-polling transport, because the
 
 ### 6.3 Service worker
 
-`frontend/src/sw.js` uses Workbox. It caches HTML navigations (network first, at most 10 entries; after 2.5 s without a network answer it serves the route's precached HTML shell or its cached copy), hashed `/_next/static/` assets, same-origin images and Google Fonts. These requests are network-only and never cached: Firebase Auth helpers (`apis.google.com`, `www.gstatic.com/firebasejs/`), `identitytoolkit.googleapis.com`, `securetoken.googleapis.com`, every `*.firebaseio.com` and `*.firebasedatabase.app` request, Google Maps, and every request without a matching route, which includes all backend API calls. A cached URL cannot represent the signed-in user, so no account-scoped response is replayed to another account. Navigation handling excludes Firebase Auth helper paths under `/__/`. On activation the worker deletes the obsolete `eki-firebase-sdk`, `eki-navigations` and `eki-google-maps` caches.
+`frontend/src/sw.js` uses Workbox. It caches HTML navigations (network first, at most 10 entries; after 2.5 s without a network answer it serves the route's precached HTML shell or its cached copy), hashed `/_next/static/` assets, same-origin images and Google Fonts. These requests are network-only and never cached: Firebase Auth helpers (`apis.google.com`, `www.gstatic.com/firebasejs/`), `identitytoolkit.googleapis.com`, `securetoken.googleapis.com`, every `*.firebaseio.com` and `*.firebasedatabase.app` request, Google Maps, and every request without a matching route, which includes all backend API calls. A cached URL cannot represent the signed-in user, so no account-scoped response is replayed to another account. Navigation handling excludes Firebase Auth helper paths under `/__/`. On activation the worker empties its navigation cache (`eki-navigations`), so HTML stored by an earlier worker is not served, and deletes the obsolete `eki-firebase-sdk` and `eki-google-maps` caches.
 
 ### 6.4 Backend API headers and CORS
 
-Helmet sets its default headers and a CSP of `default-src 'none'; script-src 'none'; object-src 'none'` for the JSON API. CORS allows only the comma-separated origins in `CORS_ORIGIN` (plus `http://localhost:3000` outside production) with `credentials: false`. Browser credentials travel only in the `Authorization` header, so cross-site request forgery through cookies does not apply.
+Helmet sets its default headers and a CSP of `default-src 'none'; script-src 'none'; object-src 'none'` for the JSON API. Before CORS and every limiter, the backend sets `Cache-Control: no-store` on every `/api` response, so authentication failures, rate-limit rejections, body-parser errors, unknown paths and CORS preflights also carry it (`backend/src/server.http.test.ts`); no route sets a policy that allows storage. CORS allows only the comma-separated origins in `CORS_ORIGIN` (plus `http://localhost:3000` outside production) with `credentials: false`. Besides the CORS-safelisted response headers, it exposes only `Location`, `Retry-After`, `X-Reconciliation-Complete` and `X-Next-Cursor` to scripts. Browser credentials travel only in the `Authorization` header, so cross-site request forgery through cookies does not apply.
 
 ## 7. Rate limiting and abuse controls
 
-Every HTTP limiter keeps its counters in process memory and divides its budget by `RATE_LIMIT_SHARD_FACTOR`, the expected replica count; startup fails if the factor exceeds a limiter's budget. Pre-authentication limiters key on the client IP because headers and unverified tokens are attacker-controlled; `TRUST_PROXY` selects which proxy hop may set `X-Forwarded-For`.
+Every HTTP limiter keeps its counters in process memory and divides its budget by `RATE_LIMIT_SHARD_FACTOR`, the expected replica count; startup fails if the factor exceeds a limiter's budget. Pre-authentication limiters key on the client IP because headers and unverified tokens are attacker-controlled; `TRUST_PROXY` selects which proxy hop may set `X-Forwarded-For`. The staging manifest runs at most one instance (`autoscaling.knative.dev/maxScale: "1"`) with `RATE_LIMIT_SHARD_FACTOR=1`, and `deploy-backend-staging` refuses to deploy while the service exists in another region, because a second regional service would add a second set of budgets.
 
 | Control | Scope and key | Limit | Source |
 |---|---|---|---|
@@ -348,19 +360,20 @@ Every HTTP limiter keeps its counters in process memory and divides its budget b
 | Request bodies | Per request | Telemetry 512 B, diagnostics 1 KB, route save `PUT` 64 KiB, other routes 16 KB | `backend/src/server.ts` |
 | Connections | HTTP server | 15 s request timeout, 100 requests per socket | `backend/src/server.ts` |
 
-The HTTP limiters return 429 with `RateLimit-*` headers; tracker limit responses also carry `Retry-After` and `retryAfterMs`. [Work admission](../operations/WORK_ADMISSION.md) describes the bounded internal queues.
+Every 429 from the backend carries `Retry-After`. The browser, route, place and tracker ingress limiters add `RateLimit-*` headers, and tracker ingress and budget rejections, the chat limits and the `POST /api/feedback` cooldown add `retryAfterMs` to the body. [Work admission](../operations/WORK_ADMISSION.md) describes the bounded internal queues.
 
 ## 8. Secrets management
 
 | Secret | Where it is kept | Repository control |
 |---|---|---|
-| Firebase Admin credential | `FIREBASE_SERVICE_ACCOUNT` or Application Default Credentials on the backend host | `.gitignore` excludes `.env` files, `serviceAccountKey.json`, `service-account.json` and `*.json` apart from an allowlist of configuration files; `.dockerignore` excludes `.env` and `.env.*` |
-| Server Google Maps key | `GOOGLE_MAPS_API_KEY` in the backend environment; separate from the browser key. On Cloud Run, the Secret Manager secret `google-maps-server-key` (key restricted to the Routes and Places APIs) | Not committed; `backend/.env.example` holds placeholders |
+| Firebase Admin credential | `FIREBASE_SERVICE_ACCOUNT` or Application Default Credentials on the backend host. On Cloud Run, the runtime service account `eki-backend-runtime` with no key file; on a VPS host, `FIREBASE_SERVICE_ACCOUNT` in `backend.env` | `.gitignore` excludes `.env` and `*.env` files, `serviceAccountKey.json`, `service-account.json` and `*.json` apart from an allowlist of configuration files; `.dockerignore` excludes `.env` and `.env.*` |
+| Server Google Maps key | `GOOGLE_MAPS_API_KEY` in the backend environment; separate from the browser key. On Cloud Run, version `1` of the Secret Manager secret `google-maps-server-key` (key restricted to the Routes and Places APIs) | Not committed; `backend/.env.example` holds placeholders, and the Cloud Run manifest names only the secret and its version |
 | Device secret and Wi-Fi password | `hardware/include/secrets.h`, created from `secrets.example.h` inside the signing environment | `hardware/.gitignore` excludes `include/secrets.h` |
 | Secure Boot signing key | `hardware/keys/secure_boot_signing_key.pem` inside the offline signing environment only | `*.pem` and `keys/*.pem` are ignored; CI generates a disposable key |
 | Firebase deploy token | GitHub environment secret `FIREBASE_TOKEN` in `staging` and `production` | Referenced only by `deploy.yml` |
 | Cloud Run deploy access | No stored key: `deploy-backend-staging` uses workload identity federation | `deploy.yml` names the provider and the service account only |
 | RTDB origin for the release check | GitHub environment secret `FIREBASE_DATABASE_URL` | Referenced only by `deploy.yml` |
+| Docker Hub publish credentials | Repository secrets `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` | Referenced only by `publish-backend-image.yml`, in its credential check and push steps; the workflow skips publishing until both exist, and logs out of Docker Hub when the push step ends |
 | Browser configuration | `NEXT_PUBLIC_*` values, stored as environment secrets for the deploy jobs | Public once built into the app; restrict the keys by HTTP referrer and API in Google Cloud |
 | OpenTelemetry export headers | `OTEL_EXPORTER_OTLP_HEADERS` in the backend environment | The structured logger redacts Grafana tokens |
 
@@ -398,15 +411,16 @@ The backend logger (`backend/src/lib/logger.ts`) replaces the value of any key t
 
 | Control | Implementation |
 |---|---|
-| Static analysis | `.github/workflows/codeql.yml` runs CodeQL with the `security-extended` query suite for `javascript-typescript` and `python` on every push and pull request |
+| Static analysis | `.github/workflows/codeql.yml` runs CodeQL with the `security-extended` query suite for `javascript-typescript` and `python` on every pull request and on every push except to `dependabot/**` branches, whose read-only push token cannot upload results; Dependabot pull requests are scanned through the pull request event. The `init` and `analyze` steps are pinned to the same CodeQL Action release, v4.39.1 |
 | Dependency audit | The `Production verification` workflow (`ci.yml`) runs `npm audit --omit=dev --omit=optional` and a full `npm audit`; `npm run verify` runs the runtime audit locally |
 | SBOM | CI generates a CycloneDX SBOM of production dependencies and retains it for 30 days |
-| Container image | CI builds `backend/Dockerfile` on every push, smoke-boots it and fails on fixable `CRITICAL` or `HIGH` findings from Trivy; both stages use a digest-pinned `node:24.21.0-alpine3.23` image |
-| Pinned actions and tools | Every GitHub Action is pinned to a commit SHA; the Firebase CLI is pinned as `firebase-tools@15.14.0`; PlatformIO 6.2.0, `espressif32@7.0.1` and firmware libraries are pinned |
+| Container image | CI builds `backend/Dockerfile` on every push and pull request, smoke-boots it and fails on fixable `CRITICAL` or `HIGH` OS and library findings from Trivy; `publish-backend-image.yml` repeats the same scan before each Docker Hub push. Both Dockerfile stages use the digest-pinned `node:26.13.0-alpine3.23` image, and the runtime stage removes npm and runs as UID 1001 |
+| Pinned actions and tools | Every GitHub Action is pinned to a commit SHA; the Firebase CLI is pinned as `firebase-tools@15.14.0`; PlatformIO 6.2.0 (`hardware/requirements.txt`), `espressif32@7.0.1` and firmware libraries are pinned |
+| Dependency updates | Dependabot (`.github/dependabot.yml`) proposes daily version updates for the npm workspaces, the local lint helper, GitHub Actions, the base image of `backend/Dockerfile` and the `hardware/` Python tooling. Routine npm updates wait 3 days for patches, 7 for minors and 14 for majors, and the other ecosystems 7 days. Dependabot never approves or merges; `.github/CODEOWNERS` requests the owner's review |
 | Lockfile | `package-lock.json` is committed and CI installs with `npm ci` |
 | Dependency overrides | Root `package.json` `overrides` pin transitive versions of `qs`, `fast-glob`, `@fastify/busboy`, `@grpc/grpc-js`, `postcss`, `nanoid`, `js-yaml`, `uuid`, `glob`, `minimatch`, `sharp` and `deepmerge`. `js-yaml` is held at the patched 4.x line (`^4.3.2`) except under the development-only `@apidevtools/json-schema-ref-parser`, which needs the 5.x API and gets the patched `^5.4.2` |
 
-The repository has no automated dependency update configuration. [CI/CD and releases](../operations/CI_CD_AND_RELEASES.md) describes the pipelines.
+[CI/CD and releases](../operations/CI_CD_AND_RELEASES.md) describes the pipelines, and its [dependency updates](../operations/CI_CD_AND_RELEASES.md#12-dependency-updates) section the review and merge gates.
 
 ## 11. Firmware security
 
@@ -435,7 +449,8 @@ The backend returns a firmware release descriptor only when all six `FIRMWARE_RE
 8. `style-src 'unsafe-inline'` remains in the CSP.
 9. Development firmware builds store secrets in unencrypted flash and may use HTTP.
 10. `FIREBASE_TOKEN` is a long-lived token; its rotation is manual.
-11. Dependency updates are manual; audits detect known vulnerabilities but do not apply fixes.
+11. Dependabot proposes updates but merging stays manual, and routine updates wait 3 to 14 days. Dependabot does not cover the PlatformIO platform and library pins or the Firebase CLI version in workflow and script strings, and GitHub generates no Actions vulnerability alerts for full SHA pins; these need manual review.
+12. A VPS host pulls the backup image from Docker Hub by a mutable tag, not by digest. Whoever holds `DOCKERHUB_TOKEN` can replace the image behind that tag, and as a repository secret it is readable by a workflow pushed to any branch by anyone with write access.
 
 ## 14. References
 

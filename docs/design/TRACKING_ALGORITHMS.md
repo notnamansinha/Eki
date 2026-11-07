@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-ARC-004 | 1.3 | Current | 2026-11-06 |
+| EKI-ARC-004 | 1.4 | Current | 2026-11-07 |
 
 ## 1. Introduction
 
@@ -296,7 +296,7 @@ Figure 3. Durable ride status. `pending` and `armed` have `tripState: pre_depart
 
 ### 6.2 Manual start
 
-`POST /api/shifts/start` and `POST /api/v2/ride-sessions` call `startAssignedService` (`backend/src/services/rideSessionStart.ts:129`) for the assigned driver or an administrator ([ride session contract](../api/RIDE_SESSION_CONTRACT.md)).
+`POST /api/shifts/start` and `POST /api/v2/ride-sessions` call `startAssignedService` (`backend/src/services/rideSessionStart.ts:129`) for the assigned driver or an administrator with current authority as defined in Section 6.6 (`backend/src/routes/shifts.ts:95`, [ride session contract](../api/RIDE_SESSION_CONTRACT.md)).
 
 | Step | Rule | Source |
 |---|---|---|
@@ -361,7 +361,7 @@ The new session is created `armed` with `automaticTurnaround: true` and `previou
 
 | Cause | Trigger | Effect | Source |
 |---|---|---|---|
-| End ride early | `POST /api/shifts/stop` by the assigned driver, or by an administrator with current authority (`role: admin`, `admin: true`, and an `authorizationVersion` matching `_userAuthorization`) even if the operator was reassigned | Session `interrupted`, `interruptionReason: manual_end_early`, `interruptedBy`; lock and `active_rides` removed; `automaticServicePaused: true`; node retired to `status: offline` without lifecycle fields | `backend/src/routes/shifts.ts:276`, `shifts.ts:290`, `shifts.ts:23` |
+| End ride early | `POST /api/shifts/stop` by the assigned driver, or by an administrator with current authority (`role: admin`, `admin: true`, and an `authorizationVersion` matching `_userAuthorization` in both Firestore and RTDB) even if the operator was reassigned | Session `interrupted`, `interruptionReason: manual_end_early`, `interruptedBy`; lock and `active_rides` removed; `automaticServicePaused: true`; node retired to `status: offline` without lifecycle fields | `backend/src/routes/shifts.ts:276`, `shifts.ts:290`, `shifts.ts:23`, `backend/src/middleware/adminAuthority.ts:13` |
 | Abandoned ride | Hourly scan finds a `pending`, `armed` or `active` session with no activity for 12 h (`ABANDONED_RIDE_THRESHOLD_HOURS`); an unused automatic return gets 24 h. An engine restart that replays a swept-offline receiver's old fix does not count as activity | Session `interrupted`, `interruptionReason: abandoned_session_timeout` | `backend/src/services/abandonedRideReconciliationLogic.ts:1`, `backend/src/services/abandonedRideReconciler.ts:18`, `backend/src/services/tripStateEngine.ts:991-999` |
 | Start conflict | Another session won the live claim | Session `failed`, `failureReason: shift_conflict` | `rideSessionStart.ts:557` |
 
@@ -489,7 +489,7 @@ reduce(fix, previous, ride):
 
 ## 8. Arrival time estimates
 
-The passenger map computes estimates in the browser (`frontend/src/components/maps/PassengerMap.tsx:405`, `frontend/src/lib/busEta.ts:93`). For each bus whose health is `live` or `delayed` (Section 9), and for each stop from `currentStopIndex` onward:
+The passenger map computes estimates in the browser (`frontend/src/components/maps/PassengerMap.tsx:456`, `frontend/src/lib/busEta.ts:93`). For each bus whose health is `live` or `delayed` (Section 9), and for each stop from `currentStopIndex` onward:
 
 ```text
 distance = |stop position - bus position| along the bus's own path
@@ -502,10 +502,10 @@ eta      = now + distance / speed + 45 s * (stops before it) + delayMinutes
 |---|---|---|
 | Speed floor | 25 km/h | `frontend/src/lib/etaConstants.ts:1` |
 | Dwell per intermediate stop | 45 s | `busEta.ts:127` |
-| Several buses | Earliest estimate per stop | `PassengerMap.tsx:476` |
-| Display | Whole minutes, rounded up | `PassengerMap.tsx:487` |
-| Recalculation | On each new snapshot, every 15 s, and when a bus becomes or stops being trackable | `PassengerMap.tsx:387`, `PassengerMap.tsx:508` |
-| Rerouted bus | Skipped until its reroute geometry has loaded | `PassengerMap.tsx:428` |
+| Several buses | Earliest estimate per stop | `PassengerMap.tsx:527` |
+| Display | Whole minutes, rounded up | `PassengerMap.tsx:538` |
+| Recalculation | On each new snapshot, every 15 s, and when a bus becomes or stops being trackable | `PassengerMap.tsx:438`, `PassengerMap.tsx:559` |
+| Rerouted bus | Skipped until its reroute geometry has loaded | `PassengerMap.tsx:479` |
 
 Estimates are heuristic. They use no traffic data and no historical speeds.
 
@@ -560,21 +560,23 @@ Age is measured on the server timeline: `serverNow()` is the device clock correc
 
 | Item | `live` | `delayed` | `gnss_lost` | `lost` or `offline` | Source |
 |---|---|---|---|---|---|
-| Arrival estimates | Shown | Shown, with "ETAs may be late" | Withheld | Withheld | `PassengerMap.tsx:419` |
-| "Bus is here" (`atStopIndex`) | Shown | Shown | Withheld | Withheld | `PassengerMap.tsx:529` |
-| Marker | Live | Live | Marked GPS lost | Marked signal lost | `PassengerMap.tsx:683` |
+| Arrival estimates | Shown | Shown, with "ETAs may be late" | Withheld | Withheld | `PassengerMap.tsx:470`, `liveBusHealth.ts:93` |
+| "Bus is here" (`atStopIndex`) | Shown | Shown | Withheld | Withheld | `PassengerMap.tsx:580` |
+| Marker | Live | Live | Marked GPS lost | Marked signal lost | `PassengerMap.tsx:735` |
 | New boarding (bus selectable) | Allowed | Allowed | Withheld | Withheld | `frontend/src/lib/passengerAvailability.ts:10` |
-| Ride chat | Available | Available | Available | Withheld | `frontend/src/components/passenger/PassengerWorkspace.tsx:354` |
+| Ride chat | Available | Available | Available | Withheld | `frontend/src/components/passenger/PassengerWorkspace.tsx:452` |
 
-Boarding is also withheld while `automaticServicePaused` is `true` or the browser's RTDB connection is down. The map notice shows the worst state among the route's buses (`PassengerMap.tsx:523`). Stop progress from `currentStopIndex` stays visible in every state.
+Boarding and ride chat are also withheld while `automaticServicePaused` is `true`, while the browser's RTDB connection is down or no live snapshot has arrived since it opened or resumed (`frontend/src/hooks/useRTDBResume.ts:131`), and after a live read error (`PassengerWorkspace.tsx:435`). The map notice shows the worst state among the route's buses (`PassengerMap.tsx:574`). Stop progress from `currentStopIndex` stays visible in every state.
 
 ### 9.4 What the administrator interface withholds
 
-The Live Ops dashboard uses the 30 s threshold only, re-evaluated every 15 s (`frontend/src/components/admin/DashboardPanel.tsx:643`). A ride whose node is `offline` or silent for more than 30 s shows **Service paused** instead of its trip state (`DashboardPanel.tsx:72-75,88-90`) and is left out of the in-service, awaiting-start and direction-pending counts (`DashboardPanel.tsx:648`). Its marker stays at the last known location, however old, in the offline colour, and the delay buttons are disabled until the receiver reports again. **End ride early** stays available for such a ride.
+The Live Ops dashboard uses the 30 s threshold only, re-evaluated every 15 s (`frontend/src/components/admin/DashboardPanel.tsx:643`). A ride whose node is `offline` or silent for more than 30 s shows **Service paused** instead of its trip state (`DashboardPanel.tsx:72-75,88-90`) and is left out of the in-service, awaiting-start and direction-pending counts (`DashboardPanel.tsx:648`). Its marker stays at the last known location, however old, in the offline colour (`DashboardPanel.tsx:327`), and the delay buttons are disabled until the receiver reports again. **End ride early** stays available for such a ride. The Live Ops map draws no route lines, only the traffic layer and the bus markers, so the map never shows a paused ride's route as active (`DashboardPanel.tsx:798`).
 
 ### 9.5 Backend staleness
 
 The leader's stale sweep reads one page of 25 nodes ordered by `timestamp` each second until it has covered every node older than the cutoff, then waits `BUS_STALE_MS` before the next pass (`tripStateEngine.ts:1361`, `staleBusSweeper.ts:4`, `staleBusSweeper.ts:79`). A node silent for longer than `BUS_STALE_MS` (default 300 s, minimum 90 s, `tripStateEngine.ts:110`) is marked `deviceState: offline`, `signalState: lost` when it carries an active ride, and removed otherwise. The browser thresholds of Section 9.1 do not depend on this sweep.
+
+When the stale sweep marks a ride's node offline, or a ride's node is removed, the engine writes the last raw fix to the session as `lastKnownLocation` and records the loss once per fix: `lastSignalLostAt` and a `connectionEvents.lost_<sampledAt>_<seq>` entry of type `signal_lost` (`<seq>` is 0 when the fix has none). An engine restart replays every live node; a replayed fix whose entry already exists keeps its original loss time, and so does the later removal of a node already marked offline (`tripStateEngine.ts:433`). The replay of an offline node whose fix is more than 60 s from the server clock also skips the durable lifecycle write to `active_rides` and the session, so the replay does not count as activity for the abandoned-ride timeout of Section 6.6 (`tripStateEngine.ts:997`).
 
 ## 10. Design rationale
 

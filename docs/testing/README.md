@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-TST-001 | 1.1 | Current | 2026-10-30 |
+| EKI-TST-001 | 1.2 | Current | 2026-11-07 |
 
 ## 1. Purpose
 
@@ -30,7 +30,11 @@ Two machine-parsed files hold the acceptance requirements and their historical s
 - [A to Z acceptance plan](WEBAPP_A_Z_AB_TESTING_PLAN.md): 351 feature cases, 22 per-control matrix entries (C01 to C22), 18 per-HTTP-operation matrix entries (H01 to H18), 8 experiment protocols and 20 GNSS generator profiles, followed by historical appendices.
 - [A to Z execution ledger](WEBAPP_A_Z_AB_TESTING.md): a historical status note for each of the 351 feature cases. The catalog keeps these notes separate from current execution evidence.
 
-The [Antigravity browser testing skill](EKI_Antigravity_Webapp_Testing_Skill.md) and its [installable package](skills/eki-antigravity-webapp-audit/SKILL.md) are instructions for an automated browser auditor. `e2e/places-audit-recipe.spec.ts` checks their Places recipe.
+The catalog also reads the SIM-01 to SIM-20 table in the [test strategy](TEST_STRATEGY.md#71-simulation-scenarios) and the profile list of `simulations/generate-gnss.mjs`.
+
+The [Antigravity browser testing skill](EKI_Antigravity_Webapp_Testing_Skill.md) and its [installable package](skills/eki-antigravity-webapp-audit/SKILL.md) are instructions for an automated browser auditor. `e2e/places-audit-recipe.spec.ts` runs the Places recipe from the skill and from `skills/eki-antigravity-webapp-audit/references/PLAYWRIGHT-RECIPES.md` against a synthetic page.
+
+The plan, the ledger, the skill and every file under `skills/` are uncontrolled: they carry no control block and keep the format their tools expect ([documentation standard](../DOCUMENTATION_STANDARD.md#34-uncontrolled-files)).
 
 ## 3. Reading an evidence record
 
@@ -53,7 +57,7 @@ CI success, a synthetic browser test, a stationary trace, a short moving trace a
 | EKI-EVD-001 | 2026-10-04 | [Adaptive GNSS trace validation](ADAPTIVE_GNSS_TRACE_VALIDATION.md) | Synthetic | Blocked: no recorded real-drive traces were available |
 | EKI-EVD-002 | 2026-10-06 | [Local admin permission recovery](ADMIN_PERMISSION_RECOVERY.md) | Synthetic | Software recovery only; App Check statements predate its removal (EVD-052) |
 | EKI-EVD-003 | 2026-10-27 | [Adversarial component audit, 25 October](ADVERSARIAL_AUDIT_2026-10-25.md) | Audit | Sixteen areas attacked with a failing test per defect; open defects needing product decisions |
-| EKI-EVD-004 | 2026-10-11 | [Readiness audit Low findings](AUDIT_LOW_DISPOSITION_2026_10_11.md) | Audit | Disposition of grouped Low findings. The 8 s auth restoration error it retains is now a slow-restoration notice (FR-PAS-093 in the [requirements](../requirements/SOFTWARE_REQUIREMENTS_SPECIFICATION.md)) |
+| EKI-EVD-004 | 2026-10-11 | [Readiness audit Low findings](AUDIT_LOW_DISPOSITION_2026_10_11.md) | Audit | Disposition of grouped Low findings. It retains an 8 s auth restoration error; the client shows a slow-restoration notice in its place (FR-PAS-093 in the [requirements](../requirements/SOFTWARE_REQUIREMENTS_SPECIFICATION.md)) |
 | EKI-EVD-005 | 2026-10-04 | [Audit fixes and physical-test readiness](AUDIT_STATUS_SUMMARY.md) | Audit | Status as of 2026-09-14; this index replaces it as a status page |
 | EKI-EVD-006 | 2026-10-08 | [GitHub issue inventory, 8 October](BALCONY_ISSUE_INVENTORY_2026_10_08.md) | Audit | Inventory of 115 issues for EVD-007 |
 | EKI-EVD-007 | 2026-10-08 | [Balcony GNSS readiness](BALCONY_READINESS_2026_10_08.md) | Stationary physical | Its uncommitted readiness fix is committed in EVD-026 |
@@ -63,7 +67,7 @@ CI success, a synthetic browser test, a stationary trace, a short moving trace a
 | EKI-EVD-011 | 2026-10-11 | [Delta brief and QA patch review](DELTA_BRIEF_REVIEW_2026_10_11.md) | Audit | |
 | EKI-EVD-012 | 2026-10-04 | [Full feature QA, 3 October](FULL_FEATURE_QA_2026_10_03.md) | Synthetic | Fixture and unit coverage at the recorded baseline, plus Chrome checks against live data |
 | EKI-EVD-013 | 2026-10-25 | [GNSS automatic service verification](GNSS_AUTOMATIC_SERVICE_VERIFICATION_2026_10_25.md) | Synthetic | Automatic ride admission without a manual start request; emulator, native and fixture runs |
-| EKI-EVD-014 | 2026-10-27 | [Google sign-in recovery](GOOGLE_SIGN_IN_RECOVERY.md) | Browser | Production sign-in incident of 2026-10-21 and its repair. Its restoration-timeout screen was replaced by the cold-open behaviour in FR-PAS-009, FR-PAS-092, FR-PAS-093 and NFR-AVL-005 of the [requirements](../requirements/SOFTWARE_REQUIREMENTS_SPECIFICATION.md), tested by `e2e/admin-access/cold-open.spec.ts` |
+| EKI-EVD-014 | 2026-10-27 | [Google sign-in recovery](GOOGLE_SIGN_IN_RECOVERY.md) | Browser | Production sign-in incident of 2026-10-21 and its repair. The cold-open behaviour in FR-PAS-009, FR-PAS-092, FR-PAS-093 and NFR-AVL-005 of the [requirements](../requirements/SOFTWARE_REQUIREMENTS_SPECIFICATION.md), tested by `e2e/admin-access/cold-open.spec.ts`, replaces its restoration-timeout screen |
 | EKI-EVD-015 | 2026-10-25 | [Historical movement and passenger tracking audit](HISTORICAL_MOTION_AUDIT_2026-10-25.md) | Audit | PR #381 |
 | EKI-EVD-016 | 2026-10-05 | [Issue #246 priority software verification](ISSUE_246_PRIORITY_PARTS_2026_10_05.md) | Synthetic | R01 to R11 and R25; includes stationary installed-image checks |
 | EKI-EVD-017 | 2026-10-04 | [Issue #246 selected-part software evidence](ISSUE_246_SELECTED_PARTS_2026_10_04.md) | Synthetic | R24, R26 to R29, R33 |
@@ -110,6 +114,7 @@ CI success, a synthetic browser test, a stationary trace, a short moving trace a
 | EKI-EVD-058 | 2026-10-08 | [Webapp readiness, 8 October](WEBAPP_READINESS_2026_10_08.md) | Browser | Boarding and manifest gaps closed by EVD-059 |
 | EKI-EVD-059 | 2026-10-09 | [Webapp readiness, 9 October](WEBAPP_READINESS_2026_10_09.md) | Browser | Stationary passenger flow on localhost |
 | EKI-EVD-060 | 2026-10-11 | [Deterministic QA baseline](../../qa/BASELINE_2026_10_11.md) | Audit | First QA programme slice; the [QA programme](../../qa/README.md) describes the current state |
+| EKI-EVD-061 | 2026-11-03 | [Cloud Run staging latency, 2 November](CLOUD_RUN_LATENCY_2026_11_02.md) | Stationary physical | Run 2026-11-02 against the Cloud Run staging backend and the `asia-southeast1` RTDB, with Cloud Run request logs and a remote RTDB listener; no moving drive or browser |
 
 The `assets/` folder holds images referenced by these records. `simulations/generate-gnss.mjs` is the GNSS profile generator: the backend GNSS property tests that `qa:gnss` runs import it and the acceptance catalog reads its profile list, so it is current code, not evidence.
 
@@ -117,7 +122,7 @@ The `assets/` folder holds images referenced by these records. `simulations/gene
 
 No record above establishes release readiness. The execution ledger always reports `softwareRelease: NOT_RELEASE_READY` and `vehicleFieldDeployment: NOT_VERIFIED`; only owner-reviewed field and provider evidence can change that decision. The levels L0 to L5 in the table below are defined in the [test strategy](TEST_STRATEGY.md#2-test-levels).
 
-[Issue #351](https://github.com/notnamansinha/Eki/issues/351) is the working acceptance checklist. It consolidates the requirements of issues #245, #246, #300 and #337, which are closed. Issues #365 to #379 track the Cloud Run migration, including staging acceptance and a rollback rehearsal (#377).
+[Issue #351](https://github.com/notnamansinha/Eki/issues/351) is the working acceptance checklist. It consolidates the requirements of issues #245, #246, #300 and #337, which are closed. [Issue #430](https://github.com/notnamansinha/Eki/issues/430) lists the open staging checks of the Cloud Run migration and replaces issues #375 to #377. Issues #378 (removal of the ngrok compatibility code) and #379 (production rollout plan) remain open.
 
 | Gate | Level | Evidence needed |
 |---|---|---|
@@ -128,6 +133,7 @@ No record above establishes release readiness. The execution ledger always repor
 | Power, thermal, watchdog and journal | L5 | Bench runs on a spare board |
 | Secure fleet and OTA | L5 | Witnessed provisioning, signed OTA, active-ride deferral and rollback ([hardware security provisioning](../security/HARDWARE_SECURITY_PROVISIONING.md)) |
 | Live providers | L4 | Deployed Google sign-in, Maps, Routes and Places in an approved environment |
+| Cloud Run staging acceptance | L4 to L5 | Tracker power cycle, Wi-Fi outage recovery and movement on the Cloud Run origin; a PWA update to the current build; the open rows of the [migration acceptance table](../operations/NGROK_REMOVAL_AND_FIREBASE_BACKEND_MIGRATION.md#9-required-feature-and-failure-acceptance); the RTDB region latency gate ([EKI-ADR-002](../design/RTDB_REGION_LATENCY_DECISION.md#21-cutover-gate)); a workstation-off route cycle and an observation window of at least 48 h ([issue #430](https://github.com/notnamansinha/Eki/issues/430)) |
 | Complete feature acceptance | L1 to L3 | Reviewed mappings and passing execution for each of the 351 feature cases and the SIM-01 to SIM-20 scenarios, which the catalog reports as NOT_COVERED |
 | University handover | Owner | The [deployment checklist](../operations/UNIVERSITY_DEPLOYMENT_CHECKLIST.md) |
 

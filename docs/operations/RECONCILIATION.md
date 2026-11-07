@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-OPS-017 | 1.0 | Current | 2026-10-30 |
+| EKI-OPS-017 | 1.1 | Current | 2026-11-07 |
 
 ## 1. Purpose
 
@@ -22,8 +22,8 @@ This is a repeatable scan, not a snapshot. A record that moves behind the cursor
 
 | Path | Page | Concurrency | Continuation |
 |---|---|---|---|
-| Abandoned sessions (`ride_sessions` with status `pending`, `armed` or `active`) | 100 sessions, then targeted live record reads | 4 sessions at a time | `_reconciliation_cursors/abandoned-sessions`, hourly |
-| Periodic fleet authorization (`drivers`) | 100 drivers with page-local bus and assignment caches | Batches of 10 Auth calls; no new batch after 30 s | `_reconciliation_cursors/fleet-authorizations`, every 10 min |
+| Abandoned sessions (`ride_sessions` with status `pending`, `armed` or `active`) | 100 sessions, then targeted live record reads | 4 sessions at a time | `_reconciliation_cursors/abandoned-sessions`, when the process takes the worker lease and hourly after that |
+| Periodic fleet authorization (`drivers`) | 100 drivers with page-local bus and assignment caches | Batches of 10 Auth calls; no new batch after 30 s | `_reconciliation_cursors/fleet-authorizations`, when the process takes the worker lease and every 10 min after that |
 | Fleet reconciliation job (admin) | 100 drivers and at most 100 result records | Batches of 10; 30 s budget | The caller submits `result.nextCursor` |
 | Bus save: route validation | 100 `active_rides` or `devices` per query | One page at a time | All pages are checked before the bus is saved |
 | Bus save: driver authorization repair | 100 drivers per query | Batches of 10, with an audit checkpoint per batch | All pages |
@@ -32,11 +32,11 @@ This is a repeatable scan, not a snapshot. A record that moves behind the cursor
 
 ### 3.2 Checkpoints and leadership
 
-The abandoned-session reconciler runs at most one scan and queues at most one more, with a 5 s limit on queue age; its page executor allows one active page and three waiting. Periodic fleet scans run one at a time, including across leadership changes. A page's cursor is saved only after all dispatched work has settled, in a transaction that checks the worker lease. A failure keeps the previous cursor, and a crash between the effects and the checkpoint repeats the page. Session and value predicates, and comparison with current Auth claims and mirrors, make a repeated page safe. An expired leader cannot advance a cursor.
+The abandoned-session reconciler runs at most one scan and queues at most one more, with a 5 s limit on queue age; its page executor allows one active page and three waiting. Periodic fleet scans run one at a time, including across leadership changes. A page's cursor is saved only after all dispatched work has settled, in a transaction that checks the worker lease. A failure keeps the previous cursor, and a crash between the effects and the checkpoint repeats the page. Session and value predicates, and comparison with current Auth claims and mirrors, make a repeated page safe. An expired leader cannot advance a cursor. The periodic reconcilers run only in the worker leader, so while no leader runs, for example while a backend that scales to zero has no instance ([staging runtime configuration](STAGING_RUNTIME_CONFIG.md#2-project-facts)), the next pass waits for the next process that takes the lease.
 
 ### 3.3 Cross-store safety
 
-Session cleanup rechecks lifecycle activity, session ownership and locks; a session with recent or unknown activity is protected. An armed automatic return that has not departed is kept for at least 24 h of inactivity, so it survives overnight (`backend/src/services/abandonedRideReconciliationLogic.ts:2`). A session whose bus or route ID is not 1 to 128 characters of `A-Z`, `a-z`, `0-9`, `_` or `-` is skipped and listed in the page summary's `skippedIds`, so it cannot fail the page and pin the cursor.
+Session cleanup rechecks lifecycle activity, session ownership and locks; a session with recent or unknown activity is protected. Activity is the latest of the session's creation, arming, start, activation, update, stop, path and passenger join times, the `updatedAt` and `createdAt` of its `active_rides` document, and the `timestamp`, `receivedAt` and `lifecycleUpdatedAt` of its live record. The `active_rides` document and the live record count only when they carry the same session ID (`backend/src/services/abandonedRideReconciliationLogic.ts:54` to `:87`). When the trip engine restarts and replays the stale fix of a device that the stale sweep marked offline, it does not write `active_rides`, so a silent ride still times out ([matching and lifecycle scans](MATCHING_AND_LIFECYCLE_SCANS.md#34-replay-of-swept-records)). An armed automatic return that has not departed is kept for at least 24 h of inactivity, so it survives overnight (`backend/src/services/abandonedRideReconciliationLogic.ts:2`). A session whose bus or route ID is not 1 to 128 characters of `A-Z`, `a-z`, `0-9`, `_` or `-` is skipped and listed in the page summary's `skippedIds`, so it cannot fail the page and pin the cursor.
 
 An RTDB transaction can first see an empty local cache. It then returns a no-op so the SDK retries against the server value, and the session and activity checks apply to the real record. Live record cleanup during bus deletion compares the whole captured value and bus identity before removal, so a newer lifecycle survives.
 
@@ -89,6 +89,7 @@ The legacy endpoint `POST /api/fleet/reconcile?cursor=<value>` returns `{checked
 |---|---|
 | Page helpers and bounded batches | `backend/src/lib/reconciliationPages.test.ts` |
 | Abandoned-session bounds, protection and recovery | `backend/src/services/abandonedRideReconciler.bounds.test.ts`, `backend/src/services/abandonedRideReconciler.recovery.test.ts`, `backend/src/services/abandonedRideReconciliationLogic.test.ts` |
+| A silent ride times out although the trip engine restarts, and resumes when its device reports again | `backend/src/services/routingLifecycle.integration.test.ts` |
 | Fleet jobs, cursors, legacy headers and mutation admission | `backend/src/routes/fleetOperations.test.ts` |
 | 203 sessions, 1,001 drivers with synthetic Auth, and paged bus, device and RTDB cleanup against emulators | `backend/src/reconciliation.integration.test.ts`, run by `npm run test:rules` |
 

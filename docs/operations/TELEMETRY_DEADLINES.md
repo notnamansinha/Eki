@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-OPS-023 | 1.0 | Current | 2026-10-30 |
+| EKI-OPS-023 | 1.1 | Current | 2026-11-07 |
 
 ## 1. Purpose
 
@@ -56,7 +56,7 @@ None of these values is configurable at run time.
 | Response budget, per-stage budget | 8 s, 5 s | `backend/src/lib/executionDeadline.ts:25` |
 | Stage names | `credentials`, `rate limit`, `telemetry commit` | `backend/src/services/deviceTelemetryService.ts:815`, `backend/src/services/deviceTelemetryService.ts:837`, `backend/src/services/deviceTelemetryService.ts:844` |
 | Request and header timeouts | 15 s, 70 s | `backend/src/server.ts:107`, `backend/src/server.ts:108` |
-| Telemetry body limit | 512 bytes | `backend/src/server.ts:168` |
+| Telemetry body limit | 512 bytes | `backend/src/server.ts:177` |
 | 503 contract | `Retry-After: 1`, `retryAfterMs: 1000`, `commitState` | `backend/src/routes/devices.ts:161` |
 | Accepted capture-time window | 60 s behind to 10 s ahead | `backend/src/services/telemetryPayload.ts:126` |
 

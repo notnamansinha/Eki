@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-OPS-021 | 2.0 | Current | 2026-10-30 |
+| EKI-OPS-021 | 2.1 | Current | 2026-11-07 |
 
 ## 1. Purpose
 
@@ -10,7 +10,7 @@ This document describes how the web app recovers its live RTDB data after a tab 
 
 ## 2. Scope
 
-The document covers the `useRTDBResume` hook, live-fleet listener retries in the shared live bus store, and access verification retries in `AuthProvider`. The Firebase SDK keeps its own automatic connection recovery [1]; the manual handshake described here is an addition, not a replacement. How passengers see a silent bus is described in the [browser telemetry trace](BROWSER_TELEMETRY_TRACE.md).
+The document covers the `useRTDBResume` hook, live-fleet listener retries in the shared live bus store, access verification retries in `AuthProvider` and the connection notices on the passenger workspace. The Firebase SDK keeps its own automatic connection recovery [1]; the manual handshake described here is an addition, not a replacement. How passengers see a silent bus is described in the [browser telemetry trace](BROWSER_TELEMETRY_TRACE.md).
 
 ## 3. Behaviour
 
@@ -46,6 +46,12 @@ Before verification can start, the browser must download the sign-in code. A fai
 
 Manual and automatic retries share the current verification attempt and always force fresh trusted claims; a cached role, the Firestore profile or the bootstrap response alone never authorizes a driver or administrator. Permission denial, disabled or expired accounts and missing privileged claims are not retried. Account change, sign-out and unmount cancel queued work, and a late result from a timed-out attempt cannot restore an older role. The deadline cannot cancel the underlying Firebase promise; the finite retry burst bounds how many such calls are outstanding.
 
+### 3.5 Passenger connection notices
+
+`useRTDBResume` reports two states. `isConnected` becomes `true` when `.info/connected` reports `true`, and `false` when it reports `false`, when the browser fires `offline` and while a manual handshake runs. `isResuming` stays `true` until the connection is confirmed and an authoritative snapshot has arrived. The passenger workspace names the connection as the cause only while `isConnected` is `false`: the banner reads "Connecting to live bus data…" before the first connection and "Reconnecting to live bus data…" after a disconnection, and the empty state reads "Unable to reach live data. Check your connection."
+
+A connected page that is still waiting for its snapshot, or whose live data failed, shows "Live bus data is not available right now." instead. The live route catalog waits for `clientProjectionStatus/public` to report `schemaVersion` 1 and `ready` `true`; while the status is missing or reports anything else, the page also shows the "Live bus data is unavailable." alert with **Retry**. The passenger projection that writes this status runs only in the [worker leader](WORKER_LEADERSHIP.md). Each new leader first writes `ready` `false` and writes `true` once its backfill and recovery pass finish, so the alert can appear briefly after a leadership change or a cold start. Bus selection, boarding and chat stay unavailable while `isResuming` is `true` or live data has failed.
+
 ## 4. Configuration
 
 None of these values is configurable at run time.
@@ -68,6 +74,7 @@ None of these values is configurable at run time.
 | Symptom | Cause | Action |
 |---|---|---|
 | Live data stays in the recovering state | No authoritative snapshot after reconnect, for example RTDB unreachable or rules denying the read | Check the browser console and network. The SDK keeps retrying; reload the page if the network is healthy. |
+| A connected passenger page shows "Live bus data is unavailable." and "Live bus data is not available right now." | `clientProjectionStatus/public` is missing or not ready, or a live data listener failed | Confirm that a worker leader holds the lease and check `telemetry.workQueues.publicProjection` in admin health, then select **Retry**. |
 | "We could not verify your access. Check your connection; retrying automatically." | A transient failure; a timer retry is scheduled | Wait, or select **Try again**. |
 | "We could not verify your access. Check your connection and try again." after an outage | Six automatic retries used up while the network was still down | Select **Try again**, or return to the tab once online. |
 | "Sign-in could not load. Check your connection; retrying automatically." | The sign-in code did not download | Wait; the download is retried and runs again when the browser comes online. **Reload** also works. |
@@ -83,6 +90,7 @@ These are browser recovery bounds, not fleet capacity or latency targets.
 | Retry bounds and jitter, including 1,000 simulated clients | `frontend/src/lib/liveBusRetry.test.ts` |
 | Store recovery and snapshot readiness | `frontend/src/lib/liveBusStoreRecovery.test.ts` |
 | Access retries, fencing and fresh claims | `frontend/src/hooks/useAuth.test.tsx` |
+| Connection notices only while disconnected, the not-available notice while connected and waiting | `frontend/src/components/passenger/PassengerWorkspace.test.tsx` |
 | Long suspension with one debounced handshake, a ten-minute offline access failure recovered on `online` without protected reads or reload, offline and online flapping | `e2e/admin-access.spec.ts`, `e2e/admin-access/resilience.spec.ts` (`npm run test:e2e:admin`) |
 
 The browser suites replace Firebase with a synthetic adapter. Real provider outages, deployed token revocation, phone suspension, installed-app behaviour and same-window connection and byte measurements need field evidence; the procedure is in [realtime transport measurements](REALTIME_TRANSPORT_MEASUREMENTS.md).

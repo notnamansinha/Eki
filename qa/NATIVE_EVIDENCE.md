@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-TST-011 | 1.0 | Current | 2026-10-30 |
+| EKI-TST-011 | 1.1 | Current | 2026-11-07 |
 
 ## 1. Purpose
 
@@ -11,14 +11,14 @@
 ## 2. Prerequisites
 
 - Node 24 and locked dependencies.
-- PlatformIO Core 6.2.0 available as `platformio` on `PATH`. The runner stops when `platformio --version` reports another version.
+- PlatformIO Core 6.2.0, pinned in `hardware/requirements.txt`, available as `platformio` on `PATH`. The runner stops when `platformio --version` reports another version.
 - A host C++ compiler. Without one, every native suite fails at compilation and no assertion runs.
 - No production credentials are needed.
 
 ## 3. Procedure
 
 ```powershell
-python -m pip install platformio==6.2.0
+python -m pip install --requirement hardware/requirements.txt
 npm ci
 npm run qa:native
 ```
@@ -35,7 +35,7 @@ After a failing Unity program, PlatformIO adds a separate runner-error row. The 
 
 `qa/native-test-map.mjs` links assertions to parts of FW02 to FW09, FW11 to FW13, FW15 and FW18 to FW20. A pass gives those requirements `PARTIAL` status. FW01, FW10, FW14, FW16, FW17, FW21 and FW22 have no native mapping.
 
-In Production verification the `firmware` job runs `qa:native` and uploads `native-firmware-evidence` for the `qa-evidence` job. The nightly workflow runs it as the `native` shard.
+In Production verification the `firmware` job installs PlatformIO from `hardware/requirements.txt`, runs `qa:native` and uploads `native-firmware-evidence` for the `qa-evidence` job. The nightly workflow runs it as the `native` shard with the same pin.
 
 ## 5. Limits
 

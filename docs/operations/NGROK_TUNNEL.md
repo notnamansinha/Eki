@@ -2,13 +2,13 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-OPS-003 | 1.2 | Current | 2026-11-02 |
+| EKI-OPS-003 | 1.3 | Current | 2026-11-07 |
 
 ## 1. Purpose
 
 This procedure publishes a backend that runs on a workstation at a stable HTTPS origin through an ngrok agent. Devices and browsers outside the workstation cannot call `localhost`; the tunnel gives them one reusable origin, so restarting the backend or the agent does not require a firmware rebuild.
 
-Since 2026-11-01 the staging web app uses the Cloud Run service `eki-backend-staging` instead of the tunnel, and the tunnel that the staging site used is offline ([current state](CI_CD_AND_RELEASES.md#71-current-state)). Devices flashed with the tunnel origin need the Cloud Run origin and its root CA ([issue #376](https://github.com/notnamansinha/Eki/issues/376)). Use this procedure for bench tests and demonstrations. A tunnelled backend is available only while the workstation, the backend process and the ngrok agent all run.
+The staging web app calls the Cloud Run service `eki-backend-staging`, and the firmware template `hardware/include/secrets.example.h` names the same origin, so neither the staging web app nor a tracker built from the template depends on a tunnel ([current state](CI_CD_AND_RELEASES.md#71-current-state)). The tunnel that the staging site used is offline; devices flashed with its origin need the Cloud Run origin and its root CA ([issue #430](https://github.com/notnamansinha/Eki/issues/430)). Use this procedure only when a backend on a workstation must be reachable from outside it: phone and device tests against a local backend ([local testing](LOCAL_TESTING.md#32-expose-the-backend-to-phones-and-devices)), bench tests and the laptop-hosted [live demonstration](LIVE_DEMO_RUNBOOK.md). The code keeps tunnel compatibility for these uses: the frontend API client and the runtime probe scripts send `ngrok-skip-browser-warning` to ngrok hosts (Section 6), the firmware retries the ngrok offline-tunnel and unreachable-backend errors (Section 9), and `TRUST_PROXY=loopback` makes the backend trust the local agent (Section 4). A tunnelled backend is available only while the workstation, the backend process and the ngrok agent all run.
 
 ```mermaid
 flowchart LR
@@ -26,7 +26,7 @@ Figure 1. Request path through the tunnel.
 - An ngrok account with an assigned development domain. Use the exact hostname that the ngrok dashboard shows; the suffix (for example `ngrok-free.dev`) is not fixed in advance.
 - The ngrok agent installed on the workstation.
 - The repository installed and `backend/.env` configured for the Firebase project as in [getting started](../GETTING_STARTED.md), with Application Default Credentials or a service account for that project.
-- For devices: PlatformIO, a USB cable and the device's provisioned credentials ([local testing](LOCAL_TESTING.md#33-prepare-a-device)).
+- For devices: PlatformIO Core at the version CI pins (`py -m pip install --requirement hardware/requirements.txt`), a USB cable and the device's provisioned credentials ([local testing](LOCAL_TESTING.md#33-prepare-a-device)).
 
 ## 3. Set up ngrok once
 
@@ -46,6 +46,8 @@ Figure 1. Request path through the tunnel.
 1. In `backend/.env`, set `NODE_ENV=development`, `PORT=4000` and `TRUST_PROXY=loopback`, and list every frontend origin that calls this backend in `CORS_ORIGIN` (for example `https://bustrack-be165.web.app`). In development the backend also allows `http://localhost:3000`. Expected: the values are saved.
 
    `TRUST_PROXY=loopback` makes Express accept `X-Forwarded-For` only from a proxy on the same machine, so each caller gets its own pre-authentication rate-limit bucket. Without it every tunnelled caller shares the agent's loopback bucket, and a flood from one caller can return `429` to real devices. Do not put the tunnel URL in `CORS_ORIGIN`; it is the backend's own origin.
+
+   If this backend uses the staging project `bustrack-be165` (its credentials and `FIREBASE_DATABASE_URL`), decide which process runs the workers before you start. `WORKER_ENABLED` defaults to `true`, and the staging Cloud Run service also runs them while an instance is up; set `false` unless this backend is to hold the worker lease, as in a live demonstration ([worker leadership](WORKER_LEADERSHIP.md), [live demo runbook](LIVE_DEMO_RUNBOOK.md#4-prepare-the-backend-and-the-tunnel)).
 2. In terminal 1, start the backend:
 
    ```powershell
@@ -83,7 +85,7 @@ The firmware validates the server certificate chain and hostname. ngrok renews t
 
    Expected: verification succeeds and the chain names its root CA.
 2. Download that root certificate from the issuing CA's own repository. Compare its subject, issuer, validity and SHA-256 fingerprint with the chain. Do not use a certificate copied from a chat, and do not pin the leaf certificate.
-3. In the ignored `hardware/include/secrets.h`, set the origin (no path or query) and the root:
+3. In the ignored `hardware/include/secrets.h`, set the origin (no path or query) and the root. A copy of `hardware/include/secrets.example.h` names the Cloud Run origin and GTS Root R1; replace both values:
 
    ```cpp
    #define BACKEND_URL "https://<assigned-domain>"
@@ -110,13 +112,13 @@ Vehicles in university service use only the signed `esp32dev-secure` image built
 
 | Consumer | Setting | Apply the change |
 |---|---|---|
-| Deployed frontend | `NEXT_PUBLIC_BACKEND_URL` secret in the GitHub environment. The staging secret names the Cloud Run service; pointing it at a tunnel moves every staging user off Cloud Run. | Merge to `main` or dispatch Deploy; the strict build regenerates the CSP `connect-src` ([CI, deployment and releases](CI_CD_AND_RELEASES.md)) |
+| Deployed frontend | `NEXT_PUBLIC_BACKEND_URL` secret in the GitHub environment. The staging secret names the Cloud Run service; pointing it at a tunnel moves every staging user off Cloud Run. | Merge to `main` or dispatch Deploy; the strict build regenerates the CSP `connect-src` ([CI, deployment and releases](CI_CD_AND_RELEASES.md)). A staging release that deploys only the frontend does not probe the backend, so run the check in Section 8 after it. |
 | Local frontend | `NEXT_PUBLIC_BACKEND_URL` in the ignored `frontend/.env.local` | Restart the frontend |
 | Local production build | `NEXT_PUBLIC_BACKEND_URL` in `frontend/.env.production` or the shell, then `npm run build:production` | The build fails if the CSP would block the backend |
 | Device | `BACKEND_URL` and `BACKEND_ROOT_CA` in `hardware/include/secrets.h` | Rebuild and reflash |
 | Backend | `CORS_ORIGIN` lists frontend origins only | Restart the backend |
 
-The frontend adds the `ngrok-skip-browser-warning` header to requests for `*.ngrok-free.dev`, `*.ngrok-free.app` and `*.ngrok.io` hosts, so API calls do not receive the free-plan browser page. The deployed staging frontend calls the Cloud Run backend; to reach a tunnelled backend from a phone, use a frontend build that names the tunnel origin. Tunnelling a local frontend needs a second stable domain, its own Firebase Auth authorized domain and a `CORS_ORIGIN` entry.
+The frontend (`frontend/src/lib/apiClient.ts`) adds the `ngrok-skip-browser-warning` header to requests for `*.ngrok-free.dev`, `*.ngrok-free.app` and `*.ngrok.io` hosts, so API calls do not receive the free-plan browser page; `scripts/check-stationary-runtime.mjs` and `scripts/verify-web-backend-contract.mjs` send it to the same hosts. The deployed staging frontend calls the Cloud Run backend; to reach a tunnelled backend from a phone, use a frontend build that names the tunnel origin. Tunnelling a local frontend needs a second stable domain, its own Firebase Auth authorized domain and a `CORS_ORIGIN` entry.
 
 ## 7. When a device must be reflashed
 
@@ -151,7 +153,7 @@ The ngrok inspection page at `http://127.0.0.1:4040` shows each request's status
 | Device TLS error | Clock, hostname or root CA in the serial log | Reflash only if the compiled origin or root is wrong (Section 7) |
 | Browser CORS error | `CORS_ORIGIN` lacks the frontend origin, or the deployed build has another backend URL | Correct `CORS_ORIGIN` and restart; or correct the secret and redeploy |
 | Devices receive `429` | `TRUST_PROXY` is not `loopback` | Set it and restart the backend |
-| Deploy fails at the backend readiness step | The origin in `NEXT_PUBLIC_BACKEND_URL` failed the readiness check; Deploy retries `/health` for up to 90 s while it answers 502, 503 or 504 or does not answer. The staging secret names the Cloud Run service unless it was pointed at a tunnel. | For a tunnel, start the backend and the agent; then rerun Deploy ([CI, deployment and releases](CI_CD_AND_RELEASES.md#52-steps)) |
+| Deploy fails at the backend readiness step | The origin in `NEXT_PUBLIC_BACKEND_URL` failed the readiness check. The check runs on every production release and on a staging dispatch with `deploy_backend: true`; a staging release that deploys only the frontend skips it. It retries `/health` for up to 90 s while the backend answers 502, 503 or 504 or gives no complete answer within 10 s, and stops at once on any other failure, such as the `404` of an offline tunnel. The staging secret names the Cloud Run service unless it was pointed at a tunnel. | For a tunnel, start the backend and the agent; then rerun Deploy ([CI, deployment and releases](CI_CD_AND_RELEASES.md#52-steps)) |
 
 Telemetry is sent once per second while moving and while stopped, so each device makes about 3,600 requests per hour, plus a diagnostic report every five minutes and all browser API traffic. Compare this with the account's request and data limits before every field session [2]. Do not disable TLS verification on a device to work around a tunnel problem.
 
