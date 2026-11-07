@@ -2,17 +2,17 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-PKG-004 | 1.0 | Current | 2026-10-30 |
+| EKI-PKG-004 | 1.1 | Current | 2026-11-07 |
 
 ## 1. Purpose
 
-This folder holds the firmware's configuration template and its header-only policies. Both the board build (`src/CMakeLists.txt` adds this folder to the include path) and the `native` test environment compile these headers. Policy headers include only the C++ standard library (and ArduinoJson for `json_payload.h`), so the host tests run the same code that the board runs. Behaviour is specified in the [hardware telemetry contract](../../docs/hardware/HARDWARE_TELEMETRY.md); tests are described in the [firmware tests](../test/README.md) guide.
+This folder holds the firmware's configuration template and its header-only policies. PlatformIO puts this folder on the include path of every environment, and `src/CMakeLists.txt` adds it for the ESP-IDF builds (`esp32dev-journal` and `esp32dev-secure`), so both the board builds and the `native` test environment compile these headers. Policy headers include only the C++ standard library (and ArduinoJson for `json_payload.h`), so the host tests run the same code that the board runs. Behaviour is specified in the [hardware telemetry contract](../../docs/hardware/HARDWARE_TELEMETRY.md); tests are described in the [firmware tests](../test/README.md) guide.
 
 ## 2. Configuration
 
 | File | Contents |
 |---|---|
-| `secrets.example.h` | Tracked template that defines `WIFI_SSID`, `WIFI_PASS`, `DEVICE_ID`, `DEVICE_SECRET`, `BACKEND_URL` and `BACKEND_ROOT_CA` with placeholder values |
+| `secrets.example.h` | Tracked template that defines `WIFI_SSID`, `WIFI_PASS`, `DEVICE_ID` and `DEVICE_SECRET` with placeholder values, and `BACKEND_URL` and `BACKEND_ROOT_CA` with the Cloud Run staging origin and its root CA, GTS Root R1. The `native` suite `test_telemetry_policy` includes it to prove that an unedited copy fails boot validation. |
 | `secrets.h` | Ignored copy of the template with the device's real values. The firmware's only configuration source. |
 | `firmware_config.h` | Boot validation of the six definitions, the length limits (`DEVICE_ID` 128, `DEVICE_SECRET` 20 to 128, `BACKEND_URL` 256, `BACKEND_ROOT_CA` 3,072 bytes) and the name of the first invalid definition |
 

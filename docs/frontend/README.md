@@ -2,11 +2,11 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-PKG-002 | 2.1 | Current | 2026-11-06 |
+| EKI-PKG-002 | 3.0 | Current | 2026-11-07 |
 
 ## 1. Purpose
 
-`frontend/` is the Eki web client. It is a Next.js 16 App Router application that `next build` exports as static files, served by Firebase Hosting as an installable progressive web app (PWA). It contains the passenger workspace, the administrator workspace and the feedback console.
+`frontend/` is the Eki web client. It is a Next.js 16 App Router application that `next build` exports as static files, served by Firebase Hosting as an installable progressive web app (PWA). It contains the passenger workspace, the administrator workspace, the feedback console and a home-screen install guide.
 
 This guide covers building, running, data access, sign-in, the service worker and the Content Security Policy (CSP). Colours, screens and components are described in the [UI design system](../design/UI_DESIGN_SYSTEM.md). Environment variables are listed in the [configuration reference](../CONFIGURATION.md).
 
@@ -27,21 +27,23 @@ Locked versions in `package-lock.json`:
 | Package | Version |
 |---|---|
 | `next` | 16.4.3 |
-| `react`, `react-dom` | 19.2.4 |
-| `firebase` | 12.16.0 |
-| `@vis.gl/react-google-maps` | 1.9.0 |
-| `lucide-react` | 1.27.0 |
-| `tailwindcss`, `@tailwindcss/postcss` | 4.2.2 |
+| `react`, `react-dom` | 19.3.1 |
+| `firebase` | 13.1.0 |
+| `@vis.gl/react-google-maps` | 1.10.1 |
+| `lucide-react` | 1.62.0 |
+| `tailwindcss`, `@tailwindcss/postcss` | 4.3.3 |
 | `workbox-build` | 7.4.1 |
 | `vitest` | 4.1.12 |
-| `typescript` | 5.9.3 |
+| `typescript` | 6.0.3 |
+
+TypeScript 6 defaults `compilerOptions.types` to an empty list, so an `@types` package that no file imports declares no global names unless the list includes it. `tsconfig.json` therefore lists `node` and `google.maps`. Add any other package that only declares global names to that list.
 
 ## 3. Run the development server
 
 1. From the repository root, run `npm ci`. Expected result: one `node_modules/` folder at the root.
-2. Create `frontend/.env.local` with the `NEXT_PUBLIC_*` values from the [frontend variables](../CONFIGURATION.md#4-frontend-variables). `frontend/env.production.example` lists every public variable. For a backend on the same computer, set `NEXT_PUBLIC_BACKEND_URL=http://localhost:4000`.
+2. Create `frontend/.env.local` with the `NEXT_PUBLIC_*` values from the [frontend variables](../CONFIGURATION.md#4-frontend-variables). `frontend/env.production.example` lists every public variable except the optional Profile build label variables `NEXT_PUBLIC_BUILD_VERSION` and `NEXT_PUBLIC_BUILD_DATE`. For a backend on the same computer, set `NEXT_PUBLIC_BACKEND_URL=http://localhost:4000`.
 3. Run `npm run dev --workspace=frontend`, or `npm run dev` to start the frontend and backend together. Expected result: Next.js listens on port 3000 on all interfaces.
-4. Open `http://localhost:3000`. Expected result: the landing page with **Sign In with Google**.
+4. Open `http://localhost:3000`. Expected result: the landing page with **Continue with Google**.
 
 Next.js compiles `NEXT_PUBLIC_*` values into the client bundle. Restart the development server after changing one. To open the app from a phone on the same network, see [local testing](../operations/LOCAL_TESTING.md).
 
@@ -64,7 +66,7 @@ Root scripts that build or check the frontend:
 | `npm run build` | Backend build, `next build`, `scripts/generate-sw.mjs`, `scripts/update-csp.mjs`, `scripts/verify-web-backend-contract.mjs`. |
 | `npm run build:production` | `npm run build` with `EKI_STRICT_PRODUCTION_BUILD=true`. See [Section 11](#11-static-export-and-hosting). |
 | `npm run verify:ui-contracts` | Source checks in `scripts/verify-ui-contracts.mjs`, for example that the passenger map uses the shared stop-label helper. |
-| `npm run test:e2e:admin` | Playwright admin, auth and feedback suite with synthetic Firebase dependencies. |
+| `npm run test:e2e:admin` | Playwright admin, auth, landing-page layout and feedback suite with synthetic Firebase dependencies. |
 
 Test suites and their viewports are described in the [test strategy](../testing/TEST_STRATEGY.md).
 
@@ -73,9 +75,10 @@ Test suites and their viewports are described in the [test strategy](../testing/
 | Route | Source | Access | Content |
 |---|---|---|---|
 | `/` | `src/app/page.tsx` | Public | Landing page and Google sign-in. A signed-in user is redirected to a workspace. |
-| `/passenger` | `src/app/passenger/` | `RoleGuard` roles `passenger`, `driver`, `admin` | Passenger workspace with the bottom tabs Map (live routes and tracking), Routes (published route schedules) and Profile. |
+| `/passenger` | `src/app/passenger/` | `RoleGuard` roles `passenger`, `driver`, `admin` | Passenger workspace with the bottom tabs Live (live routes and tracking), Routes (published route schedules) and Profile. |
 | `/admin` | `src/app/admin/` | `RoleGuard` role `admin` | Administrator workspace with the tabs Live Ops, Routes, Fleet & People, History, Feedback and Settings. |
 | `/feedback` | `src/app/feedback/` | `RoleGuard` role `admin` | Standalone feedback console. The admin Feedback tab renders the same `FeedbackPanel`. |
+| `/install` | `src/app/install/` | Public | Home-screen install guide. `lib/installPlatform.ts` classifies the device. Android shows **Install Eki** once the browser fires `beforeinstallprompt`, otherwise the Chrome menu steps. iOS Safari shows the Share and **Add to Home Screen** steps. Other iOS browsers and in-app views show **Copy link** with advice to open the page in Safari. A desktop browser is asked to open the link on a phone, and a standalone window reports that Eki is installed. |
 | `/manifest.webmanifest` | `src/app/manifest.ts` | Public | PWA manifest. |
 | `/robots.txt`, `/sitemap.xml` | `src/app/robots.ts`, `src/app/sitemap.ts` | Public | When `NEXT_PUBLIC_SITE_INDEXING` is not `false`, robots disallows `/admin`, `/passenger`, `/feedback` and `/api/`, and the sitemap lists `/`. Otherwise robots disallows everything. |
 
@@ -87,18 +90,22 @@ After sign-in, `/` opens the workspace saved in `localStorage` key `eki:last-wor
 
 | Path | Contents |
 |---|---|
-| `src/app/` | Routes, root layout, `globals.css`, metadata routes, `icon.png` and `apple-icon.png`. |
+| `src/app/` | Routes, the root layout, metadata routes, `icon.png` and `apple-icon.png`. The root layout self-hosts Roboto and Playfair Display through `next/font` as the CSS variables `--font-roboto` and `--font-playfair`. |
+| `src/app/globals.css` | The Tailwind import, the default tokens on `:root` (warm blacks and the orange accent `#FA5D29`) that the landing page, `/install` and `/feedback` keep, the `@theme inline` colour aliases (`ui-*`, `brand-*`), the transit artwork and landing layout, passenger layout classes and shared component classes. It imports `brand-theme.css`. |
+| `src/app/brand-theme.css` | The Ahmedabad University palette, font and gradient tokens shared by the passenger and administrator workspaces, scoped with `:root:has(.passenger-layout, .admin-layout)` so that dialogs portalled outside a layout inherit them. |
+| `src/app/passenger/theme.css`, `src/app/admin/theme.css` | The surface rules of each workspace, imported by its `layout.tsx`. The passenger file holds the `pp-*` classes, the phone Live routes sheet and the bottom navigation. The admin file holds the dark Live Ops scope and the continuous corners. |
 | `src/components/admin/` | Live Ops dashboard, route editor, fleet and personnel, ride history, feedback console, settings with the passenger route schedule editor (`PassengerRoutesSettings`), and `AdminPanelErrorBoundary`. |
-| `src/components/passenger/` | `PassengerWorkspace`, boarding card, account tab, route schedule tab (`RoutesTab`), route timeline, layout constants (`passengerFrame.ts`) and loading shell. `ui/` holds `BottomSheet` and `RouteCarousel`. |
+| `src/components/passenger/` | `PassengerWorkspace`, boarding card, account tab, route schedule tab (`RoutesTab`), route timeline, layout constants (`passengerFrame.ts`) and loading shell. `ui/` holds `BottomSheet`, `RouteCarousel` and `PassengerDate` (today's date above the Live Routes title). |
 | `src/components/maps/` | Passenger map, road polylines (`DirectionsRoute`), bus glyph, traffic layer. |
-| `src/components/shared/` | Components used by both roles: `RoleGuard`, chat (`MessagingPanel`), `FeedbackModal`, workspace links, prefetch and loading. |
+| `src/components/shared/` | Components used by both roles: `RoleGuard`, chat (`MessagingPanel`), `FeedbackModal`, workspace links, prefetch and loading, and `TransitArtwork` (the background paintings of the landing page and the passenger workspace). |
 | `src/components/ui/` | `ConfirmModal`, `AlertModal`, `InAppSelect` (listbox) and `CustomSelect` (native select). |
 | `src/components/*.tsx` | `Providers`, `MapProviders`, `ServiceWorkerRegistrar`, `TelemetryTraceControls`. |
 | `src/hooks/` | Auth, Firestore collections, settings, passenger route schedules, live route catalog, RTDB reconnect, live-health clock, marker smoothing, dialog focus. |
-| `src/lib/` | Code without React: Firebase clients, API client, live bus store, bus health, stop progress, ETAs, route geometry, feedback store. |
-| `src/config/` | `maps.ts` (Maps key, Map ID, default centre, map options) and `passenger.ts` (default service start time, feedback word limit of 200). |
+| `src/lib/` | Code without React: Firebase clients, API client, live bus store, bus health, stop progress, ETAs, route geometry, feedback store, route line labels (`routeLineLabel.ts`) and install platform detection (`installPlatform.ts`). |
+| `src/config/` | `maps.ts` (Maps key, Map ID, default centre, map options), `passenger.ts` (default service start time, feedback word limit of 200) and `university.ts` (University links, each shown only when its URL is set, and the optional Profile build label from `NEXT_PUBLIC_BUILD_VERSION` and `NEXT_PUBLIC_BUILD_DATE`). |
+| `src/test-support/` | `fakeGoogleMapsSdk.ts`, a test-only Google Maps SDK that counts map constructions for the map-load tests. |
 | `src/sw.js` | Service worker source. |
-| `public/` | Manifest icons, logos and hero images. |
+| `public/` | Manifest icons, the Google mark `google-g.svg`, logo files and other images. `images/` holds the transit artwork WebP delivery sizes and the Open Graph image `hero-background.webp`. |
 
 Imports use the alias `@/` for `src/` (`tsconfig.json`, `vitest.config.mts`).
 
@@ -120,6 +127,7 @@ The browser reads live and configuration data directly from Firebase and sends e
 | Global settings | Firestore `settings/global` | `onSnapshot` | `hooks/useSettings.ts` |
 | Passenger route schedules | Firestore `settings/passengerRoutes`, joined with `routes` | `onSnapshot`; malformed entries are dropped and deleted routes and stops skipped (`lib/passengerRouteSchedule.ts`) | `hooks/usePassengerRouteConfig.ts` |
 | Chat | Firestore `ride_sessions/<id>/messages` | `onSnapshot` | `components/shared/MessagingPanel.tsx` |
+| Ride chat history (admin) | Firestore `ride_sessions/<id>/messages` and `ride_sessions/<id>/archivedMessages` | `onSnapshot` through `useCollection`, 100 messages per page, only while the ride is expanded | `components/admin/RideHistoryPanel.tsx` |
 | Role fallback | Firestore `users/<uid>` | `getDoc` | `hooks/useAuth.ts` |
 
 The browser writes to Firestore only for feedback (`lib/feedbackStore.ts`): a transaction that creates the `feedbacks` record and the `feedbackCooldowns` stamp, a server read of the latest 200 records for administrators, and a status update. It never writes to RTDB. Reconnect timing is described in the [RTDB reconnect runbook](../operations/RTDB_RECONNECT_RECOVERY.md).
@@ -139,6 +147,7 @@ The browser writes to Firestore only for feedback (`lib/feedbackStore.ts`): a tr
 | Fleet | `PUT` and `DELETE /api/fleet/buses/<id>` and `/api/fleet/drivers/<id>` |
 | Live Ops | `POST /api/shifts/stop`, `PATCH /api/shifts/delay`, `DELETE /api/shifts/<id>/messages`, `POST /api/v2/ride-sessions` |
 | History and settings | `DELETE /api/shifts/<id>/history`, `PATCH /api/v2/settings/global`, `PUT /api/v2/settings/passenger-routes` |
+| Telemetry trace | `GET /api/health` (administrators only) from `window.__ekiTelemetryTrace.downloadHealth()` in a tab opened with `?telemetryTrace=1`; see the [browser telemetry trace](../operations/BROWSER_TELEMETRY_TRACE.md) |
 
 The [HTTP contract](../api/HTTP_CONTRACT.md) and the [API reference](../backend/API.md) define each endpoint.
 
@@ -147,7 +156,7 @@ The [HTTP contract](../api/HTTP_CONTRACT.md) and the [API reference](../backend/
 1. The root layout mounts `AuthProvider` (`hooks/useAuth.ts`). It imports the sign-in code (Firebase Auth) after first paint, one attempt at a time. A failed download is retried after 2, 5, 10, 20 and then every 30 s, or at once when the browser goes `online`; meanwhile the page shows "Sign-in could not load. Check your connection; retrying automatically." A Firebase Auth setup error such as `auth/invalid-api-key` is not retried and asks for a reload.
 2. `lib/firebaseAuth.ts` initialises Auth with persistence in this order: local storage, IndexedDB, session storage. On `<project>.web.app` or `<project>.firebaseapp.com`, the auth domain is the current host (`lib/firebaseAuthDomain.ts`); on other hosts it is `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN`. It installs Firebase's popup and redirect resolver at startup only on popup platforms or while the tab returns from a Google redirect, because with the resolver installed Firebase loads Google's sign-in frame before it reports the first auth state. Redirect sign-in passes the resolver per call.
 3. Google is the only provider. Sign-in uses a popup, or a full-page redirect when the auth domain equals the page host and the device is a phone or tablet or the app runs standalone (`lib/googleSignInFlow.ts`). When the popup takes longer than 8 s or fails with an error that permits it, the page offers **Continue with full-page Google sign-in**.
-4. **Sign In with Google** becomes usable as soon as the sign-in code loads, while Firebase may still be restoring a saved session. Only while a Google redirect is pending (the app's `eki:google-redirect-pending` marker or Firebase's `firebase:pendingRedirect:<apiKey>:[DEFAULT]` flag in session storage) does the button read "Preparing sign-in…" until the redirect result settles. On a phone, a tap during restoration waits for the restored state. On every platform, a tap while a restored account is being verified finishes that verification instead of opening Google again. A redirect that fails before leaving the page clears both pending flags.
+4. **Continue with Google** becomes usable as soon as the sign-in code loads, while Firebase may still be restoring a saved session. Only while a Google redirect is pending (the app's `eki:google-redirect-pending` marker or Firebase's `firebase:pendingRedirect:<apiKey>:[DEFAULT]` flag in session storage) does the button read "Preparing sign-in…" until the redirect result settles. On a phone, a tap during restoration waits for the restored state. On every platform, a tap while a restored account is being verified finishes that verification instead of opening Google again. A redirect that fails before leaving the page clears both pending flags.
 5. Until Firebase reports its first auth state, the user state is unknown, not signed out: protected views stay closed. After 8 s the landing page shows "Still checking your sign-in. The connection looks slow; this continues on its own." and `RoleGuard` shows "Still signing you in." with the same explanation; both offer **Reload**. `RoleGuard` also shows that screen after 10 s of loading.
 6. On every Auth state change, `beginAuthVerification()` closes the readiness gate and the client refreshes the ID token (10 s timeout). A `role` claim of `passenger`, `driver` or `admin` is accepted. `role: "admin"` also requires `admin: true`; otherwise the user sees "Your administrator access is not synchronized". A transient failure is retried after 1, 2, 4, 8, 16 and 30 s; during these timer retries the error stays on screen with "retrying automatically" ([RTDB reconnect runbook](../operations/RTDB_RECONNECT_RECOVERY.md)).
 7. Without a role claim, the client reads `users/<uid>` and calls `POST /api/users/bootstrap`. A driver or admin profile role must then appear in the refreshed claims. An unknown profile role becomes `passenger`.
@@ -167,7 +176,7 @@ The [HTTP contract](../api/HTTP_CONTRACT.md) and the [API reference](../backend/
 | Page navigations | Network first. When Hosting has not answered within 2.5 s, the worker serves the HTML shell precached with this worker (whose chunks are precached too), or else the cached copy, while the network response keeps updating the cache; with nothing readable it keeps waiting. When the fetch fails, it serves the route's precached shell or `/index.html`. A cache read that fails counts as a miss. One entry per path with the query string removed; at most 10 entries for 7 days. | `eki-navigations` |
 | Same-origin `/_next/static/` | Cache first, at most 120 entries for 30 days. | `eki-next-static` |
 | Same-origin images | Cache first, at most 100 entries for 30 days. | `eki-images` |
-| Google Fonts CSS and files | Stale-while-revalidate and cache first, readable responses only. The app loads no web fonts today. | `eki-google-fonts-css`, `eki-google-fonts-woff` |
+| Google Fonts CSS and files | Stale-while-revalidate and cache first, readable responses only. The app requests nothing from Google Fonts: `next/font` serves Roboto and Playfair Display from the app's own `/_next/static/` path. | `eki-google-fonts-css`, `eki-google-fonts-woff` |
 | Google Maps loader, tiles and icons | Network only. | none |
 | Google Auth helpers, RTDB, Identity Toolkit, Secure Token | Network only. | none |
 | Everything else, including the backend API | Network only. | none |
@@ -193,14 +202,14 @@ For work on this package:
 |---|---|
 | `output` | `"export"`: `next build` writes static HTML, JavaScript and CSS to `frontend/out/`. There is no Node.js server, middleware or proxy at runtime. |
 | `generateBuildId` | SHA-256 hash of the build inputs (source, `public/`, configuration and the root lockfile), truncated to 32 hexadecimal characters. Unchanged source gives an identical `out/`. |
-| `images.unoptimized` | `true`: no image optimisation server. The landing page uses a `<picture>` element for WebP with a JPEG fallback. |
+| `images.unoptimized` | `true`: no image optimisation server. `TransitArtwork` serves the background paintings through a `<picture>` element: portrait and landscape WebP sources with three widths each in `srcset`, and the full-size landscape WebP as the fallback `<img>`. |
 | `productionBrowserSourceMaps` | `true`. The service worker does not precache `.map` files. |
 | `experimental.optimizePackageImports` | `["lucide-react"]`. |
 | `devIndicators` | Shown only when `EKI_DEVTOOLS=true`. |
 
 With `EKI_STRICT_PRODUCTION_BUILD=true`, which `npm run build:production` sets, `next.config.ts` fails if any required `NEXT_PUBLIC_*` value is missing, or if `NEXT_PUBLIC_FIREBASE_DATABASE_URL` or `NEXT_PUBLIC_BACKEND_URL` is not a non-local HTTPS URL.
 
-Firebase Hosting serves `frontend/out` with `cleanUrls: true`. HTML routes are sent with `Cache-Control: no-cache, no-store, must-revalidate`, `/_next/static/**` as immutable for one year, and images for 30 days with one day of stale-while-revalidate. `/sw.js` is never cached and carries `Service-Worker-Allowed: /`. The release procedure is in [CI/CD and releases](../operations/CI_CD_AND_RELEASES.md).
+Firebase Hosting serves `frontend/out` with `cleanUrls: true`. The header rule for `/`, `/admin`, `/driver`, `/feedback` and `/passenger` sends `Cache-Control: no-cache, no-store, must-revalidate`; it does not list `/install`. `/_next/static/**` is sent as immutable for one year, and images for 30 days with one day of stale-while-revalidate. `/sw.js` is never cached and carries `Service-Worker-Allowed: /`. The release procedure is in [CI/CD and releases](../operations/CI_CD_AND_RELEASES.md).
 
 ## 12. Next.js 16 specifics
 
@@ -216,7 +225,7 @@ The installed version is described by its own guides in `node_modules/next/dist/
 | Metadata routes in a static export must be static. | `manifest.ts`, `robots.ts` and `sitemap.ts` export `dynamic = "force-static"`. |
 | Client-only modules load with `next/dynamic` and `ssr: false`. | The passenger workspace, every admin panel, the feedback panel and the passenger map. |
 
-Google Maps loads only where a map renders. The admin layout mounts `MapProviders` for the whole workspace; the passenger workspace mounts it only while a route is tracked. The landing page and `/feedback` never load the Maps SDK. The SDK script loads once per page. Every map element sets `reuseMaps` with the shared `MAPS_MAP_ID` and `MAP_OPTIONS` (`src/config/maps.ts`), so leaving and reopening tracking, changing route, direction or bus, and switching admin tabs or the route editor reattach one cached map instead of constructing a new, billed one. Keep per-map options in `MAP_OPTIONS`, never mount two maps at once, and keep `src/config/maps.reuse.test.ts` passing; the decision is [EKI-ADR-004](../design/GOOGLE_MAP_REUSE_DECISION.md).
+Google Maps loads only where a map renders. The admin layout mounts `MapProviders` for the whole workspace; the passenger workspace mounts it only while a route is tracked. The passenger workspace downloads the `PassengerTrackingMap` code when it mounts, without mounting it, so a connection lost at the moment of **Track** cannot fail that import and unmount the workspace; a failed early download is retried when **Track** mounts the map (`src/components/passenger/PassengerWorkspace.tsx`). The landing page, `/install` and `/feedback` never load the Maps SDK. The SDK script loads once per page. Every map element sets `reuseMaps` with the shared `MAPS_MAP_ID` and `MAP_OPTIONS` (`src/config/maps.ts`), so leaving and reopening tracking, changing route, direction or bus, and switching admin tabs or the route editor reattach one cached map instead of constructing a new, billed one. Keep per-map options in `MAP_OPTIONS`, never mount two maps at once, and keep `src/config/maps.reuse.test.ts` passing; the decision is [EKI-ADR-004](../design/GOOGLE_MAP_REUSE_DECISION.md).
 
 ## 13. Verification
 

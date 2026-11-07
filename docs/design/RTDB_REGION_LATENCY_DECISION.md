@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-ADR-002 | 2.0 | Current | 2026-11-03 |
+| EKI-ADR-002 | 2.1 | Current | 2026-11-07 |
 
 ## 1. Context
 
@@ -47,17 +47,17 @@ Update 2026-11-02: the project owner directed an early move of the staging proje
 
 The Iowa instance `bustrack-be165-default-rtdb` is the project's default instance, and Firebase does not allow deleting a default instance. Instead of the read-only observation period in Section 2.2 step 6, it was emptied on 2026-11-02 and its rules were replaced with a deny-all ruleset ([issue #427](https://github.com/notnamansinha/Eki/issues/427)). The export taken before it was emptied, `gs://bustrack-be165-eki-backups/rtdb/20261102T153315Z/rtdb-iowa.json`, is in a bucket that deletes objects after 30 days, so it is expected to be gone after about 2026-12-02. The Singapore root was exported at the same time.
 
-Rollback to Iowa takes these steps in order: stop the producers; export the Singapore instance if it has taken writes; map the `rtdb` deploy target in `.firebaserc` to `bustrack-be165-default-rtdb`, or revert the target change in `firebase.json` and `.firebaserc`, and deploy `database.rules.json` to Iowa, because its deny-all rules would otherwise refuse every browser read; import and validate the export; set `RTDB_EXPECTED_REGION=us-central1` and run the matching-instance check; and only then revert the backend and Hosting URLs together.
+Rollback to Iowa takes these steps in order: stop the producers; export the Singapore instance if it has taken writes; map the `rtdb` deploy target in `.firebaserc` to `bustrack-be165-default-rtdb` and deploy `database.rules.json` to Iowa, because its deny-all rules would otherwise refuse every browser read; import and validate the export; set `RTDB_EXPECTED_REGION=us-central1` and run the matching-instance check; and only then revert the backend and Hosting URLs together: `FIREBASE_DATABASE_URL` in `deploy/cloud-run/staging.service.yaml` and the staging secrets `FIREBASE_DATABASE_URL` and `NEXT_PUBLIC_FIREBASE_DATABASE_URL`. Keep the deploy target in `firebase.json`: both release jobs run `scripts/verify-rtdb-deploy-target.mjs`, which refuses a `database` entry that is not a list of deploy targets, and release the rules with `--only database:rtdb`.
 
 The production project needs its own `rtdb` target in `.firebaserc` when it is provisioned. Until then the production deploy stops at its deploy-target check, before App Check or the Firestore index deploy, instead of releasing rules to the wrong instance ([CI, deployment and releases](../operations/CI_CD_AND_RELEASES.md#52-steps)).
 
 Original status, before that update: Proposed. Singapore was approved as the candidate on 2026-09-10. No Singapore instance has been cut over: `firebase.json` declares one default database, and no repository change targets a second instance. The decision becomes current when the gate in Section 2.1 passes and the migration in Section 2.2 completes.
 
-This record is Current because `main` and the staging project now use the Singapore instance, although the gate was not run before the move.
+This record is Current because `main` and the staging project use the Singapore instance, although the gate was not run before the move.
 
 ## 4. Consequences
 
-1. Until the cutover on 2026-11-02 the live path was transcontinental: every tracker write, worker transaction and browser listener for `activeBuses` and its projections went to Iowa. They now go to Singapore, and the backend in `asia-south2` crosses to Singapore for each RTDB operation.
+1. Until the cutover on 2026-11-02 the live path was transcontinental: every tracker write, worker transaction and browser listener for `activeBuses` and its projections went to Iowa. After the cutover they go to Singapore, and the backend in `asia-south2` crosses to Singapore for each RTDB operation.
 2. Cutover needs a write stop, a complete copy of the RTDB root, a frontend rebuild (the URL is compiled into the static build) and a backend configuration change released together.
 3. A region move cannot fix heartbeat cadence, device retries, RTDB transaction contention, route-processing backlog, stale marker selection or an unstable tunnel. Those remain separate measured controls (#159, #160, #165 to #174).
 

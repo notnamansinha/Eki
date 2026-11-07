@@ -72,8 +72,9 @@ route line, Dark Grey `#434747` text, Off-white `#F2EFEC` pages and Gold
 `#AE9562` for decoration only. Playfair Display (headings) and Roboto (UI) are
 self-hosted through `next/font` in `src/app/layout.tsx`. Passenger and Admin share
 palette, font and gradient tokens in `src/app/brand-theme.css`, scoped with
-`:root:has(.passenger-layout, .admin-layout)` so portalled dialogs inherit them
-and the landing page keeps its theme. Surface rules live in each panel's
+`:root:has(.passenger-layout, .admin-layout)` so portalled dialogs inherit them,
+while the landing page, `/install` and the standalone `/feedback` console keep
+the original `src/app/globals.css` palette. Surface rules live in each panel's
 `theme.css`; Passenger uses semantic `pp-*` classes and Admin uses `ui-*` colour
 utilities. Keep actions AU Red and reserve status colours for status indicators.
 Phones use iOS-style grouped lists, sheets with grabbers and one translucent tab
@@ -88,6 +89,10 @@ route list and timetable headers are solid AU Red bands (white search field,
 white line badge on the timetable), Profile has an AU Red title over a short AU
 Red rule and the account on a solid AU Red card. Keep focus rings white on
 those bands.
+Profile cards and lists, the feedback dialog and the passenger confirm dialog
+use Apple's continuous corners: inside `@supports (corner-shape: squircle)`,
+`src/app/passenger/theme.css` applies `corner-shape: squircle` at 1.6 times the
+nominal radius. Keep close buttons circular and grabbers as capsules.
 
 ## Phone Live routes sheet (2026-11-06)
 

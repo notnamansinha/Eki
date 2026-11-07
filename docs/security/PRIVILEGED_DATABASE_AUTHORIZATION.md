@@ -2,13 +2,13 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-SEC-004 | 1.0 | Current | 2026-10-30 |
+| EKI-SEC-004 | 1.1 | Current | 2026-11-07 |
 
 ## 1. Introduction
 
 ### 1.1 Purpose
 
-This document describes how Eki grants and withdraws driver and administrator authority in Firestore, the Realtime Database (RTDB) and the backend API, and how operators change a privileged role safely. Developers who change role publication, rules or `requireAdmin`, and operators who change roles or recover a failed change, use it.
+This document describes how Eki grants and withdraws driver and administrator authority in Firestore, the Realtime Database (RTDB) and the backend API, and how operators change a privileged role safely. Developers who change role publication, rules, `requireAdmin` or `hasCurrentAdminAuthority`, and operators who change roles or recover a failed change, use it.
 
 ### 1.2 Scope
 
@@ -70,9 +70,9 @@ Because each version is a fresh random UUID, a demotion followed by a promotion,
 | Firestore (`firestore.rules`) | `role == 'admin'`, `admin == true`, the token version equals the stored version, stored `role == 'admin'`, and `users/{uid}.role == 'admin'` | `role == 'driver'`, the token version equals the stored version, stored `role == 'driver'`, token `driverId` and `assignedBusId` equal the stored record, `drivers/{driverId}.authUid` equals the UID, the registry `assignedBusId` matches, and `users/{uid}.role == 'driver'` |
 | RTDB (`database.rules.json`) | Reading the `publicRouteBuses` root requires `admin == true`, `role == 'admin'`, and a stored version and role matching the token | Not used |
 | `requireAdmin` (`backend/src/middleware/requireAdmin.ts`) | `admin === true`, `role === "admin"`, a string `authorizationVersion`, and both stored records equal to the token's version, role, `driverId` and `assignedBusId` | Not used |
-| Administrator ride stop (`backend/src/routes/shifts.ts`) | Same as `requireAdmin` | Driver registry check without the version |
+| `hasCurrentAdminAuthority` (`backend/src/middleware/adminAuthority.ts`), in handlers shared with drivers and passengers: ride start, delay, End ride early and the v2 ride read (`backend/src/routes/shifts.ts`), and the legacy boarding code, chat messages and ride status (`backend/src/routes/sessions.ts`) | Same claims and record comparison as `requireAdmin`. A token that fails it is handled as a driver or passenger token | Ride start, delay, End ride early and the v2 ride read check the driver registry record and the bus route assignment without the version; chat, the legacy boarding code and ride status compare only the token's `driverId` and `assignedBusId` with the session |
 
-`requireAdmin` reads both records on every request with no positive cache. If either read fails it returns 503 with `Retry-After: 1` (`AUTH_UNAVAILABLE`); a missing or different record returns 403 (`ADMIN_REQUIRED`). A token without `authorizationVersion` fails every administrator check and the Firestore driver rule.
+`requireAdmin` reads both records on every request with no positive cache. If either read fails it returns 503 with `Retry-After: 1` (`AUTH_UNAVAILABLE`); a missing or different record returns 403 (`ADMIN_REQUIRED`). `hasCurrentAdminAuthority` also reads both records with no cache across requests, and at most once per request; a token without both administrator claims and a string `authorizationVersion` fails it without a read. If either read fails, the shared handlers grant no administrator authority and return 500, or 503 for ride status. A token without `authorizationVersion` fails every administrator check and the Firestore driver rule.
 
 The most expensive driver rule evaluation reads four documents: the ride session, the authorization record, the profile and the driver record. Repeated `get()` calls on one path are evaluated once per request.
 
@@ -94,7 +94,8 @@ Removing a driver demotes the account before deleting the registry record. If de
 ## 4. Design rationale
 
 - **Block first, then revoke, then claim.** Writing the blocked version before anything else denies saved tokens immediately; revoking before setting claims stops an old refresh session from minting a token with the new version.
-- **Fresh reads in `requireAdmin`.** A positive cache would let a demoted administrator act until the entry expired.
+- **Fresh reads in `requireAdmin` and `hasCurrentAdminAuthority`.** A positive cache would let a demoted administrator act until the entry expired.
+- **One policy for every administrator branch.** A handler that also serves drivers and passengers uses the `requireAdmin` policy for its administrator branch, so a revoked, legacy or partial administrator token cannot act as an administrator there.
 - **Both databases.** Firestore and RTDB rules cannot read each other, so each database holds its own copy of the record.
 
 ## 5. Constraints and failure handling
@@ -146,6 +147,8 @@ Keep redacted results separate from emulator evidence. Local tests use synthetic
 |---|---|
 | Publisher sequence and conditional activation | `backend/src/services/userAuthorization.test.ts` |
 | `requireAdmin` claims, versions and 503 handling | `backend/src/middleware/requireAdmin.test.ts` |
+| `hasCurrentAdminAuthority` claims, versions, one read per request and read failure | `backend/src/middleware/adminAuthority.test.ts` |
+| Revoked, legacy and role-only administrator tokens on the shared ride, boarding code, chat and status handlers | `backend/src/routes/shifts.test.ts`, `backend/src/routes/rideSessions.test.ts`, `backend/src/routes/sessionsMessages.test.ts`, `backend/src/routes/sessionsStatus.test.ts` |
 | Firestore and RTDB rules against saved tokens | `backend/src/rulesIntegration.test.ts`, run with `npm run test:rules` |
 | HTTP authorization acceptance | [HTTP authorization](../../qa/HTTP_AUTHORIZATION.md) |
 

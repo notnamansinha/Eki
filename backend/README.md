@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-PKG-001 | 1.3 | Current | 2026-11-03 |
+| EKI-PKG-001 | 1.4 | Current | 2026-11-07 |
 
 ## 1. Purpose
 
@@ -12,7 +12,7 @@ This guide covers building, running and operating the package. The HTTP interfac
 
 ## 2. Prerequisites
 
-- Node.js 24 and npm. CI and the container image both use Node.js 24.
+- Node.js 24 (the version CI uses) and npm. The container image runs Node.js 26 (Section 8).
 - Dependencies installed from the repository root with `npm ci` (the backend is an npm workspace).
 - A Firebase project with Firestore and RTDB, and Firebase Admin credentials: either a service-account JSON in `FIREBASE_SERVICE_ACCOUNT` or Application Default Credentials.
 - `backend/.env`, created from `backend/.env.example`. The template targets production (`NODE_ENV=production`, `PORT=8080`). For local work, follow [Getting started](../docs/GETTING_STARTED.md) to switch it to development, port 4000 and the local frontend origin.
@@ -38,7 +38,7 @@ Run each script from the repository root as `npm run <script> --workspace=backen
 | `measure:rtdb` | `tsx src/measureRtdbLatency.ts` | Measure RTDB read latency (`RTDB_LATENCY_SAMPLES`, 10 to 500) |
 | `retention:rtdb` | `tsx src/rtdbRetentionCli.ts` | RTDB retention sweep: `-- --dry-run` (default) or `-- --apply`. See [RTDB retention](../docs/operations/RTDB_RETENTION.md). |
 
-The root `npm run verify:openapi` checks [`openapi.json`](openapi.json) against the registered routes and against [API.md](API.md). See the [HTTP contract](../docs/api/HTTP_CONTRACT.md).
+`test` needs no Firebase project: `src/testSetup.ts` supplies a placeholder RTDB URL when `FIREBASE_DATABASE_URL` is unset, and the emulator suites are skipped unless `FIREBASE_RULES_TEST=1`. The root `npm test` runs it after the script tests and the OpenAPI and UI contract checks. The root `npm run verify:openapi` checks [`openapi.json`](openapi.json) against the registered routes and against [API.md](API.md). See the [HTTP contract](../docs/api/HTTP_CONTRACT.md).
 
 ## 4. Source layout
 
@@ -47,7 +47,7 @@ The root `npm run verify:openapi` checks [`openapi.json`](openapi.json) against 
 | `src/bootstrap.ts` | Process entry point: loads `.env`, starts OpenTelemetry, installs the log bridge, then imports `server.ts` |
 | `src/server.ts` | Express application: middleware order, router mounts, health endpoints, worker start and graceful shutdown |
 | `src/routes/` | HTTP routers, one file per resource area |
-| `src/middleware/` | `requireAuth` (any verified Firebase user) and `requireAdmin` (current administrator authority) |
+| `src/middleware/` | `requireAuth` (any verified Firebase user), `requireAdmin` (current administrator authority), `hasCurrentAdminAuthority` in `adminAuthority.ts` (the same authority check for handlers shared with operators and passengers) and `verifyRequestToken` in `verifiedRequest.ts`, which verifies a token once and reuses the result for the rest of that request |
 | `src/services/` | Domain logic: telemetry ingestion, trip state engine, route matching, ride start, durable operations, privacy deletion, retention, worker coordination |
 | `src/lib/` | Shared utilities: rate limiting, admission, request errors, health state, metrics, logging, geometry |
 | `src/instrumentation.ts`, `src/telemetrySdk.ts` | OpenTelemetry start-up and SDK configuration |
@@ -86,7 +86,7 @@ Use `/live` to decide whether to restart the process and `/health` to decide whe
 
 ## 7. Logging and tracing
 
-The backend writes structured JSON logs to standard output through `pino`, at the level set by `LOG_LEVEL` (default `info`). `console` calls are routed through the same logger. Keys that name credentials, tokens, e-mail addresses, phone numbers or coordinates are replaced with `[REDACTED]`, and bearer values in messages are masked.
+The backend writes structured JSON logs to standard output through `pino`, at the level set by `LOG_LEVEL` (default `info`). `console` calls are routed through the same logger, which also emits each record as an OpenTelemetry log record. Keys that name credentials, tokens, e-mail addresses, phone numbers or coordinates are replaced with `[REDACTED]`, and bearer values and Grafana Cloud tokens in messages are masked. Strings are cut at 2,000 characters, arrays at 25 items and objects at 4 levels of nesting. A record that cannot be serialized is written with `[UNSERIALIZABLE]` details or dropped; logging never throws into the caller (`src/lib/logger.ts`).
 
 OpenTelemetry traces, metrics and logs are exported over OTLP when `OTEL_EXPORTER_OTLP_ENDPOINT` or `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` is set and `OTEL_SDK_DISABLED` is not `true`. The default service name is `eki-backend` and 10% of new root traces are sampled unless `OTEL_TRACES_SAMPLER` is set. Span URLs are redacted, and `/health` and `/live` requests are not traced.
 
@@ -109,7 +109,7 @@ docker build -f backend/Dockerfile -t eki-backend .
 
 | Property | Value |
 |---|---|
-| Base image | `node:24.21.0-alpine3.23`, pinned by digest, for both build and runtime stages |
+| Base image | `node:26.13.0-alpine3.23`, pinned by digest, for both build and runtime stages (`backend/Dockerfile`) |
 | Contents | Compiled `dist/`, production dependencies only; npm and npx are removed from the runtime stage |
 | Environment | `NODE_ENV=production`, `PORT=8080` |
 | Port | `8080` |
@@ -117,13 +117,15 @@ docker build -f backend/Dockerfile -t eki-backend .
 | Health check | `wget -qO- http://127.0.0.1:8080/live` every 30 s, 5 s timeout, 15 s start period, 3 retries |
 | Command | `node dist/bootstrap.js` |
 
-`.dockerignore` excludes `.env` files, so supply configuration and credentials at run time. The CI job `backend-image` builds this image on every push, boots it with placeholder settings, expects `/live` to return 200 and `/health` to return 503 with `degraded`, and scans it for critical and high vulnerabilities.
+`.dockerignore` excludes `.env` files, so supply configuration and credentials at run time. The CI job `backend-image` builds this image on every push and pull request, boots it with placeholder settings, expects `/live` to return 200 and `/health` to return 503 with `degraded`, checks the Docker health check command, and fails on critical or high vulnerabilities that have a fix (Trivy).
 
 ## 9. Deployment and exposure
 
-The deploy workflow can deploy the backend to Cloud Run only through the optional manual job `deploy-backend-staging`, which deployed the staging service on 2026-11-01. It also publishes the web app to Firebase Hosting and deploys Firestore indexes and the Firestore and RTDB security rules. Before it releases, it runs `npm run verify:web-backend-contract` against the origin in `NEXT_PUBLIC_BACKEND_URL` and stops unless `/health` returns `ok` (retrying for up to 90 s while the backend starts) and the backend accepts the Hosting origin in CORS, including the preflight of an authenticated request. Firebase Hosting has no rewrite to the backend: rewrites were evaluated on 2026-11-02 and not adopted ([issue #372](https://github.com/notnamansinha/Eki/issues/372)), so clients call the backend origin directly.
+The deploy workflow deploys the backend to Cloud Run only through the manual job `deploy-backend-staging`, which runs on a dispatch from `main` with `environment` set to `staging` and `deploy_backend` set to `true`. The job builds this image, pushes it to Artifact Registry and applies the service manifest `deploy/cloud-run/staging.service.yaml`. When a revision already serves traffic, the new revision starts as a candidate without traffic and receives all traffic only after its `/health` reports `ok` within 3 minutes. The workflow also publishes the web app to Firebase Hosting and deploys Firestore indexes and the Firestore and RTDB security rules. Before every production release, and before a staging release on a dispatch that also deploys the backend, it runs `npm run verify:web-backend-contract` against the origin in `NEXT_PUBLIC_BACKEND_URL` and stops unless `/health` returns `ok` (retrying for up to 90 s while the backend starts) and the backend accepts the Hosting origin in CORS, including the preflight of an authenticated request. Firebase Hosting has no rewrite to the backend: rewrites were evaluated on 2026-11-02 and not adopted ([issue #372](https://github.com/notnamansinha/Eki/issues/372)), so clients call the backend origin directly.
 
-For bench tests and demonstrations the backend can still run on a workstation and be reached through a stable ngrok domain; the staging web app no longer uses that setup. Set `TRUST_PROXY=loopback` in that setup so that each tunnelled client gets its own pre-authentication rate-limit bucket. The procedure is in the [ngrok tunnel runbook](../docs/operations/NGROK_TUNNEL.md). The staging service is described in [backend hosting](../docs/operations/CI_CD_AND_RELEASES.md#7-backend-hosting), and its runtime values, including the 06:00 to 22:00 IST worker window, in the [staging runtime configuration](../docs/operations/STAGING_RUNTIME_CONFIG.md). The remaining device checks are in [issue #430](https://github.com/notnamansinha/Eki/issues/430). A hosted deployment needs the items in the [university deployment checklist](../docs/operations/UNIVERSITY_DEPLOYMENT_CHECKLIST.md), including an edge rate limit and `RATE_LIMIT_SHARD_FACTOR` equal to the replica count.
+For bench tests and demonstrations the backend can also run on a workstation and be reached through a stable ngrok domain; the staging web app uses the Cloud Run service instead. Set `TRUST_PROXY=loopback` in that setup so that each tunnelled client gets its own pre-authentication rate-limit bucket. The procedure is in the [ngrok tunnel runbook](../docs/operations/NGROK_TUNNEL.md). The staging service is described in [backend hosting](../docs/operations/CI_CD_AND_RELEASES.md#7-backend-hosting), and its runtime values, scaling and worker setting in the [staging runtime configuration](../docs/operations/STAGING_RUNTIME_CONFIG.md). The remaining device checks are in [issue #430](https://github.com/notnamansinha/Eki/issues/430). A hosted deployment needs the items in the [university deployment checklist](../docs/operations/UNIVERSITY_DEPLOYMENT_CHECKLIST.md), including an edge rate limit and `RATE_LIMIT_SHARD_FACTOR` equal to the replica count.
+
+The workflow "Publish backend image" (`.github/workflows/publish-backend-image.yml`) is a backup path that does not change the Cloud Run service. After "Production verification" succeeds on a push to `main`, or on a manual dispatch from `main`, it builds this image, scans it with the same Trivy policy as CI and pushes `<user>/eki-backend:<commit-sha>` to Docker Hub. It moves `latest` to that image only while the commit is still the head of `main`, and it refuses a commit that `main` does not contain. Until the repository secrets `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` exist, it skips every step after the credential check and the run succeeds. The [VPS guide](../deploy/vps/README.md) runs the published image with Docker Compose on any Docker host.
 
 ## 10. Related documents
 

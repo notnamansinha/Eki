@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-OPS-012 | 1.2 | Current | 2026-11-06 |
+| EKI-OPS-012 | 1.3 | Current | 2026-11-07 |
 
 ## 1. Purpose
 
@@ -18,7 +18,7 @@ The document covers fleet analytics, the route catalog, live bus lists and looku
 
 - Every cache is private to one backend process. Replicas do not share entries.
 - Authentication and role checks run before each handler, including on a cache hit. The backend never caches a principal, membership, assignment or session authorization decision across requests.
-- Every response sets `Cache-Control: no-store`.
+- Every `/api` response sets `Cache-Control: no-store`, including authentication failures, rate-limit rejections, body parse errors and CORS preflights that reach no route handler ([`backend/src/server.ts`](../../backend/src/server.ts)).
 - Concurrent misses for the same key share one underlying read. A fill that fails, expires or is invalidated never publishes a cache entry.
 - A cache keeps at most 16 entries. A result larger than 256 KiB is returned to the caller but not retained.
 - Expiry uses monotonic time, so a wall-clock change cannot extend an entry.
@@ -31,7 +31,7 @@ The document covers fleet analytics, the route catalog, live bus lists and looku
 | `GET /api/routes-list` and `GET /api/v2/routes` | First 250 routes in document-ID order with `id`, `name`, `color` and `stops`, plus `nextCursor`. | `limit` (1 to 250) and `after` (route ID). | 5 s |
 | `GET /api/buses` | Without query parameters: every public live bus in one response. | Any parameter switches to pages: `routeId`, `limit` (1 to 250) and `after` (RTDB key). | 1 s |
 | `GET /api/buses/{busId}` | One public live bus from an indexed `busId` query of at most 51 nodes, or 404 when no node is active. | None. | Not cached; concurrent requests share one read. |
-| `GET /api/v2/ride-sessions/{sessionId}` | Admins and passenger members are authorized without operator checks. An operator's assignment documents are read on every request. | None. | Not cached. |
+| `GET /api/v2/ride-sessions/{sessionId}` | Administrators with current authority (the `requireAdmin` policy, applied through `hasCurrentAdminAuthority`) and passenger members are authorized without operator checks. An operator's assignment documents are read on every request. | None. | Not cached. |
 | `PATCH /api/v2/ride-sessions/{sessionId}` | The handler stages reuse one assignment check within the same request. The next request reads the assignment again. | None. | Not cached. |
 
 ### 3.3 Fleet analytics with `scope=all`

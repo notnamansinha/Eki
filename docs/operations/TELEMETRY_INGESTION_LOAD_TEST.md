@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-OPS-024 | 1.0 | Current | 2026-10-30 |
+| EKI-OPS-024 | 1.1 | Current | 2026-11-07 |
 
 ## 1. Purpose
 
@@ -19,7 +19,7 @@ A 202 acknowledgement follows a committed, ordered transaction on `activeBuses/{
 
 ## 2. Prerequisites
 
-- Two equivalent staging revisions (baseline and candidate) with the expected production replica count, the same Firebase region, runtime size, minimum instances and load-balancer route. `RATE_LIMIT_SHARD_FACTOR` equals the replica count on every replica, and replicated deployments use `distributed` mode.
+- Two equivalent staging revisions (baseline and candidate) with the expected production replica count, the same Firebase region, runtime size, minimum instances and load-balancer route. `RATE_LIMIT_SHARD_FACTOR` equals the replica count on every replica, and replicated deployments use `distributed` mode. The checked-in staging service (`deploy/cloud-run/staging.service.yaml`) allows one instance per revision (`maxScale` 1) with `RATE_LIMIT_SHARD_FACTOR=1` in `distributed` mode, leaves `HTTPS_INGRESS_DEVICES_PER_IP` at its default and can scale to zero between runs, so the warm-up run in step 2 also absorbs a cold start. A comparison at more than one replica needs revisions with a raised `maxScale` and a matching shard factor; see the [staging runtime configuration](STAGING_RUNTIME_CONFIG.md#3-values).
 - The load generator sends from one IP address. Set `HTTPS_INGRESS_DEVICES_PER_IP` (default 100) on staging to at least the number of load devices; otherwise the per-IP ingress limiter (15 requests per device per 10 s, divided by the shard factor) answers with 429 and the run measures that limiter instead.
 - A private JSON file outside the repository listing 1 to 500 staging devices, each already provisioned with a registry assignment and secret:
 

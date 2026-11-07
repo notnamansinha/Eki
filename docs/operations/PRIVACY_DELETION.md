@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-OPS-015 | 1.0 | Current | 2026-10-30 |
+| EKI-OPS-015 | 1.1 | Current | 2026-11-07 |
 
 ## 1. Purpose
 
@@ -16,7 +16,7 @@ Passenger accounts only. Operator and administrator accounts are offboarded by u
 
 ### 3.1 Request
 
-1. In the passenger **Profile** tab the passenger selects **Delete Account** and confirms. The confirmation states that feedback, passenger ride entries and messages are retained. Cancelling sends nothing.
+1. In the passenger **Profile** tab the passenger selects **Delete account** and confirms with **Delete account** in the dialog. The row appears only for a signed-in account whose role is `passenger`. The confirmation states that feedback, passenger ride entries and messages are retained. **Cancel** sends nothing.
 2. The browser calls `POST /api/v2/privacy-deletion-requests` with no body. The legacy alias `POST /api/privacy/deletion-request` behaves the same way.
 3. The backend takes the UID from the verified token and checks current Auth claims, the `users` profile role and `drivers` membership. A missing role claim alone does not block a passenger. A privileged or operator account receives 409.
 4. A transaction creates `_privacy_deletion_requests/{uid}` with `status: pending`, or updates an existing record. Resubmission keeps the original request time, lifetime attempts and error history. A `failed` request returns to `pending` with a new generation and a fresh failure budget; a request being processed is left alone. The record stores the Auth account creation time, so a UID that is later recreated needs IT review instead of being deleted automatically.
@@ -24,7 +24,7 @@ Passenger accounts only. Operator and administrator accounts are offboarded by u
 
 ### 3.2 Processing
 
-The [worker](WORKER_LEADERSHIP.md) scans for due requests when it acquires the lease and every 60 s afterwards. There is no waiting period and no routine approval. There is also no guaranteed completion time: a backlog, contention or dependency failures delay processing, and requests stay queued while no worker runs.
+The [worker](WORKER_LEADERSHIP.md) scans for due requests when it acquires the lease and every 60 s afterwards. There is no waiting period and no routine approval. There is also no guaranteed completion time: a backlog, contention or dependency failures delay processing, and requests stay queued while no worker runs, for example while a backend that scales to zero has no instance ([staging runtime configuration](STAGING_RUNTIME_CONFIG.md#2-project-facts)).
 
 - Each scan reads one page of 20 `pending` requests in document-ID order from the cursor in `_reconciliation_cursors/privacy-deletions`. A completed pass resets the cursor. Requests that are not yet due are skipped without blocking later IDs.
 - One deletion runs at a time per process, with at most 20 waiting (one per UID) and a 2 s limit on undispatched queue age. If the queue is full, the scan keeps its cursor; the work remains durable for a later scan.

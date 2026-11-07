@@ -2,18 +2,20 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-OPS-007 | 1.1 | Current | 2026-11-03 |
+| EKI-OPS-007 | 1.2 | Current | 2026-11-07 |
 
 ## 1. Purpose
 
-This document describes how the Deploy workflow publishes Firestore indexes and blocks the Hosting and rules release until the queries that background workers depend on can run. It also gives the manual procedure for checking a project.
+This document describes how the Deploy workflow ([CI, deployment and releases](CI_CD_AND_RELEASES.md#52-steps)) publishes Firestore indexes and blocks the Hosting and rules release until the queries that background workers depend on can run. It also gives the manual procedure for checking a project.
 
 ## 2. What is deployed
 
 | Source | Content | Deployed by |
 |---|---|---|
 | `firestore.indexes.json` | Composite index on `ride_sessions` (`status`, `endTime`, both ascending); collection-group field overrides on `messages.senderId` and `messageRateLimits.userId` | `firebase deploy --only firestore:indexes --non-interactive` (Deploy, step 6) |
-| `database.rules.json` | RTDB `.indexOn` for `activeBuses`: `routeId`, `busId`, `timestamp` | `firebase deploy --only database:rtdb` (Deploy, step 7; `rtdb` is the deploy target in `.firebaserc`) |
+| `database.rules.json` | RTDB `.indexOn` for `activeBuses`: `routeId`, `busId`, `timestamp` | `firebase deploy --only hosting,firestore:rules,database:rtdb` (Deploy, step 7) |
+
+The RTDB rules and their indexes reach only the instance that the deploy target `rtdb` names. `firebase.json` declares that target, and `.firebaserc` maps it to `bustrack-be165-asia-rtdb` for `bustrack-be165`. Deploy step 2 runs `node scripts/verify-rtdb-deploy-target.mjs --project <project>` and stops a project without such a mapping, such as `eki-production`, before App Check and the index deploy run.
 
 Firestore builds indexes as long-running operations that continue after the deploy command returns [1]. The readiness gate below waits for them.
 
@@ -42,7 +44,7 @@ Gate behaviour:
 
 A failed gate stops the job before Hosting and rules are deployed. Index builds that were already submitted continue in Firebase.
 
-The gate needs a token that can deploy indexes and run Firestore queries in the project. Emulator runs cannot show that deployed indexes are ready; `scripts/verify-firestore-indexes.test.mjs` covers the gate with simulated responses, including the order of steps in both Deploy jobs.
+The gate needs a token that can deploy indexes and run Firestore queries in the project. Emulator runs cannot show that deployed indexes are ready; `scripts/verify-firestore-indexes.test.mjs` covers the gate with simulated responses, the order of steps in both Deploy jobs, and the RTDB release through a deploy target that `firebase.json` declares and `.firebaserc` maps for `bustrack-be165`. `scripts/verify-rtdb-deploy-target.test.mjs` covers the deploy target check.
 
 ## 4. Check a project by hand
 
@@ -73,6 +75,7 @@ Prerequisites: a Firebase CLI token for the project in the current shell as `FIR
 | `Invalid Firestore readiness response` | The project or database name is wrong, or the API returned an unexpected body. Check `--project` and the project's default database. |
 | `Missing --project.` or `A valid explicit --project is required.` | Pass `--project <project-id>` with a valid project ID. The usage text names `disable-appcheck-enforcement.mjs` because both scripts share the argument parser. |
 | `FIREBASE_TOKEN is required to verify Firestore indexes.` | Set `FIREBASE_TOKEN` in the shell (Section 4) or in the environment's secrets. |
+| `.firebaserc maps no RTDB instance to the deploy target "rtdb" for <project-id>.` | Deploy step 2 found no RTDB instance for the project. Add the mapping through a pull request, for example with `npx --yes firebase-tools@15.14.0 target:apply database rtdb <instance> --project <project-id>`, which writes it to `.firebaserc`. |
 
 ## 6. References
 

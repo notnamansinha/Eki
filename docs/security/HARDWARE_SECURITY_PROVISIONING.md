@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-SEC-005 | 1.0 | Current | 2026-10-30 |
+| EKI-SEC-005 | 1.1 | Current | 2026-11-07 |
 
 ## 1. Purpose
 
@@ -36,7 +36,7 @@ The [fleet signing keys](../../hardware/keys/README.md) guide states the key cus
 ## 3. Prerequisites
 
 - An ESP32 board of silicon revision ECO3 (v3.0) or newer. Secure Boot V2 requires it, and `CONFIG_ESP32_REV_MIN_3=y` builds images that require it.
-- The approved signing environment, with PlatformIO Core 6.2.0, the repository at the reviewed commit, and the signing key at `hardware/keys/secure_boot_signing_key.pem`.
+- The approved signing environment, with PlatformIO Core 6.2.0 (the version pinned in `hardware/requirements.txt`), the repository at the reviewed commit, and the signing key at `hardware/keys/secure_boot_signing_key.pem`.
 - A device provisioned in the backend registry and its one-time secret ([hardware guide, step 2](../../hardware/README.md#52-steps)).
 - A backend reachable over `https://` with an RSA certificate that chains to the root CA you compile into `BACKEND_ROOT_CA`.
 - A stable power supply for the board throughout flashing and first boot.
@@ -63,7 +63,7 @@ The [fleet signing keys](../../hardware/keys/README.md) guide states the key cus
 
    Expected result: the digest matches the recorded value. This is the public-key digest that Secure Boot V2 burns into the board.
 
-4. Create the device-specific `hardware/include/secrets.h` from the template with the six definitions in the [hardware guide](../../hardware/README.md#43-compile-time-configuration-file). Never print the file or pass its values as command-line build flags.
+4. Create the device-specific `hardware/include/secrets.h` from the template with the six definitions in the [hardware guide](../../hardware/README.md#43-compile-time-configuration-file). Never print the file or pass its values as command-line build flags. The template's `BACKEND_URL` and `BACKEND_ROOT_CA` target the Cloud Run staging service `eki-backend-staging` in `asia-south2` and its root CA, GTS Root R1; replace both for any other backend, and replace every Wi-Fi and device placeholder.
 
 5. Run the native tests and both firmware builds.
 

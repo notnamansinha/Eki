@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-PKG-005 | 1.0 | Current | 2026-10-30 |
+| EKI-PKG-005 | 1.1 | Current | 2026-11-07 |
 
 ## 1. Purpose
 
@@ -10,18 +10,20 @@ This guide lists the host-side firmware tests, how to run them and what each cov
 
 ## 2. Run the tests
 
-Run the commands from the repository root with PlatformIO Core 6.2.0.
+Run the commands from the repository root with PlatformIO Core 6.2.0, the version pinned in `hardware/requirements.txt`.
 
 | Command | What it runs |
 |---|---|
 | `platformio test --project-dir hardware -e native` | All Unity suites in this folder. The first run downloads Unity, TinyGPSPlus and ArduinoJson into `hardware/.pio/`. |
 | `platformio test --project-dir hardware -e native --filter test_http_response` | One suite, selected by name |
-| `npm run qa:native` | The same suites, recorded as evidence in `artifacts/qa/` (`native-report.json`, `native-report.md`, `native-junit.xml`, `native-run.log`). It refuses any PlatformIO version other than 6.2.0. |
+| `npm run qa:native` | The same suites through `scripts/qa/run-native.mjs`, recorded as evidence in `artifacts/qa/` (`native-report.json`, `native-report.md`, `native-junit.xml`, `native-run.log` and the raw PlatformIO result `native-platformio.json`). It refuses any PlatformIO version other than 6.2.0. |
 | `python hardware/scripts/test_host_protocols.py` | Real-library protocol checks (Section 4). Run the native suites first: the script uses their TinyGPSPlus download. It needs `gcc` and `g++` on `PATH`, and downloads the checksum-pinned Mbed TLS 2.28.7 source into `hardware/.pio/host-protocols/`. |
 | `python hardware/scripts/test_verify_secure_fleet.py` | The fleet pre-build check `scripts/verify_secure_fleet.py` against temporary copies of the configuration |
 | `python hardware/scripts/test_signed_image.py --esptool-dir "$env:USERPROFILE\.platformio\packages\tool-esptoolpy" --fixture` | Secure Boot V2 signature checks on a disposable signed fixture |
 
 CI runs the native suites, the host protocol checks, the fleet check tests and the signed-image check. For the signed-image check, CI passes `--image hardware/.pio/build/esp32dev-secure/firmware-signed.bin` and `--key` with its disposable key instead of `--fixture`.
+
+The `firmware` job in `.github/workflows/ci.yml` installs PlatformIO with `pip install --requirement hardware/requirements.txt` on Python 3.12 and copies `hardware/include/secrets.example.h` to `hardware/include/secrets.h` before it runs `npm run qa:native`. It uploads the native evidence as the artifact `native-firmware-evidence`. The scheduled workflow `.github/workflows/deep-qa.yml` runs the same native suites each night as its `native` suite.
 
 ## 3. Native suites
 
@@ -29,13 +31,13 @@ Each suite is a folder with a `test_main.cpp` that includes production headers f
 
 | Suite | Covers |
 |---|---|
-| `test_telemetry_policy` | Distance and heading maths; fix freshness, coordinate, speed and HDOP checks; receiver silence across `millis()` rollover; motion hysteresis; timing constants; retry backoff and `Retry-After`; HTTP outcome classification; retry and send-time freshness; configuration validation, including the unedited template failing at boot; GNSS UTC conversion and clock corroboration; Wi-Fi retry and LED codes; capture decisions; travel envelope, re-anchoring and outlier rejection; queue ordering, acknowledgement, overflow, expiry and RTC integrity |
+| `test_telemetry_policy` | First diagnostics delay across `millis()` rollover and diagnostics retry backoff; distance and heading maths; fix freshness, coordinate, speed and HDOP checks; receiver silence across `millis()` rollover; motion hysteresis; timing constants; retry backoff and `Retry-After`; HTTP outcome classification; retry and send-time freshness; configuration validation, including the unedited template failing at boot; GNSS UTC conversion, clock corroboration and large corrections that need a fresh agreeing peer; Wi-Fi retry, including after a stale connected status, and LED codes; capture decisions; travel envelope, re-anchoring and outlier rejection; queue ordering, acknowledgement, overflow, expiry and RTC integrity |
 | `test_checkpoint_journal` | Cold-boot recovery with the original sequence, torn writes at every byte offset, interrupted page erase, ring and generation wraparound, corruption and identity mismatch, unknown write outcomes, read and codec failures, and precedence of a warm RTC queue. It uses a deterministic codec stand-in, not AES-GCM. |
-| `test_firmware_update_policy` | Manifest validation, signed version and sequence binding, update gates, check schedule and abort on motion or stale fix |
+| `test_firmware_update_policy` | Manifest validation, signed version and sequence binding, update gates, check schedule and abort on motion, a stale fix or fix loss |
 | `test_http_response` | Accepted-body length rules, fragmented and zero-length bodies, peer close, framing that prevents reuse, trailing bytes, the single drain deadline, slow drip, rollover and stream failures |
 | `test_http_reuse_guard` | Closing the transport on buffered data before the first request write, and releasing the guard cleanly |
 | `test_json_payload` | Allocator exhaustion, missing fields and small buffers never produce a partial payload |
-| `test_reset_stats` | Reset counters: fresh boot, configuration change, corruption, out-of-range reasons and saturation |
+| `test_reset_stats` | Reset counters: fresh boot, configuration change, corruption, out-of-range reasons, saturation and readable reason names |
 | `test_dns_resolution_policy` | DNS slot sharing, deadlines, owner retention, stale completions, network epochs, invalid hostnames and rollover |
 | `test_bounded_dns_resolver` | The production resolver with the stubs in `test_bounded_dns_resolver/stubs/`: cache hits, stalled DNS and TCP/IP queues, queue rejection, DNS failure, offline admission, and disconnect and reconnect |
 

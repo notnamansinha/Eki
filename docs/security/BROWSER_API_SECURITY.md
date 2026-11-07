@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-SEC-003 | 3.0 | Current | 2026-10-30 |
+| EKI-SEC-003 | 3.1 | Current | 2026-11-07 |
 
 ## 1. Introduction
 
@@ -51,7 +51,7 @@ Driver checks on HTTP routes do not compare `authorizationVersion`. Ride start, 
 |---|---|---|
 | 401 | Missing, malformed, invalid, expired or revoked token. `requireAdmin` adds `code` `AUTH_REQUIRED` or `AUTH_INVALID` and `phase: "authentication"`. | Refresh the token or sign in again. |
 | 403 | Valid token without the required role, assignment or membership. `requireAdmin` adds `code: "ADMIN_REQUIRED"`. | Do not retry with the same token. |
-| 429 | Rate limit exceeded. The response carries `RateLimit-*` headers. | Wait for the reset time. |
+| 429 | Rate limit or cooldown exceeded. Every 429 carries `Retry-After`. The request limiters also send `RateLimit-*` headers, which CORS does not expose to browser scripts, and the chat limits and the `POST /api/feedback` cooldown add `retryAfterMs` to the body. | Wait for the `Retry-After` delay. |
 | 503 with `Retry-After: 1` | Token verification capacity is exhausted, or `requireAdmin` cannot read the authorization records. `requireAdmin` adds `code` `AUTH_BUSY` or `AUTH_UNAVAILABLE`. | Retry after the delay; the user is still signed in. |
 
 Routes shared with drivers and passengers do not send that signal when they cannot read the authorization records: ride start, delay, End ride early, the v2 ride read, the boarding code and chat return 500, and legacy ride status returns 503 without `Retry-After`.
@@ -60,9 +60,10 @@ Unhandled errors return a generic body (`Internal server error.`) without stack 
 
 ### 2.4 Transport and caching
 
-- The backend allows only the origins in `CORS_ORIGIN`, plus `http://localhost:3000` outside production, with `credentials: false`. A production backend refuses to start when `CORS_ORIGIN` is empty.
+- The browser calls the backend at the origin in `NEXT_PUBLIC_BACKEND_URL`. Firebase Hosting has no rewrites to the backend, so API requests are cross-origin and never pass through Hosting.
+- The backend allows only the origins in `CORS_ORIGIN`, plus `http://localhost:3000` outside production, with `credentials: false`. A production backend refuses to start when `CORS_ORIGIN` is empty. Besides the CORS-safelisted headers, browser scripts can read only the `Location`, `Retry-After`, `X-Reconciliation-Complete` and `X-Next-Cursor` response headers.
 - The browser sends credentials only in the `Authorization` header, never in cookies.
-- Responses that contain private data carry `Cache-Control: no-store`, and the service worker sends every API request to the network.
+- Every response under `/api` carries `Cache-Control: no-store`, including authentication failures, rate-limit rejections, body-parser errors and CORS preflights. The service worker sends every API request to the network.
 - `TRACE` and `CONNECT` return 405. JSON bodies are parsed in strict mode with a 16 KB limit, except route saves (64 KiB).
 
 ### 2.5 Versioning
@@ -83,7 +84,7 @@ Legacy `/api/...` paths and their `/api/v2/...` resource equivalents pass throug
 2. A session that is boarding, with a bus, a route and a resolved direction.
 3. On first boarding, a browser position with accuracy of 100 m or better, within 150 m of the bus's live fix, and a bus fix no older than 60 s and no more than 10 s in the future.
 
-The backend adds or updates only the caller's own manifest entry, and takes the display name and timestamps from the server. The browser position is used for the distance check and is not stored. It is reported by the client and is not proof of presence. No boarding code is required; the legacy `POST /api/sessions/{sessionId}/boarding-code` endpoint still issues a code to the assigned driver or an administrator, and boarding ignores it.
+The backend adds or updates only the caller's own manifest entry, and takes the display name and timestamps from the server. The browser position is used for the distance check and is not stored. It is reported by the client and is not proof of presence. No boarding code is required; the legacy `POST /api/sessions/{sessionId}/boarding-code` endpoint still issues a code to the assigned driver or an administrator, boarding ignores it, and the Eki web app does not request one.
 
 ### 3.3 Ride chat
 
@@ -91,7 +92,7 @@ Clients cannot write messages to Firestore. `POST /api/v2/ride-sessions/{session
 
 ### 3.4 Feedback
 
-The browser writes feedback directly to Firestore in one transaction with the user's feedback cooldown; the rules validate the fields, the author, completed-ride membership and the 24 h cooldown. Administrators read and update feedback status through Firestore under the administrator rule. `POST /api/feedback` remains available to signed-in users.
+The browser writes feedback directly to Firestore in one transaction with the user's feedback cooldown; the rules validate the fields, the author, completed-ride membership and the 24 h cooldown. Administrators read and update feedback status through Firestore under the administrator rule. `POST /api/feedback` remains available to signed-in users. The backend also offers `GET /api/v2/feedback`, `PATCH /api/v2/feedback/{feedbackId}` and the legacy `PATCH /api/feedback/{feedbackId}/status`, all behind `requireAdmin`.
 
 ### 3.5 Health endpoints
 

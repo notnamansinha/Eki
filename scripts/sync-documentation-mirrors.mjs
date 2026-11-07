@@ -49,7 +49,7 @@ function expectedMirror(source) {
       .replaceAll("](../docs/", "](../")
       .replaceAll("](../backend/", "](../../backend/")
       .replaceAll("](../frontend/", "](../../frontend/");
-  } else if (/^(backend|frontend|hardware)\//.test(source)) {
+  } else if (/^(backend|deploy|e2e|frontend|hardware|qa)\//.test(source)) {
     content = content.replaceAll("../docs/", "../");
   }
   return content;

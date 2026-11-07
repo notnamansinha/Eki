@@ -1,26 +1,16 @@
-# ngrok removal and managed Firebase backend migration
+# ngrok Removal and Managed Firebase Backend Migration
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-OPS-028 | 1.3 | Proposed | 2026-11-06 |
+| EKI-OPS-028 | 1.4 | Proposed | 2026-11-07 |
 
 Assessment date: 2026-10-21, Asia/Kolkata. Source baseline: `testing` at `a523731`, including the existing uncommitted RTDB readiness change in `backend/src/server.ts`.
 
-Status: **analysis complete; the staging backend moved to Cloud Run on 2026-11-01. Hosting rewrites were evaluated on 2026-11-02 and not adopted (#372). On 2026-11-02 the RTDB moved to Singapore (#426) and the worker handoff was rehearsed (#374); the device move is open (#430).** No billing, API enablement, IAM, deployed configuration, device firmware, or application data was changed for this assessment.
-
-## Repository notes (2026-10-24)
-
-- Line references were re-checked against `main` at `2fdbedd` on 2026-10-31 (earlier against `testing` at `6b2d8e4`, 44 commits past the assessed baseline); the uncommitted RTDB readiness edit mentioned above is not in that checkout.
-- `bustrack-be165` (display name `Eki-AhdUni`, number `449313371438`) is a single Firebase project with two registered web apps. It currently holds test data only and is used as **staging**. Which web app ID the frontend build uses comes from the GitHub environment secret and has not been verified.
-- `eki-production`, the production target in `deploy.yml`, is not visible to the Firebase CLI login used for this work. Treat production as not set up until its owner confirms.
-- Work is tracked in issues #365 to #379. On 2026-11-02 the assignee of #372 recorded Cloud Run as the host and did not adopt the Hosting rewrites: on a preview channel Hosting added p50 313 ms and p95 493 ms to `GET /live` over the direct service (p50 55 ms, p95 69 ms), and the backend saw a Google egress pool (`66.249.82.x`) instead of the caller. The repository owner can reopen that decision.
-- On 2026-11-01 Cloud Billing was linked to `bustrack-be165` and the Cloud Run and Artifact Registry APIs were enabled (read-only `gcloud billing projects describe` and `gcloud services list`). The billing and API rows in Section 2 record the state at the assessment date.
-- On 2026-11-01 the manual `deploy-backend-staging` job (run 41334365954) deployed the Cloud Run service `eki-backend-staging` in `asia-south2` (`https://eki-backend-staging-449313371438.asia-south2.run.app`) with `WORKER_ENABLED=false`, `minScale` 0 and `maxScale` 1, and the staging secret `NEXT_PUBLIC_BACKEND_URL` was changed to that URL. The staging web app no longer uses the ngrok tunnel, which is offline. No Hosting rewrites exist, and trackers built with the tunnel origin need a reflash (issue #376).
-- On 2026-11-02 the RTDB moved to `bustrack-be165-asia-rtdb` in `asia-southeast1` (#426, [RTDB region decision](../design/RTDB_REGION_LATENCY_DECISION.md)); the worker handoff was rehearsed on staging and the manifest set `WORKER_ENABLED=true` with one instance held from 06:00 to 22:00 IST (#374, #428, [staging runtime configuration](STAGING_RUNTIME_CONFIG.md)); and one tracker was reflashed with the Cloud Run origin (#427). The Iowa rows in Sections 2 and 6 record the assessment date.
+Status: **analysis complete; the staging backend moved to Cloud Run on 2026-11-01. Hosting rewrites were evaluated on 2026-11-02 and not adopted (#372). On 2026-11-02 the RTDB moved to Singapore (#426) and the worker handoff was rehearsed (#374); the device move is open (#430). On `main`, the staging deployment path of Phase B is in place, Phase C is partly done, and Phase D and production are open; [Section 11.1](#111-gate-status-on-main) lists each gate with its evidence.** No billing, API enablement, IAM, deployed configuration, device firmware, or application data was changed for this assessment.
 
 ## 1. Recommendation (pending owner approval)
 
-Section 1 is a recommendation, not an approved decision. It does not authorize provisioning Cloud Run until the owner records the host decision.
+Section 1 is a recommendation, not an approved decision. It does not authorize provisioning Cloud Run until the owner records the host decision. Issue #372 records Cloud Run as the host, called on its own origin without Hosting rewrites (see Sections 3 and 12).
 
 Deploy the existing Express container to **Cloud Run in the Firebase project's underlying Google Cloud project**, retain Firebase Hosting for the exported frontend, and retain Firebase Authentication, Firestore, and RTDB. Prefer a stable Hosting origin with explicit `/api/**`, `/health`, and `/live` rewrites to that service, subject to device latency acceptance. This preserves the current HTTP contracts and continuous workers with substantially less change than porting the application to Functions.
 
@@ -32,6 +22,8 @@ There is no evidence supporting a promise of zero errors or zero lost GNSS fixes
 
 ## 2. Verified current state
 
+This table records the state on the assessment date, 2026-10-21. Section 11.1 records the gates on `main` at `216abeff`.
+
 | Finding | Evidence and significance |
 |---|---|
 | The current project is `bustrack-be165` | `.firebaserc`; local frontend and backend database settings agree on its existing RTDB instance. |
@@ -42,7 +34,7 @@ There is no evidence supporting a promise of zero errors or zero lost GNSS fixes
 | The frontend still selects ngrok | Both local `.env.local` and `.env.production` set `NEXT_PUBLIC_BACKEND_URL` to the tunnel. GitHub environment secrets were not inspected and remain an independent release check. |
 | The device still selects ngrok | The ignored `hardware/include/secrets.h` compiles the tunnel origin into `BACKEND_URL`. Only the origin setting was inspected; secrets were not reproduced. |
 | The current backend is configured for development | Local backend settings select `NODE_ENV=development` and port 4000. They are not a production runtime manifest. |
-| Hosting deployment does not deploy the backend | `.github/workflows/deploy.yml:129,206` deploys Hosting and rules to staging and production, with separate index deployment at lines 115 and 192. There is no backend container deployment step. |
+| Hosting deployment does not deploy the backend | `.github/workflows/deploy.yml:366,449` deploys Hosting and rules to staging and production, with separate index deployment at lines 352 and 435. At the assessment date the workflow had no backend container deployment step; on `main` the manual job `deploy-backend-staging` (`deploy.yml:70`) deploys the staging service (Section 11.1). |
 | Hosting currently has no backend rewrite | `firebase.json` serves `frontend/out` and headers. Building `backend/dist` does not provision an executing service. |
 | A suitable container already exists | `backend/Dockerfile` builds from the workspace root, starts `dist/bootstrap.js`, listens on port 8080, and uses a non-root runtime. `.dockerignore` excludes environment files, including backups. |
 | Current public path is functioning at assessment time | Hosting returned 200; tunnel `/health` returned JSON/200; an unauthenticated Places request returned JSON/401; its browser preflight returned 204. Tunnel responses allowed the actual Hosting origin. The served Hosting CSP included the configured tunnel origin. These are point-in-time probes, not authenticated feature or load acceptance. |
@@ -68,6 +60,8 @@ flowchart LR
     W --> R
 ```
 
+Figure 1. Deployment in the original recommendation: Firebase Hosting serves the static frontend and rewrites `/api/**` and the health paths to the Express backend on Cloud Run, which also runs the lease-owned workers; browsers read Firestore and RTDB through authorized SDK listeners.
+
 | Option | Effect on this repository | Assessment |
 |---|---|---|
 | Hosting plus Cloud Run in the same Firebase project | Keeps the current container, middleware, REST routes, SDK listeners, device auth and worker lease. Adds deployment/IAM/runtime configuration and optionally Hosting rewrites. | Recommended first migration. Cloud Run is a Google Cloud runtime integrated with Firebase, not code executed by static Hosting. |
@@ -77,9 +71,9 @@ flowchart LR
 
 The current app depends on work outside HTTP response lifetimes. Firebase documents that background activity after a function finishes cannot make progress reliably. A thin HTTP Function wrapper around the existing startup code would therefore not complete this migration. [Firebase Functions execution guidance](https://firebase.google.com/docs/functions/tips)
 
-### Public address choice
+### 3.1 Public address choice
 
-Superseded on 2026-11-02: Hosting rewrites were evaluated and not adopted (#372, see the repository notes), and clients call the Cloud Run origin directly. The rest of this subsection is the original recommendation.
+Superseded on 2026-11-02: Hosting rewrites were evaluated and not adopted (#372, see Section 12), and clients call the Cloud Run origin directly. The rest of this subsection is the original recommendation.
 
 Use one durable origin, preferably an institution-owned domain connected to Hosting, or the existing `https://bustrack-be165.web.app` for the same-project move. Both the web build and firmware use the **origin only**, without `/api`; their callers append `/api/...` themselves.
 
@@ -112,9 +106,9 @@ Hosting `pinTag` can couple static releases with a backend revision. It does not
 | Medium | API rewrite returns static HTML, redirects, or caches personalized data | Test exact paths and methods, assert JSON, verify no-store/private headers and retain service-worker NetworkOnly behavior. |
 | Medium | Tunnel-specific cleanup removes retry/auth protections | Remove only ngrok-specific branches after acceptance; preserve generic backoff, timeout, validation and authorization behavior. |
 
-### Continuous worker requirement
+### 4.1 Continuous worker requirement
 
-`backend/src/server.ts:307,311` starts the HTTP listener, the route-catalog watcher, and `startWorkerCoordinator`. The coordinator owns:
+`backend/src/server.ts:316,320` starts the HTTP listener, the route-catalog watcher, and `startWorkerCoordinator`. The coordinator owns:
 
 - Trip-state progression and recovery (`startTripStateEngine`).
 - Live/public bus projections (`startLiveBusProjection`).
@@ -128,7 +122,7 @@ Use instance-based billing plus a nonzero minimum for this process. Minimum inst
 
 `WORKER_ENABLED=false` disables the coordinator, not the HTTP server, route watcher, or all asynchronous HTTP operations. It is a smoke-test control, not a guarantee that a service accepting mutation requests is read-only.
 
-### Retention is a specific data-loss hazard
+### 4.2 Retention is a specific data-loss hazard
 
 `backend/.env.example` intentionally has `NODE_ENV=production` with `RETENTION_SWEEPER_ENABLED=false`, and production startup refuses that combination. Copying it unchanged fails startup; changing retention to true without reviewing old records may activate deletions.
 
@@ -147,7 +141,7 @@ Before activation, review the [retention runbook](RTDB_RETENTION.md), current Fi
 | Capacity | Instance-based CPU, minimum 1; begin with a small measured service/revision limit and concurrency. One replica is simpler but is not high availability. Select CPU/memory from measurements, not the platform's defaults. |
 | Quotas | Preserve `HTTPS_DEVICE_RATE_LIMIT_MODE=distributed`; review shard factor against peak simultaneous serving processes, including old/new revisions and any old laptop backend. Static sharding may over-throttle when fewer instances run and cannot by itself enforce a precise autoscaled global quota. |
 | Health | Configure platform startup/liveness checks explicitly using `/live`; Docker's `HEALTHCHECK` is not a substitute for platform configuration. Gate promotion and external monitoring on dependency-aware `/health`. A running process is not proof of healthy Firebase dependencies or worker progress. |
-| Shutdown | Existing SIGTERM handling drains HTTP, workers, operations and Firebase, but the forced-exit backstop (`backend/src/server.ts:325`) is exactly 10 seconds, the same as the platform deadline, so it leaves no margin. Lower the backstop below 10 seconds in the implementation before cutover, rehearse it, and verify recovery after hard kill as well as graceful restart. |
+| Shutdown | Existing SIGTERM handling drains HTTP, workers, operations and Firebase, but the forced-exit backstop (`backend/src/server.ts:330`) is exactly 10 seconds, the same as the platform deadline, so it leaves no margin. Lower the backstop below 10 seconds in the implementation before cutover, rehearse it, and verify recovery after hard kill as well as graceful restart. |
 | Maps | Separate browser and server keys; enable the APIs actually called by backend Routes and Places; verify quotas, billing and application restrictions from deployed egress. |
 | Logging | Structured cloud logs, revision/environment identity, secret/header redaction, background failures and worker metrics. Move any OTLP endpoint from workstation/localhost to a reachable managed destination. |
 
@@ -175,7 +169,7 @@ The [earlier Singapore RTDB decision](../design/RTDB_REGION_LATENCY_DECISION.md)
 |---|---|
 | New backend infrastructure/release manifest | Declare service, region, image digest, runtime identity, CPU/billing, min/max instances, concurrency, environment, secret versions and probes. Set ingress that admits the chosen Hosting and direct browser/device paths, and grant public `roles/run.invoker` so requests reach Express, where Firebase and device authentication run. Apply both on every deployment. Add repeatable verification and rollback. |
 | `.github/workflows/deploy.yml` | Add backend image deployment before client promotion. Keep exact verified SHA/project/environment targeting, existing rules/index readiness and environment approval gates. Distinguish an isolated staging project from the currently named staging environment. |
-| `firebase.json` | Add narrow rewrites if the common Hosting origin is selected; use the actual service/region and a reviewed pinning strategy. Verify deployment headers on both static and dynamic responses. |
+| `firebase.json` | Add narrow rewrites if the common Hosting origin is selected; use the actual service/region and a reviewed pinning strategy. Verify deployment headers on both static and dynamic responses. The common origin was not selected, and `firebase.json` has no rewrites. `npm run verify:hosting-rewrites -- --hosting <origin>` checks a later rewrite proposal with GET requests only ([HTTP contract](../api/HTTP_CONTRACT.md#34-hosting-rewrite-check)). |
 | Frontend env and GitHub environment configuration | Change `NEXT_PUBLIC_BACKEND_URL` to the chosen stable origin and rebuild. Updating only backend env cannot change previously exported JavaScript. Local `.env.production` does not override GitHub environment settings. |
 | `scripts/update-csp.mjs`, `scripts/csp-backend-origin.mjs`, `scripts/verify-web-backend-contract.mjs` | Preserve generated CSP and exact-origin checks. The verifier currently requires an explicit origin token even when it equals the Hosting origin; `'self'` alone does not satisfy its string check. The strict build regenerates that token. |
 | `backend/src/server.ts` | Preserve current routes/body limits/security middleware; validate proxy trust, readiness and shutdown margin on the real ingress. The existing user readiness edit was left untouched. |
@@ -191,14 +185,14 @@ There is no ngrok package in the application manifests to uninstall. Its operati
 
 ## 8. Staged execution and rollback
 
-### Phase A: establish an unchanged-state baseline
+### 8.1 Phase A: establish an unchanged-state baseline
 
 1. Record the verified commit, existing local change, image/build identities, frontend/backend/RTDB origins, database locations, installed firmware/device inventory, active rides, pending durable operations and current worker owner. Keep personal data and secrets in approved private evidence.
 2. Choose the initial target project explicitly. Recommended: relocate the runtime within the existing data/Auth project. If `eki-production` is selected instead, first design and rehearse a separate migration of Auth UIDs/password provider data/claims, profiles, Firestore/subcollections/indexes, RTDB internal state/rules and device verifiers. A project-ID substitution cannot preserve those automatically.
 3. Capture recoverable Firestore and RTDB backups plus the configuration/IAM/secret-version manifest. Verify restoration using isolated data. Auth recovery/export is a distinct concern; a Firestore export does not back up Auth users.
 4. Review retention effects before enabling production startup. Run the existing full CI, emulator/rules and firmware checks for the exact implementation release.
 
-### Phase B: deploy and prove the candidate
+### 8.2 Phase B: deploy and prove the candidate
 
 1. Link approved billing, enable the required runtime/build/registry/secret APIs, and provision runtime/deployment identities. Estimate cost for always-allocated CPU, minimum instances, storage/builds, databases, networking, logs and any NAT/WAF. Free allowances are not a zero-cost guarantee.
 2. Build the existing Dockerfile from the repository root; deploy an immutable candidate without changing the active frontend or device endpoint. Do not build from only `backend/`, which omits workspace manifests/lockfile inputs.
@@ -206,7 +200,7 @@ There is no ngrok package in the application manifests to uninstall. Its operati
 4. Test the dedicated service URL and chosen public origin. Validate `/live`, dependency-ready `/health`, missing/expired/revoked browser identity, role/assignment boundaries, device auth, proxy IP handling, response headers, and representative real provider calls under staging identities.
 5. Run capacity, restart, idle-worker and regional tests. Record the selected CPU/memory/concurrency/replica envelope and the final public origin before preparing fleet images.
 
-### Phase C: move ownership and clients
+### 8.3 Phase C: move ownership and clients
 
 1. Rehearse the handoff in staging. Before touching the live runtime, wait for active administrative jobs to reach a known state and use a safe operating window for devices/rides.
 2. Stop the old coordinator gracefully; restart its compatibility backend with `WORKER_ENABLED=false` if old clients still require that endpoint. Confirm that the lease `_worker_leases/trip-state-worker` was released (a graceful stop sets `ownerId` to null) or wait for it to expire: 45 seconds after the last renewal plus the 2-second clock allowance. Then start/promote the cloud revision with workers enabled. Set a takeover deadline before the window starts (for example two minutes after release or expiry) and require cloud leadership plus actual trip/projection/reconciliation progress within it. If the deadline passes, re-enable the old coordinator, confirm it holds the lease and is making progress, and investigate before retrying. Retain lease generations and operation locks.
@@ -215,14 +209,14 @@ There is no ngrok package in the application manifests to uninstall. Its operati
 5. Move one safely stopped canary device using its final origin/trust and existing identity. Validate telemetry, diagnostic and firmware endpoints, not just HTTP 202. Rehearse reconnect and movement, then move remaining devices in recorded batches.
 6. Keep rollback available through the observation window. Suggested minimum: 48 hours and a complete normal operating cycle; include representative load, a restart, a network outage/recovery and no-request worker activity. Extend the window when a required scenario has not occurred.
 
-### Phase D: retire ngrok and workstation dependence
+### 8.4 Phase D: retire ngrok and workstation dependence
 
 1. Require all feature/acceptance rows below to pass, all fleet endpoints to be migrated, all controlled browser/PWA sessions updated, and no unexplained old-endpoint traffic during the observation period. Low traffic alone does not prove a dormant device has migrated.
 2. While rollback is still retained, stop the local backend and tunnel for a controlled rehearsal. Prove the system works with the workstation disconnected. Restart compatibility service if the rehearsal finds a missed consumer.
 3. Retire the local processes/tunnel permanently only after that rehearsal passes. Remove obsolete tunnel credentials/configuration through the owning account and remove the source/test/runbook compatibility branches in a later small cleanup.
 4. Keep independent local development/emulator capability. Archive release evidence, rollback image/Hosting version and the firmware configuration manifest securely.
 
-### Rollback rules
+### 8.5 Rollback rules
 
 - Prefer routing the stable public origin back to a known-good **cloud revision**, leaving the same databases in place. Verify worker ownership after routing changes; HTTP traffic rollback alone does not choose the coordinator leader.
 - During overlap, web rollback can select the previous Hosting build while the old endpoint remains available. After tunnel retirement, a Hosting build containing the old ngrok URL is not an acceptable rollback target. Archive a stable-origin frontend rollback build before decommissioning.
@@ -273,3 +267,43 @@ No full production build, emulator suite, container deployment, authenticated en
 The move is complete only when a repeatable cloud backend release exists, billing/IAM/runtime prerequisites are satisfied, data and identities remain aligned, cloud workers own and advance their duties, every supported browser/device feature passes, rollback is rehearsed, and the system has passed the workstation-disconnected test. Tunnel-source cleanup follows that operational result.
 
 The next implementation deliverable should be a reviewable backend deployment manifest/workflow, explicit public-origin/region decision, staging acceptance record, and coordinated frontend/firmware rollout. This assessment is the migration specification, not a deployment certificate.
+
+### 11.1 Gate status on `main`
+
+Checked against `main` at `216abeff` on 2026-11-07. Each gate names the section that sets it; the phases are those of Section 8. Workflow and manifest rows cite the repository files. Rows about the live service cite the [staging runtime configuration](STAGING_RUNTIME_CONFIG.md), which records when each value was read, and rows about acceptance work cite the issue that records it. The project `bustrack-be165` is the only one provisioned, so every met gate applies to staging only.
+
+| Gate | State | Evidence |
+|---|---|---|
+| Billing and the Cloud Run API (Section 4, Phase B step 1) | Met | Cloud Billing linked and the Cloud Run, Artifact Registry and `sts.googleapis.com` APIs enabled, checked on 2026-11-01 ([CI, deployment and releases](CI_CD_AND_RELEASES.md#71-current-state)). |
+| Repeatable backend release with an immutable image, a readiness gate and rollback (Section 4, Phase B step 2) | Met | The manual job `deploy-backend-staging` in `.github/workflows/deploy.yml` builds `backend/Dockerfile` from the repository root, pins the pushed image by digest, applies `deploy/cloud-run/staging.service.yaml` as a revision without traffic, promotes it only after `/health` reports `ok` (a first deployment serves all traffic at once), and writes the rollback command to the job summary. `deploy-staging` waits for it. No job deploys a production backend. |
+| Aligned project, RTDB instance and deploy targets (Section 4) | Met | Before it builds, `deploy-backend-staging` checks the manifest's `FIREBASE_DATABASE_URL` against the Hosting build's RTDB URL; `deploy-staging` runs `scripts/verify-rtdb-deploy-target.mjs` and `npm run verify:rtdb-instance -- --require-region`. |
+| Explicit production runtime settings (Section 4) | Met | The manifest sets `NODE_ENV=production`, both Hosting origins in `CORS_ORIGIN`, the `asia-southeast1` `FIREBASE_DATABASE_URL`, `RETENTION_SWEEPER_ENABLED=true` with the 180-day and 90-day retention values, `LEGACY_RTDB_RETIRED=false`, `HTTPS_DEVICE_RATE_LIMIT_MODE=distributed`, `RATE_LIMIT_SHARD_FACTOR=1`, the runtime service account and the Maps server key from Secret Manager version `1`. |
+| Public invocation with application authentication (Section 4) | Met | The job grants `allUsers` the role `roles/run.invoker` on every run, and the live service holds that binding ([staging runtime configuration](STAGING_RUNTIME_CONFIG.md#2-project-facts)); Firebase and device authentication remain the gate. |
+| Platform probes and promotion gate (Section 5, Health) | Met | Startup and liveness probes call `/live`; promotion waits for `/health`. |
+| Bounded replicas and rate-limit shards (Section 4) | Met | `maxScale` 1 with `RATE_LIMIT_SHARD_FACTOR=1`, `containerConcurrency` 80, 1 CPU and `512Mi`. The job refuses to deploy while the service exists in a second region. |
+| Instance-based CPU and at least one minimum instance (Section 4) | Partly met | The manifest sets `run.googleapis.com/cpu-throttling: "false"` and a revision `minScale` of 0. Only the Cloud Scheduler jobs hold a service-level minimum instance, from 06:00 to 22:00 IST. Both jobs are paused, so the service has no minimum instance and runs the workers only while an instance is up ([staging runtime configuration](STAGING_RUNTIME_CONFIG.md#2-project-facts)). |
+| Shutdown margin below the 10-second grace period (Section 5, Shutdown) | Open | The forced-exit backstop at `backend/src/server.ts:330` fires after 10 seconds. |
+| Public origin (Section 3) | Decided | Clients call the Cloud Run origin directly; `firebase.json` has no rewrites ([issue #372](https://github.com/notnamansinha/Eki/issues/372)). |
+| Retention review and backups before the sweeper runs (Section 4, Phase A steps 3 and 4) | Partly met | The first sweep ran during the handoff rehearsal and deleted nothing; staging keeps backups in `gs://bustrack-be165-eki-backups` and a daily managed Firestore backup ([staging runtime configuration](STAGING_RUNTIME_CONFIG.md#5-retention-before-enabling-the-sweeper)). Privacy approval of the retention values is open ([deployment checklist](UNIVERSITY_DEPLOYMENT_CHECKLIST.md#6-data-protection-and-safety)). |
+| Worker handoff (Phase C steps 1 and 2) | Met | Rehearsed on staging on 2026-11-02 ([issue #374](https://github.com/notnamansinha/Eki/issues/374)); the manifest sets `WORKER_ENABLED=true`. |
+| Frontend origin (Phase C step 4) | Partly met | The staging secret `NEXT_PUBLIC_BACKEND_URL` names the Cloud Run service (Section 12). The checks of an open tab and an installed PWA are open ([issue #430](https://github.com/notnamansinha/Eki/issues/430)). |
+| Firmware origin and trust (Section 4, Phase C step 5) | Partly met | `hardware/include/secrets.example.h` names the Cloud Run origin and its root, GTS Root R1. One tracker was reflashed with that origin on 2026-11-02 and its credentials were accepted there; its power-cycle, outage, movement and firmware-endpoint checks are open ([issue #430](https://github.com/notnamansinha/Eki/issues/430)). |
+| Regional latency (Section 6) | Partly met | [Cloud Run latency, 2 November](../testing/CLOUD_RUN_LATENCY_2026_11_02.md) measured a stationary tracker; moving-route and weak-network evidence is pending. |
+| Feature and failure acceptance and rehearsed rollback (Section 9, Section 11) | Partly met | [Issue #430](https://github.com/notnamansinha/Eki/issues/430) records, for 2026-11-02, evidence for the Hosting and API contract, auth and roles, idle workers and data conservation rows, a graceful failover, a rollback rehearsal, and a stable-origin rollback build kept as the Hosting channel `rollback-stable-20261102`. The other rows, among them physical transport, driver lifecycle, passenger behavior, admin operations, realtime reads, scale and limits, PWA upgrade and independence, are open there or have no recorded evidence. The repository holds no acceptance record. |
+| Observation window (Phase C step 6) | Open | Issue #430 lists the 48-hour window, which starts after the open acceptance rows pass, as not done. |
+| Workstation-disconnected test and tunnel retirement (Phase D) | Open | Tunnel compatibility remains in `frontend/src/lib/apiClient.ts`, `hardware/src/main.cpp`, `hardware/include/telemetry_policy.h`, `scripts/check-stationary-runtime.mjs` and `scripts/verify-web-backend-contract.mjs`, as Section 7 requires during the overlap ([issue #378](https://github.com/notnamansinha/Eki/issues/378)). |
+| Production project and release (Phase A step 2) | Open | `eki-production` is named in `deploy.yml`, but `.firebaserc` maps no RTDB deploy target for it and no production backend job exists. The production rollout plan is deferred ([issue #379](https://github.com/notnamansinha/Eki/issues/379)). |
+
+The workflow `.github/workflows/publish-backend-image.yml` publishes the same image to Docker Hub after a green push to `main`, and it skips itself while the secrets `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` are unset; on 2026-11-07 neither secret exists (GitHub API). The [VPS guide](../../deploy/vps/README.md) runs that image on a Docker host as a backup to Cloud Run. Neither changes the Cloud Run service or meets a gate above.
+
+This specification stays Proposed until every gate in the table is met and the completion criteria above hold.
+
+## 12. Repository notes (2026-10-24)
+
+- Line references were re-checked against `main` at `216abeff` on 2026-11-07 (earlier against `main` at `2fdbedd` and `testing` at `6b2d8e4`); the uncommitted RTDB readiness edit mentioned above is not in that checkout.
+- `bustrack-be165` (display name `Eki-AhdUni`, number `449313371438`) is a single Firebase project with two registered web apps. It currently holds test data only and is used as **staging**. Which web app ID the frontend build uses comes from the GitHub environment secret and has not been verified.
+- `eki-production`, the production target in `deploy.yml`, is not visible to the Firebase CLI login used for this work. Treat production as not set up until its owner confirms.
+- Work is tracked in issues #365 to #379. On 2026-11-02 the assignee of #372 recorded Cloud Run as the host and did not adopt the Hosting rewrites: on a preview channel Hosting added p50 313 ms and p95 493 ms to `GET /live` over the direct service (p50 55 ms, p95 69 ms), and the backend saw a Google egress pool (`66.249.82.x`) instead of the caller. The repository owner can reopen that decision.
+- On 2026-11-01 Cloud Billing was linked to `bustrack-be165` and the Cloud Run and Artifact Registry APIs were enabled (read-only `gcloud billing projects describe` and `gcloud services list`). Section 2 records the state at the assessment date; Section 11.1 records the gates on `main` at `216abeff`.
+- On 2026-11-01 the manual `deploy-backend-staging` job (run 41334365954) deployed the Cloud Run service `eki-backend-staging` in `asia-south2` (`https://eki-backend-staging-449313371438.asia-south2.run.app`) with `WORKER_ENABLED=false`, `minScale` 0 and `maxScale` 1, and the staging secret `NEXT_PUBLIC_BACKEND_URL` was changed to that URL. The staging web app no longer uses the ngrok tunnel, which is offline. No Hosting rewrites exist, and trackers built with the tunnel origin need a reflash (issue #376).
+- On 2026-11-02 the RTDB moved to `bustrack-be165-asia-rtdb` in `asia-southeast1` (#426, [RTDB region decision](../design/RTDB_REGION_LATENCY_DECISION.md)); the worker handoff was rehearsed on staging and the manifest set `WORKER_ENABLED=true` with one instance held from 06:00 to 22:00 IST (#374, #428, [staging runtime configuration](STAGING_RUNTIME_CONFIG.md)); and one tracker was reflashed with the Cloud Run origin (#430). The Cloud Scheduler jobs that hold that instance were paused at 19:07 UTC the same day; on 2026-11-07 they are still paused, so staging runs in wake-on-traffic mode. The Iowa rows in Sections 2 and 6 record the assessment date.

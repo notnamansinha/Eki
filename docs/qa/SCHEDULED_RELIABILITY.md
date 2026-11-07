@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-TST-013 | 2.0 | Current | 2026-10-30 |
+| EKI-TST-013 | 2.1 | Current | 2026-11-07 |
 
 ## 1. Purpose
 
@@ -19,13 +19,13 @@ Both workflow files are on `main`, so GitHub runs their schedules from the `main
 
 Every later job checks out that commit. Missing scripts or reports fail the run; it never falls back to another branch or an earlier artifact.
 
-The `testing` branch was deleted on 2026-10-25; scheduled runs from then until the resolver was changed to `main` failed in `resolve` with `Not Found` and ran no suite. The last scheduled runs that executed suites were on 2026-10-24 (UTC). None of the allowed QA push branches exists. The [risk register](../docs/operations/ARCHITECTURE_RISK_REGISTER.md) closes OPS-02 once a nightly and a weekly run are green on `main`.
+None of the allowed QA push branches exists, so the workflows run on their schedules and on manual dispatch only. The [risk register](../operations/ARCHITECTURE_RISK_REGISTER.md#36-ops-02-scheduled-qa-runs-no-suites) lists the green scheduled nightly and weekly runs on `main` as the closure evidence for OPS-02.
 
 ## 3. Nightly campaign
 
 Workflow `Isolated nightly QA` (`.github/workflows/deep-qa.yml`) runs daily at 20:17 UTC (01:47 IST), on manual dispatch, and on pushes to the QA branches listed in the file. GitHub may delay scheduled runs.
 
-The `suites` job runs one shard per family, two at a time, without fail-fast. Each shard runs `npm ci`, `npm run qa:check`, installs what its family needs (Java 21 and a backend build for `emulator`, `browser` and `api`; Chromium for `browser`; Python 3.12 and PlatformIO 6.2.0 for `native`), then `node scripts/qa/campaign.mjs <suite>`.
+The `suites` job runs one shard per family, two at a time, without fail-fast. Each shard runs `npm ci`, `npm run qa:check`, installs what its family needs (Java 21 and a backend build for `emulator`, `browser` and `api`; Chromium for `browser`; Python 3.12 and PlatformIO 6.2.0 from `hardware/requirements.txt` for `native`), then `node scripts/qa/campaign.mjs <suite>`.
 
 | Shard | Runs | Campaign limit |
 |---|---|---|
@@ -38,7 +38,7 @@ The `suites` job runs one shard per family, two at a time, without fail-fast. Ea
 
 `campaign.mjs` refuses a dirty checkout. It accepts a shard only when the family report names the same commit, a clean tree, no physical or provider execution, and as many passed assertions as discovered. Each GNSS seed keeps its own report files.
 
-The `report` job downloads every shard and runs `scripts/qa/campaign-report.mjs`. It checks the commit, workflow run, seed set, assertion identities and case scopes of every campaign, then builds the [execution ledger](EXECUTION_EVIDENCE.md). A partial campaign, red runner, missing artifact or narrow browser run blocks the result. The artifact `nightly-current-source-ledger` holds the ledger and campaign summary.
+The `report` job runs whenever `resolve` succeeded, including after a failed shard. It downloads every shard and runs `scripts/qa/campaign-report.mjs`, which checks the commit, workflow run, seed set, assertion identities and case scopes of every campaign, then builds the [execution ledger](EXECUTION_EVIDENCE.md). A partial campaign, red runner, missing artifact or narrow browser run blocks the result. The artifact `nightly-current-source-ledger` holds the ledger and campaign summary.
 
 ## 4. Weekly baseline
 
@@ -46,7 +46,7 @@ Workflow `Isolated weekly reliability baseline` (`.github/workflows/weekly-relia
 
 | Shard | Command | What it measures |
 |---|---|---|
-| `mutation` | `npm run qa:mutation` | Stryker 10.0.0 mutates only `backend/src/services/telemetryPayload.ts` and runs `telemetryPayload.test.ts` and `qaGnssProperties.test.ts`. `qa/stryker.config.mjs` sets a break threshold of 90 % and keeps every surviving mutant in the report. Outer deadline 10 minutes |
+| `mutation` | `npm run qa:mutation` | Stryker 10.1.1 (pinned in the root `package.json`) mutates only `backend/src/services/telemetryPayload.ts` and runs `telemetryPayload.test.ts` and `qaGnssProperties.test.ts`. `qa/stryker.config.mjs` sets a break threshold of 90 % and keeps every surviving mutant in the report. The run is accepted only from a clean tree with a zero runner exit, both test files and at least 31 tests observed, and no pending mutant. Outer deadline 10 minutes |
 | `soak` | `npm run qa:soak` | Five separate processes each run `scripts/benchmark-work-admission.mjs`: 250,000 submissions against stalled synthetic dependencies, drain, recovery and FIFO order, with a 60 s limit per process. A trial passes only with FIFO order, five rounds and retained heap growth under 4 MiB |
 
 The `report` job runs `scripts/qa/weekly-report.mjs` and uploads `weekly-current-source-baseline`. The mutation score is a regression budget for one pure module, not a feature completion measure. The admission trials exercise production helper code; they are not a fleet load or duration soak.
@@ -60,17 +60,21 @@ The `report` job runs `scripts/qa/weekly-report.mjs` and uploads `weekly-current
 - only the schedule, manual dispatch and allowed-branch push triggers;
 - the `resolve`, `suites`, `report` job graph, with at most two shards in parallel and no fail-fast;
 - job timeouts of 15 minutes or less;
-- actions pinned to the approved commit SHAs.
+- actions pinned to the approved commit SHAs;
+- a `resolve` script that reads `heads/main` for scheduled and dispatched runs, rejects other branches and accepts only a 40-character commit SHA;
+- every checkout on the resolved commit with `persist-credentials: false`;
+- artifact uploads with seven-day retention;
+- no step that references secrets, a Codex action or command, a model API key or a deployment command.
 
-Artifacts are kept for seven days. Dependency downloads are allowed; the safety preflight, Node network guard and browser request allowlist still apply to the tests.
+Dependency downloads are allowed; the safety preflight, Node network guard and browser request allowlist still apply to the tests.
 
 ## 6. Running locally
 
-Use a clean checkout, Java 21, Chromium with its system libraries and PlatformIO 6.2.0. Remove any real provider or Firebase credential from the environment.
+Use a clean checkout, Java 21, Chromium with its system libraries, and PlatformIO 6.2.0 with a host C++ compiler. Remove any real provider or Firebase credential from the environment.
 
 ```sh
 npm ci
-python -m pip install platformio==6.2.0
+python -m pip install --requirement hardware/requirements.txt
 npx playwright install --with-deps chromium
 npm run qa:nightly
 npm run qa:weekly

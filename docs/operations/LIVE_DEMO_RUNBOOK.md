@@ -2,11 +2,11 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-OPS-005 | 1.2 | Current | 2026-11-03 |
+| EKI-OPS-005 | 1.3 | Current | 2026-11-07 |
 
 ## 1. Purpose
 
-This runbook prepares and runs a live demonstration of Eki on a bus: one device, one route, a laptop-hosted backend reached through ngrok, and the deployed frontend on viewers' phones. The deployed staging frontend calls the Cloud Run backend, not a laptop, so Section 4 points it at the tunnel for the demonstration and restores the Cloud Run URL afterwards. Complete every blocking step before passengers board. A demonstration is not university acceptance; that is defined in the [deployment checklist](UNIVERSITY_DEPLOYMENT_CHECKLIST.md).
+This runbook prepares and runs a live demonstration of Eki on a bus: one device, one route, a laptop-hosted backend reached through ngrok, and the deployed frontend on viewers' phones. The deployed staging frontend calls the Cloud Run backend, not a laptop, so Section 4 points it at the tunnel for the demonstration and Section 10 restores the Cloud Run URL afterwards. Complete every blocking step before passengers board. A demonstration is not university acceptance; that is defined in the [deployment checklist](UNIVERSITY_DEPLOYMENT_CHECKLIST.md).
 
 To measure latency during a rehearsal, also follow the [telemetry latency baseline](TELEMETRY_LATENCY_BASELINE.md). To record evidence, follow [field capture](FIELD_CAPTURE.md).
 
@@ -18,7 +18,7 @@ To measure latency during a rehearsal, also follow the [telemetry latency baseli
 | Driver | Drives the bus; never operates the laptop or the web app while the bus moves |
 | Observer | Watches the passenger and admin views during the ride |
 
-Prerequisites: the repository set up as in [getting started](../GETTING_STARTED.md); an ngrok assigned domain ([ngrok tunnel](NGROK_TUNNEL.md)); one ESP32 with a GNSS receiver; a hotspot that the device joins automatically; administrator and passenger accounts.
+Prerequisites: the repository set up as in [getting started](../GETTING_STARTED.md); an ngrok assigned domain ([ngrok tunnel](NGROK_TUNNEL.md)); PlatformIO Core at the version CI pins (`py -m pip install --requirement hardware/requirements.txt`); one ESP32 with a GNSS receiver; a hotspot that the device joins automatically; administrator and passenger accounts; and permission to change the `staging` environment secret `NEXT_PUBLIC_BACKEND_URL` and to dispatch Deploy.
 
 ## 3. Freeze the demo data
 
@@ -44,8 +44,10 @@ Record the non-secret values:
 1. Run `npm ci`, then `npm run verify`. Expected: lint, tests, build and the runtime dependency audit pass.
 2. Run `py -m platformio run --project-dir hardware -e esp32dev` and keep the RAM and flash report. Expected: the build succeeds.
 3. Keep the defaults `AUTH_REVOCATION_CACHE_MS=15000` and `BUS_STALE_MS=300000` in `backend/.env`. Setting `AUTH_REVOCATION_CACHE_MS=0` adds a Firebase Auth round trip to every protected request.
-4. Start the backend and the tunnel with `TRUST_PROXY=loopback` and the deployed frontend origin in `CORS_ORIGIN` ([ngrok tunnel](NGROK_TUNNEL.md#4-start-the-backend-and-the-tunnel)). Expected: `https://<assigned-domain>/health` returns `status: ok` from a phone on mobile data. Set `WORKER_ENABLED=false` in `backend/.env` while the Cloud Run service runs the workers (from 06:00 to 22:00 IST, see the [staging runtime configuration](STAGING_RUNTIME_CONFIG.md)), so that the laptop cannot take the worker lease. Keep `true` only when no Cloud Run instance runs them, and check that exactly one process logs `[Worker] Leadership acquired`.
-5. Point the deployed frontend at this backend origin: the staging secret `NEXT_PUBLIC_BACKEND_URL` names the Cloud Run service, so change it to `https://<assigned-domain>` and redeploy ([CI, deployment and releases](CI_CD_AND_RELEASES.md#8-release-procedure)). Then run `node scripts/check-stationary-runtime.mjs --frontend https://bustrack-be165.web.app --backend https://<assigned-domain>`. Expected: every check passes. The script checks the frontend page, backend health and CORS for the frontend origin; it does not check which backend the frontend calls. After the demonstration, restore the Cloud Run URL in the secret and redeploy.
+4. Start the backend and the tunnel with `TRUST_PROXY=loopback` and the deployed frontend origin in `CORS_ORIGIN` ([ngrok tunnel](NGROK_TUNNEL.md#4-start-the-backend-and-the-tunnel)). Expected: `https://<assigned-domain>/health` returns `status: ok` from a phone on mobile data.
+
+   One process at a time holds the worker lease, and the demonstration needs one: the lease holder runs the trip state engine (direction, stop progress, ride completion and the return service) and the passenger projection ([worker leadership](WORKER_LEADERSHIP.md#2-scope)). The staging Cloud Run service runs the workers whenever one of its instances is up, and it keeps an instance up without traffic only while its Cloud Scheduler jobs set a minimum instance ([staging runtime configuration](STAGING_RUNTIME_CONFIG.md#2-project-facts)). Once the frontend and the device call the tunnel, nothing in the demonstration starts a Cloud Run instance. Keep `WORKER_ENABLED=true` in `backend/.env` so that the laptop takes the lease when no Cloud Run instance holds it. Set `false` only when the service owner holds a Cloud Run instance for the whole demonstration window. Expected: with `true`, the laptop log shows `[Worker] Leadership acquired by <owner-id>.` (if a Cloud Run instance is running, only after it closes, 15 to 17 minutes after its last request); with `false`, it shows `[Worker] Disabled by WORKER_ENABLED=false.`
+5. Point the deployed frontend at this backend origin: the staging secret `NEXT_PUBLIC_BACKEND_URL` names the Cloud Run service, so change it to `https://<assigned-domain>`, then dispatch Deploy from `main` with `environment: staging` and `deploy_backend` left false ([CI, deployment and releases](CI_CD_AND_RELEASES.md#51-triggers-and-conditions)). Expected: `deploy-staging` succeeds; this release does not probe the backend. Then run `node scripts/check-stationary-runtime.mjs --frontend https://bustrack-be165.web.app --backend https://<assigned-domain>`. Expected: every check passes. The script checks the frontend page, backend health and CORS for the frontend origin; it does not check which backend the frontend calls. Section 10 restores the Cloud Run URL.
 6. Connect the laptop charger, disable sleep and automatic restarts for the demonstration window.
 
 Viewers use the deployed frontend. Exposing the laptop frontend needs a second stable domain, a Firebase Auth authorized domain and a `CORS_ORIGIN` entry ([DNS and domains](DNS_AND_DOMAINS.md#4-firebase-authentication-domains)); test sign-in on every intended phone before relying on it.
@@ -59,7 +61,7 @@ Viewers use the deployed frontend. Exposing the laptop frontend needs a second s
    ```
 
    Expected: `Device provisioned` and the secret, printed once. The command stores only a salted verifier and publishes a credential cache invalidation. If it reports that invalidation failed, restore RTDB connectivity and run it again before flashing.
-2. Copy `hardware/include/secrets.example.h` to the ignored `hardware/include/secrets.h` and set the hotspot name and password, the device ID and secret, the tunnel origin and its verified root CA ([ngrok tunnel](NGROK_TUNNEL.md#5-provision-tls-trust-in-the-firmware)). Do not paste the secret into chat, screenshots, shell history or Git.
+2. Copy `hardware/include/secrets.example.h` to the ignored `hardware/include/secrets.h` and set the hotspot name and password, the device ID and secret, the tunnel origin and its verified root CA ([ngrok tunnel](NGROK_TUNNEL.md#5-provision-tls-trust-in-the-firmware)). The template's `BACKEND_URL` and `BACKEND_ROOT_CA` name the Cloud Run origin and GTS Root R1; replace both. Do not paste the secret into chat, screenshots, shell history or Git.
 3. Build and flash `esp32dev` for a demonstration board, as in [local testing](LOCAL_TESTING.md#33-prepare-a-device). A vehicle in university service uses only `esp32dev-secure` under [hardware security provisioning](../security/HARDWARE_SECURITY_PROVISIONING.md); its first boot burns eFuses irreversibly.
 4. Open the serial monitor at 115200 baud. Expected: Wi-Fi joins, time synchronises, a GNSS fix appears and telemetry returns `200` or `202`, with no credential printed. A `401` means the ID, secret or registry entry is wrong; a TLS error means the URL, hostname, clock or root CA is wrong.
 
@@ -113,3 +115,5 @@ Carry a spare ESP32, USB cable and power lead, a second hotspot, a charger, a pr
 1. Stop the device, the ngrok agent and, if no one else uses it, the backend.
 2. If the device secret left the private store, rotate it with `provision-device` and reflash.
 3. Archive the evidence privately; publish only redacted results.
+4. Set the staging secret `NEXT_PUBLIC_BACKEND_URL` back to `https://eki-backend-staging-449313371438.asia-south2.run.app` and dispatch Deploy from `main` with `environment: staging`. Then run `node scripts/check-stationary-runtime.mjs --frontend https://bustrack-be165.web.app --backend https://eki-backend-staging-449313371438.asia-south2.run.app`. Expected: every check passes. A Cloud Run instance that starts from zero answers `/health` with `503` for a few seconds; repeat the command if only that check fails.
+5. Before the device reports to the staging Cloud Run backend again, reflash it with the `BACKEND_URL` and `BACKEND_ROOT_CA` values in `hardware/include/secrets.example.h`. Expected: serial telemetry `200` or `202`.

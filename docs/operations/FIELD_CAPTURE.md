@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-OPS-008 | 1.0 | Current | 2026-10-30 |
+| EKI-OPS-008 | 1.1 | Current | 2026-11-07 |
 
 ## 1. Purpose
 
@@ -21,7 +21,7 @@ What a capture can show depends on the ride state. A moving trace without a ride
 
 - Python 3 with pySerial (`python -m pip install pyserial`). Do not create a file named `serial.py` next to the scripts; it would shadow pySerial.
 - Node.js and the repository at the commit under test.
-- A device build that prints `[TelemetryTrace]` lines (`esp32dev`; the `esp32dev-quiet` build removes them).
+- A device build that prints `[TelemetryTrace]` lines (`esp32dev`; the `esp32dev-quiet` and `esp32dev-secure` builds remove them), compiled with the current backend origin and its root CA in `BACKEND_URL` and `BACKEND_ROOT_CA` ([hardware guide](../../hardware/README.md#43-compile-time-configuration-file)).
 - Output folders under the ignored `temp/` and `artifacts/` directories, or another private location. Every run uses a new folder.
 - One serial tool per port. Close any PlatformIO monitor before recording.
 
@@ -32,7 +32,7 @@ What a capture can show depends on the ride state. A moving trace without a ride
 3. Let direction resolve from a stopped fix within 10 m of the origin stop. Without one, the backend needs at least three fresh, reliable moving fixes covering 30 m along one unambiguous first leg; until then direction stays pending. Do not force a direction or invent coordinates.
 4. Open the Admin and Passenger views with `?telemetryTrace=1` in the URL and keep each tab open without refreshing. Use `Download telemetry trace` in each tab before and after the run, and note which tab was in the foreground ([browser telemetry trace](BROWSER_TELEMETRY_TRACE.md)).
 5. Record the source commit and any uncommitted diff, the build hashes, the receiver and antenna setup, sky conditions and any independent position reference. A hash computed on the laptop does not prove what is flashed. The identity fields are listed in [field acceptance](../../qa/FIELD_ACCEPTANCE.md).
-6. Confirm that the backend and its tunnel receive fresh fixes. Record a stopped baseline and the start time. Keep the USB connection, hotspot and laptop awake. Name the person responsible for physical actions and note every intentional disconnect or stop.
+6. Confirm that the backend receives fresh fixes from the device. Record a stopped baseline and the start time. Keep the USB connection, hotspot and laptop awake. Name the person responsible for physical actions and note every intentional disconnect or stop.
 
 ## 4. Record the serial log
 
@@ -103,6 +103,7 @@ Add `--health <file>` for each saved administrator `GET /api/health` response. E
 Interpretation rules:
 
 - Capture and ingress intervals are intervals between accepted samples seen on the serial port. A gap there does not prove a backend outage; check the recorder's events file, the browser cadence and an independent cloud record before assigning it to a stage.
+- On a backend that scales to zero, the first requests after an idle period can time out or receive 503 while an instance starts ([staging runtime configuration](STAGING_RUNTIME_CONFIG.md#8-verification), [Cloud Run latency](../testing/CLOUD_RUN_LATENCY_2026_11_02.md)). Report that start-up interval separately; it is not a network outage.
 - Browser cadence uses each tab's monotonic clock. Background tabs and truncated exports can create apparent gaps.
 - Do not convert sequence gaps into packet-loss percentages. A device read timeout can coincide with a backend acceptance; compare sequence numbers and device send times.
 - A React snapshot or marker-target callback is not a measured screen paint.

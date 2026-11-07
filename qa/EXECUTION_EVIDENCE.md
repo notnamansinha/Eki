@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-TST-006 | 1.0 | Current | 2026-10-30 |
+| EKI-TST-006 | 1.1 | Current | 2026-11-07 |
 
 ## 1. Purpose
 
@@ -64,9 +64,11 @@ Reports keep only the validated loopback emulator topology. Authorization observ
 
 A requirement with a passing mapped assertion is `PARTIAL`: each test map covers a limited part of its oracle. Mapped requirements without observations stay `NOT_RUN`, and unmapped ones `NOT_COVERED`. Historical ledger notes never raise a status.
 
+The static catalog also merges test maps that no ledger family reads: `qa/routing-test-map.mjs`, `qa/production-audit-test-map.mjs`, `qa/automatic-service-test-map.mjs`, `qa/mutation-test-map.mjs` and the links defined in `qa/test-map.mjs` itself. Each family matches observations only against its own map, so a requirement mapped only in those files stays `NOT_RUN` in the ledger, even when a harness runs the linked test (for example, the emulator family runs `qaTelemetryChain.integration.test.ts`, which the automatic service map links).
+
 ## 6. Continuous integration
 
-In Production verification, the `qa-evidence` job runs after the `web` and `firmware` jobs, even when they fail. It downloads the static catalog and every `*-evidence` artifact and runs `npm run qa:report`. The ledger artifact `current-source-execution-evidence` is kept for seven days. The nightly workflow builds the same ledger from its campaign shards; see [scheduled reliability](SCHEDULED_RELIABILITY.md).
+In Production verification, the `qa-evidence` job runs after the `web` and `firmware` jobs, even when they fail. It downloads the `static-acceptance-catalog` artifact, which also holds the GNSS and reviewed unit reports from the `web` job, and every `*-evidence` artifact, then runs `npm run qa:report`. The ledger artifact `current-source-execution-evidence` is kept for seven days. The nightly workflow builds the same ledger from its campaign shards; see [scheduled reliability](SCHEDULED_RELIABILITY.md).
 
 ## 7. Limits
 

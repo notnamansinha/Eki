@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-OPS-016 | 1.0 | Current | 2026-10-30 |
+| EKI-OPS-016 | 1.1 | Current | 2026-11-07 |
 
 ## 1. Purpose
 
@@ -20,7 +20,7 @@ Sample-to-marker latency is measured in the same run with the [telemetry latency
 
 ## 3. Steps
 
-1. Record the commit, deployed versions, Firebase project and region, browser and device, number of active buses, tab count, network profile, the cost ceiling and any change to the decision record's targets, with the reason.
+1. Record the commit, deployed versions, Firebase project, the RTDB instance and its region, the backend host and region and whether it keeps a minimum instance, browser and device, number of active buses, tab count, network profile, the cost ceiling and any change to the decision record's targets, with the reason. A backend that scales to zero adds a cold start to the first requests after an idle period ([staging runtime configuration](STAGING_RUNTIME_CONFIG.md#8-verification)); keep that interval out of the measured phases or label it.
    Expected result: a run header written before capture starts.
 2. Open the map tab and the chat tabs with `?telemetryTrace=1` in the URL from the first page load, so tracing attaches before the listeners. Do not call `clear()` afterwards: it discards the watch baseline.
    Expected result: each tab shows **Download telemetry trace**.
