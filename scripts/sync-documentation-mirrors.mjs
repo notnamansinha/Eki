@@ -50,6 +50,11 @@ function expectedMirror(source) {
       .replaceAll("](../backend/", "](../../backend/")
       .replaceAll("](../frontend/", "](../../frontend/");
   } else if (/^(backend|deploy|e2e|frontend|hardware|qa)\//.test(source)) {
+    // The mirror sits one folder deeper, under docs/, so a link written as
+    // "../" repeated once per source folder level, then "docs/<path>", needs
+    // the same "../" run followed by "<path>". Dropping "docs/" from the
+    // "../docs/" suffix does that at any depth: "../../docs/x" becomes "../../x".
+    // backend/src/docsMirror.test.ts checks that every such link resolves.
     content = content.replaceAll("../docs/", "../");
   }
   return content;
