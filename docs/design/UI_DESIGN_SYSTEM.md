@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-UIX-001 | 2.4 | Current | 2026-11-06 |
+| EKI-UIX-001 | 3.0 | Current | 2026-11-08 |
 
 ## 1. Purpose
 
@@ -75,6 +75,7 @@ All tokens are defined in `app/globals.css`; Sections 2.1 to 2.6 list those defa
 |---|---|---|
 | `--route-color` | `#3B82F6` | Declared for per-route colouring; no component reads it. |
 | `--safe-area-top`, `--safe-area-bottom` | `env(safe-area-inset-top, 0px)`, `env(safe-area-inset-bottom, 0px)` | `.pt-safe`, `.pb-safe` and the bottom navigation clearance. |
+| `--safe-area-left`, `--safe-area-right` | `env(safe-area-inset-left, 0px)`, `env(safe-area-inset-right, 0px)` | On touch screens, the side padding of the Live routes panel, tab bar, timeline sheet, chat overlay, alerts, tracking controls, map notices and camera buttons, Routes rows and headers, and Profile, so content clears a notch or camera cut-out in landscape. The artwork, map and bar surfaces still reach the screen edges. |
 | `--tracking-controls-inset` | Set at runtime by `components/maps/PassengerMap.tsx` | Height of the tracking header over the map; positions map notices and camera controls. |
 
 Radius tokens are listed in Section 6.2.
@@ -462,7 +463,7 @@ A signed-in user leaves `/` for the saved workspace or the default for the role.
 
 `components/passenger/PassengerWorkspace.tsx` stacks four absolutely positioned views and a fixed bottom navigation. Hidden views are `inert` and `aria-hidden`; the Routes and Profile views mount on their first visit and then stay mounted. Reconnect, ride-recovery and error banners appear above the views.
 
-On desktop, the Live Routes panel is centered over the artwork, capped at 42 rem, with a shallow artwork spacer, compact route rows and a visible list scrollbar. A compact dock centers the Live, Routes and Profile tabs beneath the panel. Touch-only windows use the full-width bottom navigation with outline icons and a gold active marker. The published Routes tab moves the same navigation to a top bar on wide pointer-equipped desktop windows. Keyboard selection moves focus into tracking and Back restores it to the selected route or the list heading if the route has disappeared.
+On desktop, the Live Routes panel is centered over the artwork, capped at 42 rem, with a shallow artwork spacer, compact route rows and a visible list scrollbar. A compact dock centers the Live, Routes and Profile tabs beneath the panel. Touch-only windows use the full-width bottom navigation with outline icons and a gold active marker. The published Routes tab keeps the same navigation as Live and Profile: the floating dock on pointer devices and the full-width bar on touch, with the schedule padded to clear it. Keyboard selection moves focus into tracking and Back restores it to the selected route or the list heading if the route has disappeared.
 
 | View | Structure |
 |---|---|
@@ -576,8 +577,10 @@ Under `prefers-reduced-motion: reduce`, `app/globals.css` sets every animation a
 | `start_url` | `/` |
 | `display` | `standalone` |
 | `background_color` | `#09090b` (`--surface-0`) |
-| `theme_color` | `#FA5D29` (`--accent`) |
+| `theme_color` | `#f2efec` (the AU off-white page) |
 | Icons | `/icon-192.png` 192 × 192 as `any` and as `maskable`; `/icon-512.png` 512 × 512 as `maskable` |
+
+The browser and installed-app status bar follow the page: `viewport.themeColor` is `#09090b` in `app/layout.tsx` for the dark landing page and `#f2efec` in `app/passenger/layout.tsx` and `app/admin/layout.tsx`, so no accent-coloured strip shows above the content.
 
 `app/icon.png` (128 × 128) and `app/apple-icon.png` (180 × 180) supply the browser icon and the Apple touch icon through Next.js file conventions. The open-graph image is `/images/hero-background.webp`.
 

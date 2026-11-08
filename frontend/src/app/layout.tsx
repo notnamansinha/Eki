@@ -24,6 +24,9 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
+  // Browser and installed-app status bar colour: the dark landing page.
+  // Passenger and Admin set their own page colour in their layouts.
+  themeColor: "#09090b",
 };
 
 export const metadata: Metadata = {

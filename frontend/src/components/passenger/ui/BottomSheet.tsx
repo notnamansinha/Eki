@@ -63,8 +63,8 @@ export default function BottomSheet({
           // behind the navigation, which the floating desktop dock leaves bare.
           // Clip and slide share a transition, so the moving bottom edge stays on
           // the navigation. -40px keeps the shadow above the header.
+          // The sheet already sits on the navigation, which owns the bottom safe area.
           clipPath: isOpen ? "inset(-40px 0 0)" : "inset(-40px 0 calc(100% - 56px))",
-          paddingBottom: "env(safe-area-inset-bottom)",
         }}
       >
         {/* Handle + Header */}

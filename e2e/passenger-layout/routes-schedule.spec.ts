@@ -63,7 +63,8 @@ test("Routes tab lists approved schedules with a compact badge and one-sided tim
     await expect(list).toBeVisible();
     const navBox = (await nav(page).boundingBox())!;
     const listBox = (await list.boundingBox())!;
-    expect(navBox.y + navBox.height).toBeLessThanOrEqual(listBox.y);
+    // Routes keeps the same bottom dock as Live and Profile; the list ends above it.
+    expect(listBox.y + listBox.height).toBeLessThanOrEqual(navBox.y + 0.5);
   }
 });
 

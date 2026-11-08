@@ -926,7 +926,7 @@ export default function PassengerWorkspace() {
 
               {/* Messaging Overlay */}
               {chatShown(visibleView) && activeSessionId && (
-                <div className="absolute inset-x-0 top-16 z-50 animate-slide-up flex flex-col pointer-events-auto" style={{ bottom: passengerNavClearance }}>
+                <div data-chat-overlay className="absolute inset-x-0 top-16 z-50 animate-slide-up flex flex-col pointer-events-auto" style={{ bottom: passengerNavClearance }}>
                    <MessagingPanel
                     key={activeSessionId || "online-no-session"}
                      sessionId={activeSessionId || ""}

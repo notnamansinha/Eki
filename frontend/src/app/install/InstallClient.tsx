@@ -67,7 +67,7 @@ export default function InstallClient() {
   }
 
   const button =
-    "w-full rounded-xl bg-[#FA5D29] px-4 py-3 text-base font-semibold text-white disabled:opacity-60";
+    "w-full rounded-xl bg-[#b3262a] px-4 py-3 text-base font-semibold text-white disabled:opacity-60";
 
   return (
     <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center gap-6 px-4 py-10">

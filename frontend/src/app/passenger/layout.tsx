@@ -1,8 +1,11 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import PassengerLoadingShell from "@/components/passenger/PassengerLoadingShell";
 import RoleGuard from "@/components/shared/RoleGuard";
 import WorkspacePrefetch from "@/components/shared/WorkspacePrefetch";
 import "./theme.css";
+
+// The status bar matches the AU off-white page instead of a coloured strip.
+export const viewport: Viewport = { themeColor: "#f2efec" };
 
 export const metadata: Metadata = {
   title: "Passenger live map",
