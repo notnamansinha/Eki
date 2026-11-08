@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-OPS-029 | 1.4 | Current | 2026-11-07 |
+| EKI-OPS-029 | 1.5 | Current | 2026-11-08 |
 
 ## 1. Purpose
 
@@ -41,7 +41,7 @@ These values were read from the live project on 2026-10-31 and the Cloud Run ser
 | `LEGACY_RTDB_RETIRED` | `false` | Keep `false` until every legacy consumer is retired. |
 | `RIDE_SESSION_RETENTION_DAYS`, `FEEDBACK_RETENTION_DAYS`, `COMPLETED_TRIP_RETENTION_DAYS` | `180` | The `.env.example` values. Deletion starts as soon as the sweeper runs. |
 | `OPERATION_LOG_RETENTION_DAYS` | `90` | The `.env.example` value. |
-| `WORKER_ENABLED` | `true` | The serving revision `eki-backend-staging-00009-7sh` runs `true`, so the workers run while an instance is up and the instance takes the worker lease within about 5 s of starting (measured on 2026-11-03). The handoff was rehearsed on 2026-11-02 ([issue #374](https://github.com/notnamansinha/Eki/issues/374)). `false` keeps an instance out of leader election; it does not stop the HTTP server. A local backend that uses this project sets `false` so that it cannot take the lease ([worker leadership](WORKER_LEADERSHIP.md)). |
+| `WORKER_ENABLED` | `true` | The serving revision `eki-backend-staging-00009-7sh` runs `true`, so the workers run while an instance is up and the instance takes the worker lease within about 5 s of starting (measured on 2026-11-03). The handoff was rehearsed on 2026-11-02 ([issue #374](https://github.com/notnamansinha/Eki/issues/374)). `false` keeps an instance out of leader election; it does not stop the HTTP server. Set `WORKER_ENABLED=false` before starting a local backend against this project to keep it out of the election ([worker leadership](WORKER_LEADERSHIP.md)). |
 | `HTTPS_DEVICE_RATE_LIMIT_MODE` | `distributed` | `local` also requires `RATE_LIMIT_SHARD_FACTOR=1`. |
 | `RATE_LIMIT_SHARD_FACTOR` | `1` with a maximum of one instance | Set it to the maximum instance count if that count grows. |
 | `TRUST_PROXY` | Unset | Unset means one trusted hop in production. Section 7 describes the open question. |

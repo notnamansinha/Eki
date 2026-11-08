@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-UIX-002 | 2.0 | Current | 2026-11-07 |
+| EKI-UIX-002 | 2.1 | Current | 2026-11-08 |
 
 ## 1. Source and delivery
 
@@ -188,12 +188,13 @@ heading, enabled Google button, Campus Operations link and footer fit.
 
 On pointer-equipped windows, the Live routes panel is centred over the artwork, at most 42 rem wide, on a white surface with paper route cards. A shorter artwork band (`clamp(24px, calc(22dvh - 64px), 144px)`) leaves more room for the compact, independently scrolling route list, and the floating dock sits below the panel. The workspace and session-loading shell share this geometry. Touch-only windows show Live routes as a sheet that rests on the tab bar, so the artwork fills the screen above the peek, and the loading shell rests at the same peek. Both layouts use the same portrait and landscape artwork sources.
 
+Current passenger captures from 2026-11-08 show the AU theme in the Chromium layout fixture with synthetic routes. See the [raised phone sheet at 390 × 844](../design/transit-artwork/qa/passenger-au-portrait.jpg) and the [desktop panel and dock at 1280 × 800](../design/transit-artwork/qa/passenger-au-desktop.jpg).
+
 ## 6. Published schedule navigation
 
-The Routes tab docks the passenger navigation to the bottom edge, and on
-pointer-equipped windows at least 64 rem wide moves it to a top bar above the
-list and timetable. The Live tab keeps the centred dock over the artwork on
-pointer devices and the full-width tab bar on touch screens. The tabs mark the
+Live, Routes and Profile share the same bottom navigation. Pointer-equipped
+windows use a centred floating dock, and touch screens use a full-width bar.
+The schedule leaves room for the navigation and bottom safe-area inset. The tabs mark the
 active section in AU Red Bold, with no underline marker, and browser Back and
 Forward move between Live, Routes and Profile. The icons are Lucide MapPinned
 for Live, Eki's connected dots for Routes and Lucide UserRound for Profile. The

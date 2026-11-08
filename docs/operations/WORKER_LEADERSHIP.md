@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-OPS-026 | 1.1 | Current | 2026-11-07 |
+| EKI-OPS-026 | 1.2 | Current | 2026-11-08 |
 
 ## 1. Purpose
 
@@ -60,7 +60,7 @@ The staging Cloud Run service (`deploy/cloud-run/staging.service.yaml`) runs at 
 
 During a backend deploy, `deploy-backend-staging` gates a candidate revision on its `/health` before moving traffic to it (`.github/workflows/deploy.yml`), so the candidate's instance can run beside the serving one. The instance that holds the lease keeps it; the other runs no leader work until the lease is released or expires.
 
-While no instance runs, no leader work runs. When an instance takes the lease, the trip state engine rereads current state ([work admission](WORK_ADMISSION.md#32-lifecycle-recovery-after-overload)) and, with `RETENTION_SWEEPER_ENABLED=true`, the retention sweep runs at once. The staging minimum-instance schedule and wake-on-traffic behaviour are described in the [staging runtime configuration](STAGING_RUNTIME_CONFIG.md#2-project-facts). A local backend that uses the staging project sets `WORKER_ENABLED=false` (`backend/.env.example`), so that it never becomes the worker leader in place of the Cloud Run instance.
+While no instance runs, no leader work runs. When an instance takes the lease, the trip state engine rereads current state ([work admission](WORK_ADMISSION.md#32-lifecycle-recovery-after-overload)) and, with `RETENTION_SWEEPER_ENABLED=true`, the retention sweep runs at once. The staging minimum-instance schedule and wake-on-traffic behaviour are described in the [staging runtime configuration](STAGING_RUNTIME_CONFIG.md#2-project-facts). Before starting a local backend against shared staging, set `WORKER_ENABLED=false` in `backend/.env`. The example sets `true`, which allows the local process to acquire the shared lease and run stop progress, retention and other leader work against staging.
 
 ## 4. Configuration
 

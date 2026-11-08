@@ -1,5 +1,5 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { relative, resolve, sep } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const workspaceFile = (path: string) =>
@@ -972,16 +972,24 @@ describe("production security configuration", () => {
     }>).find((entry) => /^\/\{[^}]*\}$/.test(entry.source));
     const cacheControl = pageRule?.headers.find(({ key }) => key === "Cache-Control")?.value;
     const covered = new Set(pageRule?.source.slice(2, -1).split(","));
-    // Each top-level folder with a page.tsx exports one HTML page (cleanUrls
-    // serves it without .html); "" is the landing page.
-    const pages = new Set(
-      readdirSync(resolve(__dirname, "../../frontend/src/app"), { withFileTypes: true })
-        .filter((entry) => entry.isDirectory() &&
-          existsSync(resolve(__dirname, "../../frontend/src/app", entry.name, "page.tsx")))
-        .map((entry) => entry.name)
-        .concat(""),
-    );
+    // Discover nested App Router pages as well as the root page ("").
+    // Route groups and named slots do not contribute URL segments.
+    const appDir = resolve(__dirname, "../../frontend/src/app");
+    const pages = new Set<string>();
+    for (const entry of readdirSync(appDir, { withFileTypes: true, recursive: true })) {
+      if (!entry.isFile() || !/^page\.(?:js|jsx|ts|tsx)$/.test(entry.name)) continue;
+      const segments = relative(appDir, entry.parentPath).split(sep);
+      if (segments.some((segment) => segment.startsWith("_"))) continue;
+      const page = segments
+        .filter((segment) => !/^\([^)]*\)$/.test(segment) && !segment.startsWith("@"))
+        .join("/");
+      pages.add(page);
+    }
 
+    expect(
+      [...pages].filter((page) => page.includes("[")),
+      "Dynamic routes need cache coverage checked against their generated paths",
+    ).toEqual([]);
     expect(firebase.hosting.cleanUrls).toBe(true);
     expect(cacheControl).toBe("no-cache, no-store, must-revalidate");
     expect([...covered].sort()).toEqual([...pages].sort());

@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-UIX-001 | 3.0 | Current | 2026-11-07 |
+| EKI-UIX-001 | 3.1 | Current | 2026-11-08 |
 
 ## 1. Purpose
 
@@ -78,6 +78,7 @@ All tokens are defined in `app/globals.css`; Sections 2.1 to 2.6 list those defa
 |---|---|---|
 | `--route-color` | `#3B82F6` | Declared for per-route colouring; no component reads it. |
 | `--safe-area-top`, `--safe-area-bottom` | `env(safe-area-inset-top, 0px)`, `env(safe-area-inset-bottom, 0px)` | `.pt-safe`, `.pb-safe` and the bottom navigation clearance. |
+| `--safe-area-left`, `--safe-area-right` | `env(safe-area-inset-left, 0px)`, `env(safe-area-inset-right, 0px)` | Keeps touch controls and text clear of landscape cut-outs. The artwork, map, sheets and tab bar still paint to the screen edges. |
 | `--passenger-nav-height` | `81px`; `69px` on touch screens | Height of the passenger navigation above the safe area (Section 6.1). |
 | `--transit-maroon`, `--transit-charcoal`, `--transit-gold`, `--transit-gray`, `--transit-paper` | `#801214`, `#434747`, `#ae9562`, `#939598`, `#f2efec` | Routes tab and passenger navigation base rules in `globals.css`. |
 | `--schedule-canvas` to `--schedule-muted` | Dark greys from `#111113` to `#b6b5bc` | Routes tab base surfaces; `app/passenger/theme.css` maps them to the brand tokens (Section 2.10). |
@@ -341,7 +342,7 @@ The dot pulses while an online bus is moving. "Service paused" replaces the trip
 | `--accent` | Filled rating stars; empty stars are outlined in `--border-default` | `app/passenger/theme.css` (`.pp-star`) |
 | `#94a3b8` | Route colour shown when a route has none, admin Passenger Routes | `components/admin/PassengerRoutesSettings.tsx` |
 | `accent-emerald-500` | Route checkboxes in admin Passenger Routes | same |
-| `#FA5D29` | **Install Eki** and **Copy link** buttons | `app/install/InstallClient.tsx` |
+| `#b3262a` | **Install Eki** and **Copy link** buttons | `app/install/InstallClient.tsx` |
 | `#f2efec` | Passenger map background colour while tiles load | `components/maps/PassengerMap.tsx` |
 | `bg-black`, `text-white` | Landing page | `app/page.tsx` |
 
@@ -357,7 +358,7 @@ Ratios follow the WCAG 2.2 relative luminance formula [1]. Tailwind palette colo
 | `--text-tertiary` on `--surface-1` | `/feedback` metadata (`ui-quiet` on `ui-paper`) | 5.59 | Pass |
 | `--surface-0` on `--text-primary` | `.btn-primary` | 16.87 | Pass |
 | `--accent` outline on `--surface-0` | Default focus outline | 6.31 | Pass (non-text) |
-| `white` on `#FA5D29` | `/install` buttons, 16 px semibold | 3.15 | Fail |
+| `white` on `#b3262a` | `/install` buttons, 16 px semibold | 6.51 | Pass |
 | `white` on `red-500` | Default danger dialog button, 12 px semibold | 3.82 | Fail |
 | `--text-primary` on `--pp-page` (`#f2efec`) | Passenger page text, Live routes title | 8.22 | Pass |
 | `--text-primary` on `#ffffff` | Card and admin body text, map stop label chip | 9.41 | Pass |
@@ -386,7 +387,7 @@ Ratios follow the WCAG 2.2 relative luminance formula [1]. Tailwind palette colo
 | `--border-default` on `#ffffff` | Field and control edges | 3.61 | Pass (non-text) |
 | `--border-default` on `#f2efec` | Control edges on the page | 3.15 | Pass (non-text) |
 | `--accent` outline on `#f2efec` | Focus outline | 9.10 | Pass (non-text) |
-| White at 45 % ring on `--accent` | Focused search field on the Routes header | 3.13 | Pass (non-text) |
+| White at 45 % ring on `--accent` | Focused search field on the Routes header | 3.12 | Pass (non-text) |
 | `#801214` and `#8c5a0b` pointer on its white stroke | Bus heading pointer | 10.42, 5.86 | Pass (non-text) |
 | `#801214` and `#939598` road on the white casing | Road and covered road | 10.42, 3.00 | Pass (non-text) |
 
@@ -416,7 +417,7 @@ Tailwind size utilities keep their defaults: `text-xs` 12/16 px, `text-sm` 14/20
 | Profile rows | UI | 16 px | 500 | 1.5 | "Send feedback" |
 | Profile name | UI | 20 px | 700 | 1.25 | Account name |
 | Buttons (`.pp-btn-*`) | UI | 15 px; 17 px for the feedback submit button | 700 | 1.2 | **Board** |
-| Bottom navigation label | UI | 12 px; 14 px in the Routes top bar | 500, active 700 | 1.5 | "Live", "Routes", "Profile" |
+| Bottom navigation label | UI | 12 px | 500, active 700 | 1.5 | "Live", "Routes", "Profile" |
 | Tracking status line | UI | 13 px | 500 | 1.5 | `Ride in service · Live` |
 | Timeline stop name | UI | 15 px (next or selected), otherwise 14 px | 500 / 400 | 1.5 | Stop name |
 | ETA | UI | 18 px with `tabular-nums` | 700 | 1.5 | Minutes, or "Due" |
@@ -466,7 +467,7 @@ Short touch screens, at most 480 px tall without a fine pointer (landscape phone
 | `--radius-2xl` | 24 px | `rounded-2xl` |
 | `--radius-pill` | 999 px | `.btn-primary` |
 
-`rounded-3xl` keeps the Tailwind default of 1.5 rem (24 px). Passenger radii come from `app/passenger/theme.css`: the Live routes panel 22 px at the top on touch screens and 24 px on pointer devices; route cards 14 px on pointer devices, while on phones the grouped route list rounds at 12 px and the cards inside it are square; the announcement and empty state 12 px on phones and 14 px on pointer devices; the ride card, notices, map buttons and timeline sheet 14 px; buttons 12 px; dialogs 14 px on touch screens and 20 px on pointer devices; navigation buttons 16 px. The navigation frame is square on touch screens and on the Routes tab, and 22 px as the desktop dock.
+`rounded-3xl` keeps the Tailwind default of 1.5 rem (24 px). Passenger radii come from `app/passenger/theme.css`: the Live routes panel 22 px at the top on touch screens and 24 px on pointer devices; route cards 14 px on pointer devices, while on phones the grouped route list rounds at 12 px and the cards inside it are square; the announcement and empty state 12 px on phones and 14 px on pointer devices; the ride card, notices, map buttons and timeline sheet 14 px; buttons 12 px; dialogs 14 px on touch screens and 20 px on pointer devices; navigation buttons 16 px. The navigation frame is square on touch screens and has a 22 px radius in the desktop dock.
 
 **Admin continuous corners.** The admin panel and its dialogs use Apple's continuous corner curve (`CALayer` `.continuous`, the SwiftUI default) instead of circular arcs. Inside `@supports (corner-shape: superellipse(1.7))`, `app/admin/theme.css` multiplies the radius tokens (and the fixed 20 px dialog, 12 px dialog-button and 24 px `.panel-rc` radii) by 1.528665, the distance at which Apple's curve leaves each edge, and sets `corner-shape: superellipse(1.7)` on every `rounded-*` element except `rounded-full`. That keeps the same visual corner size, follows Apple's outline to within about 0.013r and eases in from zero curvature. Circles, dots, switches and pills stay round because Apple draws capsule ends as circular arcs. Browsers without `corner-shape` support keep plain round corners at the original radius. Inline radii (map markers, chat bubbles) are unchanged.
 
@@ -527,7 +528,7 @@ The passenger workspace switches structure by input device and height rather tha
 | `(any-pointer: fine) and (min-height: 44rem)` | Adds the route line code to each card and the gold rule under the heading. |
 | `(any-pointer: fine) and (max-height: 40rem)` | Hides the date above the title. |
 | `(any-pointer: fine)` with `(max-width: 36rem)` | Desktop route cards stack into one column. |
-| `(min-width: 64rem) and (any-pointer: fine)` | Routes tab shows list and timetable side by side, with the navigation as a top bar. |
+| `(min-width: 64rem) and (any-pointer: fine)` | Routes tab shows the list and timetable side by side. |
 | `(min-width: 40rem)` | Feedback dialog changes from a bottom sheet to a centred 28 rem dialog. |
 | `(max-height: 480px)` | Compact home on touch screens (Section 6.1); on any input, the tracking header hides while the timeline sheet is open. |
 | `(not (any-pointer: fine)) and (orientation: portrait)` | Artwork slides up 30 % while the phone sheet is raised. |
@@ -583,7 +584,7 @@ A signed-in user leaves `/` for the saved workspace or the default for the role.
 
 `components/passenger/PassengerWorkspace.tsx` stacks four absolutely positioned views above a bottom navigation that is absolutely positioned at the foot of the 100dvh workspace (`passengerNavFrameClassName` in `passengerFrame.ts`). Hidden views are `inert` and `aria-hidden`; the Routes and Profile views mount on their first visit and then stay mounted. Reconnect, ride-recovery and error banners appear above the views. The workspace uses the Ahmedabad University palette (Sections 2.9 and 2.10), the semantic `pp-*` classes in `app/passenger/theme.css` and the Roboto and Playfair Display faces.
 
-Layout follows the input device. On pointer-equipped `(any-pointer: fine)` windows, the Live routes panel is centred over the artwork, capped at 42 rem, with a shallow artwork band, compact paper route cards, a visible list scrollbar and a "Scroll for more routes" hint while the list overflows; a floating dock centres the Live, Routes and Profile tabs beneath the panel. Touch-only windows use a full-width translucent tab bar and show Live routes as a sheet (Section 7.6). Keyboard selection moves focus into tracking and Back restores it to the selected route or the list heading if the route has disappeared.
+Layout follows the input device. On pointer-equipped `(any-pointer: fine)` windows, the Live routes panel is centred over the artwork, capped at 42 rem, with a shallow artwork band, compact paper route cards, a visible list scrollbar and a "Scroll for more routes" hint while the list overflows; a floating dock centres the Live, Routes and Profile tabs beneath the panel. Touch-only windows use a full-width translucent tab bar and show Live routes as a sheet (Section 7.6). All three tabs share this placement. The schedule clears the bar using `passengerNavClearance` (Section 6.1). Side insets keep the Live routes panel, tab bar, timeline, chat, tracking controls, notices and schedule content clear of landscape cut-outs. The Profile column also adds the side insets to its gutters. Keyboard selection moves focus into tracking and Back restores it to the selected route or the list heading if the route has disappeared.
 
 | View | Structure |
 |---|---|
@@ -591,8 +592,8 @@ Layout follows the input device. On pointer-equipped `(any-pointer: fine)` windo
 | Tracking | Full-bleed map on `--pp-page`. Over it, at the top: a 44 px round back button and the ride card (bus picker when several buses are selectable, status and progress lines, boarding and destination pickers, **Board**, hints and results), then the 48 px chat button with an AU Red unread badge ("9+" above nine). Map notices sit at the top left and the **Center on bus** and **Show route overview** buttons (48 px) at the top right. The route timeline sheet is collapsed to a 56 px handle above the navigation. Chat opens as an overlay between the header and the navigation. |
 | Route ended | Replaces the tracking view when the tracked ride completes: a flag on a 64 px `--accent-subtle` tile, "Route ended" (Playfair Display, 28 px), "The bus has reached the terminus.", a "Waiting for the next bus" pill in `--status-live` on `--status-live-bg` and **Return to live routes**. After 10 s an eligible passenger sees the feedback modal and the view returns to the live route list. |
 | Routes | `components/passenger/RoutesTab.tsx` shows published schedules as a line diagram, in the order the administrator selected them. The list header is a solid AU Red band with the white title "Routes", "Stops and scheduled times for each route." and, when more than one route is published, a white "Search routes or stops" field that matches route names, line labels and stop names locally. Each row (56 px; 52 px on wide pointer windows) shows an AU Red line badge (a white front-facing bus glyph and the label from `routeLineLabel`: "Line 7" for numbered routes, otherwise initials), the route name, the first and last stop and a chevron. The timetable has an AU Red header band with **Back to all routes** (44 px, narrow layouts only), a white line badge and the route name; a summary with the end stops, "Scheduled stops · <n> stops" and "Scheduled times only"; then the stops on a 4 px Dark Grey rail with white stop circles, AU Red at the first and last stop, each with "Scheduled 7:30 am" or "Time not set". From 64 rem on pointer devices the list and timetable sit side by side, the first matching route shows until another is chosen, and the selected row carries a 3 px AU Red inset bar; narrower windows show one at a time and Back returns focus to the row. States: "Loading routes…" with three skeleton rows, "No routes published yet", "No routes match your search.", "This route is no longer published. Choose another route." and "Route schedules could not be loaded." with **Retry**. The tab renders no map and computes no live ETAs. |
-| Profile | `components/passenger/AccountTab.tsx`: an AU Red title "Profile" over a 40 px AU Red rule, then an AU Red account card (`aria-label="Account"`) with a 60 px photo in a white ring, the name (20 px Bold, white), the email (white at 86 %) and a white role chip with AU Red text, or "Guest" and "Sign in to save preferences" when signed out; at large text sizes the details wrap below the photo. Below it, grouped rows with 32 px AU Red glyph tiles and chevrons, at least 56 px high: **Admin panel** (`ShieldUser`, administrators, AU Red label) and **Send feedback** (`MessageSquareText`). A separate group holds **Sign out** (`LogOut`) and, for passengers, **Delete account** (`UserRoundX`), both with `--status-danger` labels and tiles; signed out, it offers **Sign in with Google** (`LogIn`) in `--accent`. Sign-out and deletion ask for confirmation through `ConfirmModal` with the matching icon. A footer lists the University links whose URL is set in `config/university.ts` and "Eki", followed by the build version and date from `NEXT_PUBLIC_BUILD_VERSION` and `NEXT_PUBLIC_BUILD_DATE` when present. |
-| Bottom navigation | Three buttons, **Live**, **Routes** and **Profile**, each at least 44 × 44 px and at most 9 rem wide, sharing the bar so they fit a 320 px screen. Touch screens: a full-width translucent bar on the bottom edge. Pointer devices: the floating dock (22 px radius); on the Routes tab the bar docks to the bottom edge, and from 64 rem wide it becomes a 52 px top bar on `--surface-1`. Labels are `--pp-nav-fg`; the active button is marked with `aria-current="page"` and drawn in AU Red Bold. **Live** stays active during tracking. |
+| Profile | `components/passenger/AccountTab.tsx`: an AU Red title "Profile" over a 40 px AU Red rule, then an AU Red account card (`aria-label="Account"`) with a 60 px photo in a white ring, the name (20 px Bold, white), the email (white at 86 %) and a white role chip with AU Red text, or "Guest" and "Sign in to save preferences" when signed out; at large text sizes the details wrap below the photo. Below it, grouped rows with 32 px AU Red glyph tiles and chevrons, at least 56 px high: **Admin panel** (`ShieldUser`, administrators, AU Red label) and **Send feedback** (`MessageSquareText`). A separate group holds **Sign out** (`LogOut`) and, for passengers, **Delete account** (`UserRoundX`), both with `--status-danger` labels and tiles; signed out, it offers **Sign in with Google** (`LogIn`) in `--accent`. Sign-out and deletion ask for confirmation through `ConfirmModal` with the matching icon. A footer lists the University links whose URL is set in `config/university.ts` and "Eki", followed by the build version and date from `NEXT_PUBLIC_BUILD_VERSION` and `NEXT_PUBLIC_BUILD_DATE` when present. The tracked config supplies empty link URLs, and repository workflows supply neither build value. |
+| Bottom navigation | Three buttons, **Live**, **Routes** and **Profile**, each at least 44 × 44 px and at most 9 rem wide, sharing the bar so they fit a 320 px screen. Touch screens: a full-width translucent bar on the bottom edge. Pointer devices: the floating dock (22 px radius). Labels are `--pp-nav-fg`; the active button is marked with `aria-current="page"` and drawn in AU Red Bold. **Live** stays active during tracking. |
 
 ### 7.4 Administrator workspace
 
@@ -648,7 +649,7 @@ Unit tests in `components/passenger/PassengerWorkspace.test.tsx` ("phone Live ro
 | iOS in another browser or an in-app view | Advice to open the page in Safari, with **Copy link** ("Link copied") |
 | Desktop | "Open this link on your phone to install Eki." |
 
-The page is a single column at most 28 rem wide with a 30 px bold title. The installed message appears after the browser's `appinstalled` event, not when the prompt closes. Its buttons are `#FA5D29` with white 16 px semibold text, below the AA ratio for normal text (Section 4).
+The page is a single column at most 28 rem wide with a 30 px bold title. The installed message appears after the browser's `appinstalled` event, not when the prompt closes. Its buttons are `#b3262a` with white 16 px semibold text, at 6.51:1 contrast (Section 4).
 
 ## 8. Components, icons and motion
 
@@ -688,7 +689,7 @@ Paths are relative to `frontend/src/components/`.
 | `FleetManagementPanel` | `admin/FleetManagementPanel.tsx` | Vehicles and operators. |
 | `RideHistoryPanel` | `admin/RideHistoryPanel.tsx` | Ride history and chat archive. |
 | `FeedbackPanel` | `admin/FeedbackPanel.tsx` | Feedback console. |
-| `SettingsPanel` | `admin/SettingsPanel.tsx` | Service hours, no-bus message and announcement. |
+| `SettingsPanel` | `admin/SettingsPanel.tsx` | Service hours, no-bus message, announcement and the separately saved Passenger Routes settings. |
 | `PassengerRoutesSettings` | `admin/PassengerRoutesSettings.tsx` | Passenger route schedule editor inside Settings, saved separately. |
 | `Field`, `SectionHeader` | `admin/SettingsSection.tsx` | Labelled control and icon header shared by the Settings sections. |
 | `AdminPanelErrorBoundary` | `admin/AdminPanelErrorBoundary.tsx` | Contains a panel crash and offers **Try again**. |
@@ -713,10 +714,12 @@ Most icons come from `lucide-react` 1.62.0, imported per icon; `next.config.ts` 
 | Phone Live routes sheet | 450 ms, `transform` and `clip-path` | `cubic-bezier(0.32, 0.72, 0, 1)` | Live routes panel on touch screens, after `data-peek-ready` |
 | Portrait artwork slide | 450 ms, `translateY(-30%)` | `cubic-bezier(0.32, 0.72, 0, 1)` | Passenger artwork while the phone sheet is raised |
 | Sheet chevron | 300 ms rotation | `ease` | Phone sheet toggle |
-| Timeline sheet | 500 ms | `cubic-bezier(0.32, 0.72, 0, 1)` | `BottomSheet` |
+| Timeline sheet slide and clip | 500 ms | `cubic-bezier(0.32, 0.72, 0, 1)` | `BottomSheet` |
+| Timeline sheet body fade | 200 ms | Tailwind default `cubic-bezier(0.4, 0, 0.2, 1)` | `BottomSheet` content on expand and collapse |
 | Press feedback | 100 ms; 200 ms for desktop route cards | `ease`; `cubic-bezier(0.2, 0.8, 0.2, 1)` | `.pp-btn-*` scale to 0.98, map and icon buttons to 0.94, desktop route cards to 0.985 |
 | Bus marker movement | 250 ms interpolation, at most one render every 50 ms | Cubic ease-out | `hooks/useSmoothPosition.ts` |
 | Admin marker heading | 250 ms | `ease-out` | `DashboardPanel.tsx` |
+| Admin fleet progress bar | 150 ms | Tailwind default `cubic-bezier(0.4, 0, 0.2, 1)` | `DashboardPanel.tsx` progress width |
 | Next-stop dot pulse | 1.5 s, infinite | `pulse-dot` keyframes | Timeline |
 | `animate-pulse`, `animate-spin` | 2 s, 1 s | Tailwind defaults | Admin moving-bus dot, spinners |
 
@@ -732,8 +735,10 @@ Under `prefers-reduced-motion: reduce`, `app/globals.css` sets every animation a
 | `start_url` | `/` |
 | `display` | `standalone` |
 | `background_color` | `#09090b` (default `--surface-0`) |
-| `theme_color` | `#FA5D29` (default `--accent`) |
+| `theme_color` | `#f2efec` (AU off-white) |
 | Icons | `/icon-192.png` 192 × 192 as `any` and as `maskable`; `/icon-512.png` 512 × 512 as `maskable` |
+
+The root viewport sets `viewportFit: "cover"` and `themeColor: "#09090b"`. The Passenger and Admin layouts override the viewport theme colour with `#f2efec` (`app/layout.tsx`, `app/passenger/layout.tsx`, `app/admin/layout.tsx`).
 
 `app/icon.png` (128 × 128) and `app/apple-icon.png` (180 × 180) supply the browser icon and the Apple touch icon through Next.js file conventions. The open-graph image is `/images/hero-background.webp`.
 
@@ -748,7 +753,7 @@ Under `prefers-reduced-motion: reduce`, `app/globals.css` sets every animation a
 | Default centre | 23.0347, 72.5483 (Ahmedabad) | `config/maps.ts` |
 | Markers | `AdvancedMarker` from `@vis.gl/react-google-maps` with HTML content | `PassengerMap.tsx`, `DashboardPanel.tsx`, `RouteManagementPanel.tsx` |
 | Traffic layer | Admin Live Ops and route editor only | `TrafficLayer.tsx` |
-| Instance reuse | Every map sets `reuseMaps` and shares the map ID and options, so the passenger map, Live Ops and the route editor reattach one `google.maps.Map` per page load; overlays detach on unmount ([EKI-ADR-004](GOOGLE_MAP_REUSE_DECISION.md)) | `config/maps.ts`, `config/maps.reuse.test.ts` |
+| Instance reuse | Every map sets `reuseMaps` and shares the map ID, so the passenger map, Live Ops and the route editor can reuse a `google.maps.Map` within one page session. The Maps API sets `backgroundColor` at construction, so the first view to construct a shared map determines its colour while tiles load. Overlays detach on unmount ([EKI-ADR-004](GOOGLE_MAP_REUSE_DECISION.md)) | `config/maps.ts`, `config/maps.reuse.test.ts` |
 
 ## 10. Accessibility in code
 
@@ -774,7 +779,7 @@ Under `prefers-reduced-motion: reduce`, `app/globals.css` sets every animation a
 
 | Gap | Location |
 |---|---|
-| Text contrast below AA for the `/install` buttons and the default danger dialog button shown outside the workspaces (Section 4). | `app/install/InstallClient.tsx`, `ConfirmModal.tsx` |
+| Text contrast below AA for the default danger dialog button shown outside the workspaces (Section 4). | `ConfirmModal.tsx` |
 | Controls below the 44 px convention: the fleet card eye button (36 px), delay buttons (36 px minimum) and **End ride early** in the card (40 px). All exceed the 24 px minimum of SC 2.5.8 [1]. | `DashboardPanel.tsx:473`, `:566`, `:578` |
 | `html { scroll-behavior: smooth; }` and the smooth scrolling of the phone route list are not reset under reduced motion. | `app/globals.css` |
 | `animate-in fade-in` on both dialogs produces no CSS, because no plugin defines these classes. | `ConfirmModal.tsx`, `AlertModal.tsx` |

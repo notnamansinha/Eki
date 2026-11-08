@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-GEN-002 | 1.5 | Current | 2026-11-07 |
+| EKI-GEN-002 | 1.6 | Current | 2026-11-08 |
 
 ## 1. Purpose
 
@@ -51,9 +51,9 @@ The register lists every controlled document by its source path. A mirror carrie
 | ID | Document | Version | Status | Last updated |
 |---|---|---|---|---|
 | EKI-GEN-001 | [Eki Campus Bus Tracking](../README.md) | 1.3 | Current | 2026-11-07 |
-| EKI-GEN-002 | [Eki Documentation Index](README.md) | 1.5 | Current | 2026-11-07 |
-| EKI-GEN-003 | [Eki Documentation Standard](DOCUMENTATION_STANDARD.md) | 1.1 | Current | 2026-11-07 |
-| EKI-GEN-004 | [Getting Started with Eki](GETTING_STARTED.md) | 2.2 | Current | 2026-11-07 |
+| EKI-GEN-002 | [Eki Documentation Index](README.md) | 1.6 | Current | 2026-11-08 |
+| EKI-GEN-003 | [Eki Documentation Standard](DOCUMENTATION_STANDARD.md) | 1.2 | Current | 2026-11-08 |
+| EKI-GEN-004 | [Getting Started with Eki](GETTING_STARTED.md) | 2.3 | Current | 2026-11-08 |
 | EKI-GEN-005 | [Eki Configuration Reference](CONFIGURATION.md) | 1.6 | Current | 2026-11-07 |
 | EKI-GEN-006 | [Eki Glossary](GLOSSARY.md) | 2.3 | Current | 2026-11-07 |
 | EKI-GEN-007 | [Contributing to Eki](../CONTRIBUTING.md) | 1.1 | Current | 2026-11-07 |
@@ -63,7 +63,7 @@ The register lists every controlled document by its source path. A mirror carrie
 
 | ID | Document | Version | Status | Last updated |
 |---|---|---|---|---|
-| EKI-REQ-001 | [Software Requirements Specification](requirements/SOFTWARE_REQUIREMENTS_SPECIFICATION.md) | 4.0 | Current | 2026-11-07 |
+| EKI-REQ-001 | [Software Requirements Specification](requirements/SOFTWARE_REQUIREMENTS_SPECIFICATION.md) | 4.1 | Current | 2026-11-08 |
 
 ### 4.3 Architecture and design (ARC)
 
@@ -87,8 +87,8 @@ The register lists every controlled document by its source path. A mirror carrie
 
 | ID | Document | Version | Status | Last updated |
 |---|---|---|---|---|
-| EKI-UIX-001 | [Eki UI Design System](design/UI_DESIGN_SYSTEM.md) | 3.0 | Current | 2026-11-07 |
-| EKI-UIX-002 | [Transit Artwork Delivery](context-docs/TRANSIT_ARTWORK.md) | 2.0 | Current | 2026-11-07 |
+| EKI-UIX-001 | [Eki UI Design System](design/UI_DESIGN_SYSTEM.md) | 3.1 | Current | 2026-11-08 |
+| EKI-UIX-002 | [Transit Artwork Delivery](context-docs/TRANSIT_ARTWORK.md) | 2.1 | Current | 2026-11-08 |
 
 ### 4.6 Interfaces (API)
 
@@ -96,7 +96,7 @@ The register lists every controlled document by its source path. A mirror carrie
 |---|---|---|---|---|
 | EKI-API-001 | [Eki Backend HTTP API](../backend/API.md) | 3.3 | Current | 2026-11-07 |
 | EKI-API-002 | [HTTP Contract](api/HTTP_CONTRACT.md) | 2.3 | Current | 2026-11-07 |
-| EKI-API-003 | [Ride Session Contract](api/RIDE_SESSION_CONTRACT.md) | 2.1 | Current | 2026-11-07 |
+| EKI-API-003 | [Ride Session Contract](api/RIDE_SESSION_CONTRACT.md) | 2.2 | Current | 2026-11-08 |
 | EKI-API-004 | [Operation Resources](api/OPERATION_RESOURCES.md) | 1.0 | Current | 2026-10-30 |
 | EKI-API-005 | [HTTP Resource Migration](../backend/API_RESOURCE_MIGRATION.md) | 2.1 | Current | 2026-11-06 |
 
@@ -104,8 +104,8 @@ The register lists every controlled document by its source path. A mirror carrie
 
 | ID | Document | Version | Status | Last updated |
 |---|---|---|---|---|
-| EKI-DAT-001 | [Firebase Data Model](data/FIREBASE_DATA_MODEL.md) | 2.1 | Current | 2026-11-07 |
-| EKI-DAT-002 | [Eki Storage Architecture](data/STORAGE_ARCHITECTURE.md) | 2.1 | Current | 2026-11-07 |
+| EKI-DAT-001 | [Firebase Data Model](data/FIREBASE_DATA_MODEL.md) | 2.2 | Current | 2026-11-08 |
+| EKI-DAT-002 | [Eki Storage Architecture](data/STORAGE_ARCHITECTURE.md) | 2.2 | Current | 2026-11-08 |
 
 ### 4.8 Security (SEC)
 
@@ -152,10 +152,10 @@ The register lists every controlled document by its source path. A mirror carrie
 | EKI-OPS-023 | [Telemetry Execution Deadlines](operations/TELEMETRY_DEADLINES.md) | 1.1 | Current | 2026-11-07 |
 | EKI-OPS-024 | [Telemetry Ingestion Load Test](operations/TELEMETRY_INGESTION_LOAD_TEST.md) | 1.1 | Current | 2026-11-07 |
 | EKI-OPS-025 | [Telemetry Latency Baseline](operations/TELEMETRY_LATENCY_BASELINE.md) | 1.0 | Current | 2026-10-30 |
-| EKI-OPS-026 | [Worker Leadership and Fencing](operations/WORKER_LEADERSHIP.md) | 1.1 | Current | 2026-11-07 |
+| EKI-OPS-026 | [Worker Leadership and Fencing](operations/WORKER_LEADERSHIP.md) | 1.2 | Current | 2026-11-08 |
 | EKI-OPS-027 | [Bounded Work Admission](operations/WORK_ADMISSION.md) | 1.1 | Current | 2026-11-07 |
 | EKI-OPS-028 | [ngrok Removal and Managed Firebase Backend Migration](operations/NGROK_REMOVAL_AND_FIREBASE_BACKEND_MIGRATION.md) | 1.4 | Proposed | 2026-11-07 |
-| EKI-OPS-029 | [Staging Runtime Configuration](operations/STAGING_RUNTIME_CONFIG.md) | 1.4 | Current | 2026-11-07 |
+| EKI-OPS-029 | [Staging Runtime Configuration](operations/STAGING_RUNTIME_CONFIG.md) | 1.5 | Current | 2026-11-08 |
 | EKI-OPS-030 | [Running the Backend on a VPS (Backup Path)](../deploy/vps/README.md) | 1.1 | Current | 2026-11-07 |
 
 ### 4.11 Hardware and firmware (HW)

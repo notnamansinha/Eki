@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-DAT-002 | 2.1 | Current | 2026-11-07 |
+| EKI-DAT-002 | 2.2 | Current | 2026-11-08 |
 
 ## 1. Purpose
 
@@ -60,7 +60,7 @@ A catch-all rule denies every collection not explicitly matched. Collections who
 4. When an accepted fix finds no ride on the live record, the backend checks `active_rides` and the session in the background and restores the lifecycle fields of a ride that is still open.
 5. Completion writes `completed_trips`, completes the session and deletes the matching recovery record and lock in one transaction. A retried completion reuses the original completion time and leaves a replacement ride's lock untouched.
 6. A recovered stop records when the missing history was repaired; Eki does not invent an arrival time. Stops crossed between two fixes share the observation time.
-7. When the leader replays a live record whose `deviceState` is `offline`, as the stale sweep leaves a silent ride, and its fix is more than 60 s old, for example after an engine restart, it changes neither the live record's lifecycle fields nor the `active_rides` checkpoint. The abandoned-ride reconciler therefore still sees the ride as silent. A replayed signal loss that the session already records keeps its original time.
+7. When the leader replays a live record whose `deviceState` is `offline`, as the stale sweep leaves a silent ride, and its fix time differs from the server clock by more than 60 s, for example after an engine restart, it changes neither the live record's lifecycle fields nor the `active_rides` checkpoint. The abandoned-ride reconciler therefore still sees the ride as silent. A replayed signal loss that the session already records keeps its original time.
 
 ## 6. Retention and deletion
 

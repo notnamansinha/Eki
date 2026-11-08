@@ -10,7 +10,7 @@
 
 This document specifies every HTTP operation that the Eki backend serves: who may call it, how to authenticate, what to send, what comes back and which limits apply. It is written for developers of the web app, the device firmware and any other client.
 
-The machine-readable contract is [`openapi.json`](openapi.json) (OpenAPI 3.1.1 [1]). `npm run verify:openapi` fails when an operation registered in the code is missing from that file or from this document, or when either names an operation that does not exist. How the contract is validated, and the boundary between HTTP operations and Firebase SDK reads and writes, are described in the [HTTP contract](../api/HTTP_CONTRACT.md). Firebase listeners are not HTTP operations and are not listed here.
+The machine-readable contract is [`openapi.json`](../../backend/openapi.json) (OpenAPI 3.1.1 [1]). `npm run verify:openapi` fails when an operation registered in the code is missing from that file or from this document, or when either names an operation that does not exist. How the contract is validated, and the boundary between HTTP operations and Firebase SDK reads and writes, are described in the [HTTP contract](../api/HTTP_CONTRACT.md). Firebase listeners are not HTTP operations and are not listed here.
 
 ### 1.2 Callers
 
@@ -213,7 +213,7 @@ Each operation lists its caller, request, success response and the statuses spec
 `GET /api/health`
 
 - Caller: administrator. Exempt from the per-account read budget.
-- Success: 200, or 503 when not ready, with `status`, `firestore` and `rtdb` (`connected` or `disconnected`), `telemetry`, `backgroundTasks` and `checkedAt`. `telemetry` holds process-local counters: accepted and rejected samples, credential cache hit rate, work queue states, latency summaries over the last 512 samples, rate-limit counters, route processing, API read caches and legacy-path traffic. `backgroundTasks` flags a source as `sustained` after 5 failures within 5 minutes and logs `[BackgroundFailures] SUSTAINED failure alert` once per episode. Counters reset when the process restarts. The schema is `AdminHealth` in [`openapi.json`](openapi.json); queue fields are explained in [work admission](../operations/WORK_ADMISSION.md).
+- Success: 200, or 503 when not ready, with `status`, `firestore` and `rtdb` (`connected` or `disconnected`), `telemetry`, `backgroundTasks` and `checkedAt`. `telemetry` holds process-local counters: accepted and rejected samples, credential cache hit rate, work queue states, latency summaries over the last 512 samples, rate-limit counters, route processing, API read caches and legacy-path traffic. `backgroundTasks` flags a source as `sustained` after 5 failures within 5 minutes and logs `[BackgroundFailures] SUSTAINED failure alert` once per episode. Counters reset when the process restarts. The schema is `AdminHealth` in [`openapi.json`](../../backend/openapi.json); queue fields are explained in [work admission](../operations/WORK_ADMISSION.md).
 
 ### 3.2 Device ingestion
 

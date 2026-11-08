@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-GEN-004 | 2.2 | Current | 2026-11-07 |
+| EKI-GEN-004 | 2.3 | Current | 2026-11-08 |
 
 ## 1. Purpose
 
@@ -69,6 +69,8 @@ Create these before you start. Use a project that holds no production data.
    | `FIREBASE_DATABASE_URL` | Your development RTDB URL |
    | `GOOGLE_MAPS_API_KEY` | Your server Maps key |
    | `RETENTION_SWEEPER_ENABLED` | Keep `false` |
+
+   If you use shared staging for a test, set `WORKER_ENABLED=false` before starting the local backend. See [local testing](operations/LOCAL_TESTING.md) for the staging worker prerequisites.
 
 3. Provide Firebase Admin credentials in one of two ways:
    - Application Default Credentials [1] for the development project. Leave `FIREBASE_SERVICE_ACCOUNT` unset.
@@ -258,7 +260,7 @@ The operator account can sign in to the passenger workspace. It cannot board a r
 | Firestore or RTDB permission errors in the browser console | The development project runs old rules, or App Check enforcement is on. Repeat Section 6. |
 | Map is grey or shows a Maps error | Check the browser key, its referrer restriction for `http://localhost:3000`, and the map ID. |
 | Telemetry request returns 401 | Wrong device ID or secret, or the device is disabled. Provision again and use the new secret. |
-| Telemetry request returns 400 | A field is missing or out of range, or `timestamp` is more than 60 s old. |
+| Telemetry request returns 400 | A field is missing or out of range, or `timestamp` is more than 60 s old or more than 10 s ahead of the server. |
 | Telemetry request returns 403 | The device's bus or route assignment is not usable. Check that the route is assigned to the bus. |
 | The bus is live but no ride session starts | Automatic service needs an enabled device, a bus assigned to the route, exactly one operator on that bus, a valid route and a fix with HDOP at most 4. |
 | **Board** stays disabled or returns "You must be near the bus to board" | The browser's location is more than 150 m from the bus, or tracking is not live. |

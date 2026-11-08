@@ -40,7 +40,9 @@ function expectedMirror(source: string) {
       .replaceAll("](LICENSE)", "](../../LICENSE)")
       .replaceAll("](hardware/", "](../hardware/");
   } else if (!source.includes("/")) {
-    content = content.replaceAll("](docs/", "](../");
+    content = content
+      .replaceAll("](docs/", "](../")
+      .replaceAll("](.github/", "](../../.github/");
   } else if (source === "hardware/README.md") {
     content = content
       .replaceAll("](../docs/hardware/", "](")
@@ -54,6 +56,9 @@ function expectedMirror(source: string) {
     // the same "../" run followed by "<path>". Dropping "docs/" from the
     // "../docs/" suffix does that at any depth: "../../docs/x" becomes "../../x".
     content = content.replaceAll("../docs/", "../");
+  }
+  if (source.startsWith("backend/")) {
+    content = content.replaceAll("](openapi.json)", "](../../backend/openapi.json)");
   }
   return content;
 }

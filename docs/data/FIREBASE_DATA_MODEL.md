@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-DAT-001 | 2.1 | Current | 2026-11-07 |
+| EKI-DAT-001 | 2.2 | Current | 2026-11-08 |
 
 ## 1. Purpose
 
@@ -332,7 +332,7 @@ The durable record of one ride.
 
 | Item | Value |
 |---|---|
-| Writers | Ride start (`rideSessionStart.ts`), boarding (`sessions.ts:306`), trip-state engine progress and completion (`tripStateEngine.ts:659`, `tripStateEngine.ts:1132`), stop endpoint (`shifts.ts:354`), abandoned-ride reconciler |
+| Writers | Ride start (`rideSessionStart.ts`), boarding (`sessions.ts:306`), trip-state engine progress and completion (`tripStateEngine.ts:748-757`, `tripStateEngine.ts:1152-1160`), stop endpoint (`shifts.ts:354`), abandoned-ride reconciler |
 | Readers | Admin Ride History (`frontend/src/components/admin/RideHistoryPanel.tsx:202`, ordered by `armedAt` and by `startTime`) and feedback rules. The client rule also admits the assigned current driver, but no browser screen reads the document as a driver |
 | Client rule | Read by a current admin or the assigned current driver; no writes (`firestore.rules:111`) |
 | Retention | Terminal sessions are deleted recursively 180 days after `endTime` (`RIDE_SESSION_RETENTION_DAYS`) and on admin history deletion (Section 7) |
@@ -385,7 +385,7 @@ Clients cannot read or write any of these collections, by explicit rule or throu
 | Collection | Fields | Writer and purpose | Retention |
 |---|---|---|---|
 | `devices/{deviceId}` | `deviceId`, `busId`, `routeId`, `enabled`, `assignmentRevision`, `secretHash` (salt and scrypt key in hex), `credentialRotatedAt`, `updatedAt`, optional `disabledAt` and `pendingAssignmentRetirement` | Provisioning script and admin device endpoints (`backend/src/provisionDevice.ts:80`, `backend/src/routes/devices.ts:427`); one device per bus and route | Admin |
-| `active_rides/{busId}_{routeId}` | `sessionId`, `busId`, `routeId`, `driverId`, `direction`, `originStopId`, `destinationStopId`, `status: active`, `tripState`, `currentStopIndex`, `hasDepartedOrigin`, `terminalArrival`, `gnssGapSince`, `hasTelemetry`, `lastRouteVersion`, `delayMinutes`, `delayUpdatedAt`, `updatedAt`; direction and turnaround fields on automatic rides | Ride start, the leader's progress checkpoint (`tripStateEngine.ts:760`) and the delay endpoint. Recovery source after a restart; `currentStopIndex` never decreases. The leader skips the checkpoint when it replays a fix more than 60 s old from a live node whose `deviceState` is `offline`, so `updatedAt` keeps the last real activity that the abandoned-ride reconciler reads (`tripStateEngine.ts:997`) | Deleted at completion, early end or reconciliation |
+| `active_rides/{busId}_{routeId}` | `sessionId`, `busId`, `routeId`, `driverId`, `direction`, `originStopId`, `destinationStopId`, `status: active`, `tripState`, `currentStopIndex`, `hasDepartedOrigin`, `terminalArrival`, `gnssGapSince`, `hasTelemetry`, `lastRouteVersion`, `delayMinutes`, `delayUpdatedAt`, `updatedAt`; direction and turnaround fields on automatic rides | Ride start, the leader's progress checkpoint (`tripStateEngine.ts:760`) and the delay endpoint. Recovery source after a restart; `currentStopIndex` never decreases. The leader skips the checkpoint when it replays an offline node whose fix differs from the server clock by more than 60 s, so `updatedAt` keeps the last real activity that the abandoned-ride reconciler reads (`tripStateEngine.ts:997`) | Deleted at completion, early end or reconciliation |
 | `_active_bus_locks/{busId}` | `busId`, `routeId`, `driverId`, `sessionId`, `direction`, optional `automaticTurnaround` and direction fields, `createdAt`, `updatedAt` | One non-terminal ride per bus; created in the ride-start transaction (`rideSessionStart.ts:420`) | Deleted with the ride's terminal state |
 | `_ride_session_creation_keys/{hash}` | `driverId`, `busId`, `routeId`, `sessionId`, `createdAt` | Idempotency binding of a ride start; the ID is the SHA-256 of the principal scope and the `Idempotency-Key` (`rideSessionStart.ts:138`) | Kept; survives session deletion |
 | `_userAuthorization/{uid}` | As RTDB Section 3.6 | `publishUserAuthorization`; read by rules (`firestore.rules:21`) | Kept |

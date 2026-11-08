@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-GEN-003 | 1.1 | Current | 2026-11-07 |
+| EKI-GEN-003 | 1.2 | Current | 2026-11-08 |
 
 ## 1. Purpose
 
@@ -157,7 +157,7 @@ Markdown files outside `docs/` are mirrored into `docs/` so that the folder hold
 | `.github/<path>` | `docs/github/<path>` |
 | `<folder>/<path>`, for example `backend/API.md` or `deploy/vps/README.md` | `docs/<folder>/<path>` |
 
-Edit the source, never the mirror. Then run `npm run docs:sync`, which runs `scripts/sync-documentation-mirrors.mjs`. The script mirrors every tracked `.md` file and every file named `README` outside `docs/`. So that links resolve from the mirror, it rewrites relative links into `docs/` in root files and in files under `backend/`, `deploy/`, `e2e/`, `frontend/`, `hardware/` and `qa/`, and in the root `README.md` and `hardware/README.md` it also rewrites links to the code folders (and, in the root `README.md`, to `LICENSE`). It copies other files unchanged, and the quality test (Section 8) does not check links inside mirrors. The test `backend/src/docsMirror.test.ts` fails if a mirror differs from its expected content.
+Edit the source, never the mirror. Then run `npm run docs:sync`, which runs `scripts/sync-documentation-mirrors.mjs`. The script mirrors every tracked `.md` file and every file named `README` outside `docs/`. So that links resolve from the mirror, it rewrites relative links into `docs/` in root files and in files under `backend/`, `deploy/`, `e2e/`, `frontend/`, `hardware/` and `qa/`, and in the root `README.md` and `hardware/README.md` it also rewrites links to the code folders (and, in the root `README.md`, to `LICENSE`). It also rewrites root links to `.github/` and backend links to `openapi.json`. It copies other files unchanged. The test `backend/src/docsMirror.test.ts` fails if a mirror differs from its expected content.
 
 ## 8. Verification
 
@@ -169,6 +169,6 @@ npm run docs:check
 git diff --check
 ```
 
-`npm run docs:check` runs the documentation quality test (`scripts/documentation-quality.test.mjs`), then the documentation mirror test (`backend/src/docsMirror.test.ts`) and the configuration coverage test (`backend/src/envDocumentation.test.ts`). The quality test checks control blocks, unique document IDs, the document register, emojis, dashes, prohibited phrases and every relative link and anchor, and that the only Markdown files at the repository root are `README.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md` and `SECURITY.md`. It skips the dash and phrase checks for Historical documents, and the link check for mirrors, agent instruction files and the machine-parsed acceptance plan and ledger (Section 3.4). The configuration coverage test requires every variable in `backend/.env.example` to appear in the backend variables table of the [configuration reference](CONFIGURATION.md).
+`npm run docs:check` runs the documentation quality test (`scripts/documentation-quality.test.mjs`), then the documentation mirror test (`backend/src/docsMirror.test.ts`) and the configuration coverage test (`backend/src/envDocumentation.test.ts`). The quality test checks control blocks, unique document IDs, the document register, emojis, dashes, prohibited phrases and relative Markdown links and anchors in sources and mirrors, and that the only Markdown files at the repository root are `README.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md` and `SECURITY.md`. It skips the dash and phrase checks for Historical documents, and the link check for agent instruction files and the machine-parsed acceptance plan and ledger (Section 3.4). The configuration coverage test requires every variable in `backend/.env.example` to appear in the backend variables table of the [configuration reference](CONFIGURATION.md).
 
 A reviewer shall also confirm, for each changed statement, that the code, configuration or recorded evidence supports it.

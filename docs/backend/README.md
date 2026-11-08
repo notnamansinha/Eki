@@ -38,7 +38,7 @@ Run each script from the repository root as `npm run <script> --workspace=backen
 | `measure:rtdb` | `tsx src/measureRtdbLatency.ts` | Measure RTDB read latency (`RTDB_LATENCY_SAMPLES`, 10 to 500) |
 | `retention:rtdb` | `tsx src/rtdbRetentionCli.ts` | RTDB retention sweep: `-- --dry-run` (default) or `-- --apply`. See [RTDB retention](../operations/RTDB_RETENTION.md). |
 
-`test` needs no Firebase project: `src/testSetup.ts` supplies a placeholder RTDB URL when `FIREBASE_DATABASE_URL` is unset, and the emulator suites are skipped unless `FIREBASE_RULES_TEST=1`. The root `npm test` runs it after the script tests and the OpenAPI and UI contract checks. The root `npm run verify:openapi` checks [`openapi.json`](openapi.json) against the registered routes and against [API.md](API.md). See the [HTTP contract](../api/HTTP_CONTRACT.md).
+`test` needs no Firebase project: `src/testSetup.ts` supplies a placeholder RTDB URL when `FIREBASE_DATABASE_URL` is unset, and the emulator suites are skipped unless `FIREBASE_RULES_TEST=1`. The root `npm test` runs it after the script tests and the OpenAPI and UI contract checks. The root `npm run verify:openapi` checks [`openapi.json`](../../backend/openapi.json) against the registered routes and against [API.md](API.md). See the [HTTP contract](../api/HTTP_CONTRACT.md).
 
 ## 4. Source layout
 

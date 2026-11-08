@@ -485,28 +485,14 @@ body {
   }
 }
 
-/* The timetable uses its own navigation placement. The live map keeps its dock. */
-[data-passenger-section="routes"] .passenger-nav-frame {
-  inset-inline: 0;
-  bottom: 0;
-  max-width: none;
-  margin-inline: 0;
-  border-radius: 0;
-  border-color: var(--schedule-border);
-  background: var(--schedule-surface);
-}
-
-[data-passenger-section="routes"] .passenger-nav-bar {
-  height: 68px;
-  padding-block: 4px;
-}
-
+/* Routes keeps the same navigation as Live and Profile: the floating dock on
+   pointer devices and the full-width bar on touch. The schedule clears it. */
 .passenger-schedules {
   display: flex;
   flex: 1;
   min-height: 0;
   padding-top: var(--safe-area-top);
-  padding-bottom: calc(69px + var(--safe-area-bottom));
+  padding-bottom: calc(var(--passenger-nav-height) + var(--safe-area-bottom));
   background: var(--schedule-canvas);
   color: var(--transit-paper);
 }
@@ -776,35 +762,6 @@ body {
 }
 
 @media (min-width: 64rem) and (any-pointer: fine) {
-  [data-passenger-section="routes"] .passenger-nav-frame {
-    position: relative;
-    order: -1;
-    flex: none;
-    padding: var(--safe-area-top) 0 0;
-    border: 0;
-    border-bottom: 1px solid var(--schedule-border);
-    background: var(--schedule-surface);
-  }
-
-  [data-passenger-section="routes"] .passenger-nav-bar {
-    height: 52px;
-    max-width: 70rem;
-    justify-content: flex-start;
-    gap: 0.5rem;
-  }
-
-  [data-passenger-section="routes"] .passenger-section-button {
-    flex: none;
-    flex-direction: row;
-    gap: 0.5rem;
-    padding-inline: 0.875rem;
-    font-size: 0.875rem;
-  }
-
-  .passenger-schedules {
-    padding: 0;
-  }
-
   .schedule-layout {
     display: grid;
     grid-template-columns: 21rem minmax(0, 1fr);
@@ -1330,6 +1287,8 @@ body {
 :root {
   --safe-area-top: env(safe-area-inset-top, 0px);
   --safe-area-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-area-left: env(safe-area-inset-left, 0px);
+  --safe-area-right: env(safe-area-inset-right, 0px);
 }
 
 .pt-safe {
@@ -1338,6 +1297,44 @@ body {
 
 .pb-safe {
   padding-bottom: var(--safe-area-bottom);
+}
+
+/* Phones held sideways put the notch or camera cut-out on a side edge. The
+   artwork, map, sheets and tab bar still paint to the screen edges; only their
+   content moves in by the side insets, which are zero in portrait. */
+@media not all and (any-pointer: fine) {
+  .passenger-home-panel,
+  .passenger-nav-frame,
+  .pp-sheet,
+  [data-chat-overlay] {
+    padding-left: var(--safe-area-left);
+    padding-right: var(--safe-area-right);
+  }
+
+  .pp-alerts,
+  [data-tracking-controls],
+  .schedule-list-header,
+  .schedule-route-row,
+  .schedule-detail-header,
+  .schedule-summary,
+  .schedule-state {
+    padding-left: calc(1rem + var(--safe-area-left));
+    padding-right: calc(1rem + var(--safe-area-right));
+  }
+
+  .schedule-stops {
+    margin-left: calc(1rem + var(--safe-area-left));
+    margin-right: calc(1rem + var(--safe-area-right));
+  }
+
+  [data-map-notices] {
+    left: calc(1rem + var(--safe-area-left));
+    right: calc(5rem + var(--safe-area-right));
+  }
+
+  [data-map-camera-controls] {
+    right: calc(1rem + var(--safe-area-right));
+  }
 }
 
 /* The passenger frame is a fixed 100dvh app shell; elastic document

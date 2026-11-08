@@ -24,7 +24,7 @@ Fixes are made on `main` and reach deployments through the normal release pipeli
 ### 3.1 How to report
 
 1. Do not describe the vulnerability in a public issue, pull request, discussion or commit.
-2. Send the report privately to the repository owner listed in [`.github/CODEOWNERS`](.github/CODEOWNERS). If you cannot find a private channel, open a public issue that asks for one and contains no vulnerability details.
+2. Send the report privately to the repository owner listed in [`.github/CODEOWNERS`](../../.github/CODEOWNERS). If you cannot find a private channel, open a public issue that asks for one and contains no vulnerability details.
 3. Include the affected component and commit, the steps to reproduce, the impact you observed, and whether you accessed any data that is not yours.
 4. Use synthetic accounts and data. Do not attach real credentials, ID tokens, device secrets, location traces or unredacted logs.
 
