@@ -519,18 +519,6 @@
     border: var(--pp-nav-border);
     box-shadow: 0 12px 32px -16px rgb(0 0 0 / 0.35);
   }
-
-  /* The Routes tab docks the bar to the bottom edge, or the top from 64rem. */
-  :root:has(.passenger-layout) [data-passenger-section="routes"] .passenger-nav-frame { border-width: 0.5px 0 0; box-shadow: none; }
-}
-
-@media (min-width: 64rem) and (any-pointer: fine) {
-  :root:has(.passenger-layout) [data-passenger-section="routes"] .passenger-nav-frame {
-    border-width: 0 0 0.5px;
-    background: var(--surface-1);
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-  }
 }
 
 /* ═══ Routes tab: published schedules as a line diagram ═══ */
@@ -610,7 +598,7 @@
   flex-direction: column;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: var(--safe-area-top) 1.25rem 0;
+  padding: var(--safe-area-top) calc(1.25rem + var(--safe-area-right)) 0 calc(1.25rem + var(--safe-area-left));
   background: var(--pp-page);
 }
 
