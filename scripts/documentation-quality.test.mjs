@@ -9,6 +9,7 @@ import MarkdownIt from 'markdown-it';
 // Enforces docs/DOCUMENTATION_STANDARD.md: control blocks, the document register,
 // writing rules for current documents, and every relative link and heading anchor.
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+/** Reads a repository file as text with LF line endings. */
 const read = path => readFileSync(resolve(root, path), 'utf8').replace(/\r\n/g, '\n');
 
 const documents = execFileSync('git', ['ls-files'], { cwd: root, encoding: 'utf8' })
@@ -27,8 +28,10 @@ const machineParsed = new Set([
   'docs/testing/WEBAPP_A_Z_AB_TESTING_PLAN.md',
   'docs/testing/WEBAPP_A_Z_AB_TESTING.md',
 ]);
+/** Whether `path` is an agent instruction file, which follows its own format. */
 const agentInstructions = path => /^(?:docs\/)?frontend\/(?:AGENTS|CLAUDE)\.md$/.test(path) ||
   path === 'docs/testing/EKI_Antigravity_Webapp_Testing_Skill.md' || path.startsWith('docs/testing/skills/');
+/** Whether `path` is exempt from the control block and register rules. */
 const uncontrolled = path => mirrors.has(path) || machineParsed.has(path) || agentInstructions(path) ||
   path.startsWith('.github/');
 const controlled = documents.filter(path => !uncontrolled(path));
@@ -36,6 +39,7 @@ const controlled = documents.filter(path => !uncontrolled(path));
 const areas = new Set(['GEN', 'REQ', 'ARC', 'ADR', 'API', 'DAT', 'UIX', 'SEC', 'CST', 'OPS', 'HW', 'PKG', 'TST', 'EVD']);
 const statuses = new Set(['Current', 'Proposed', 'Historical', 'Superseded']);
 
+/** Parses the control block under the title of `path`, or returns null when it is missing or malformed. */
 function controlBlock(path) {
   const lines = read(path).split('\n');
   const header = lines[2]?.replace(/\s+/g, ' ').trim();
@@ -63,8 +67,12 @@ function withoutTags(text) {
   return text;
 }
 
+/**
+ * The GitHub anchor for heading text. No trim: markdown-it already strips raw boundary
+ * whitespace, and a space decoded from an entity such as `&#x20;` stays in the anchor.
+ */
 function slug(heading) {
-  return withoutTags(heading.trim().toLowerCase())
+  return withoutTags(heading.toLowerCase())
     .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
     .replace(/[^\p{L}\p{N}\s_-]/gu, '')
     .replace(/\s/g, '-');
@@ -105,11 +113,13 @@ function anchorsOf(text) {
 }
 
 const anchorCache = new Map();
+/** The heading and explicit anchors of the document at `path`, cached per run. */
 function anchors(path) {
   if (!anchorCache.has(path)) anchorCache.set(path, anchorsOf(read(path)));
   return anchorCache.get(path);
 }
 
+/** Percent-decodes `value`, or returns null when an escape is malformed. */
 function decoded(value) {
   try {
     return decodeURIComponent(value);
@@ -118,6 +128,7 @@ function decoded(value) {
   }
 }
 
+/** The link and image targets in `text`, as markdown-it parses them. */
 function links(text) {
   return markdown.parse(text, {}).flatMap(token => (token.children ?? []).flatMap(child => {
     if (child.type === 'link_open') return [child.attrGet('href')];
@@ -152,6 +163,7 @@ test('anchors follow the rendered headings', () => {
     '',
     '## Route `v2` [guide](x.md)',
     '## Route v2 guide',
+    '# &#x20;Entity',
     '',
     '```md',
     '# Fenced',
@@ -166,7 +178,7 @@ test('anchors follow the rendered headings', () => {
     '',
     'Text <a name="inline"></a> and `<a id="code"></a>`',
   ].join('\n');
-  assert.deepEqual([...anchorsOf(example)].sort(), ['explicit', 'inline', 'route-v2-guide', 'route-v2-guide-1', 'setup']);
+  assert.deepEqual([...anchorsOf(example)].sort(), ['-entity', 'explicit', 'inline', 'route-v2-guide', 'route-v2-guide-1', 'setup']);
 });
 
 test('controlled documents carry a valid control block', () => {
@@ -241,7 +253,10 @@ function linkProblems(path, text) {
   const problems = [];
   for (const target of links(text)) {
     if (/^(?:[a-z][a-z0-9+.-]*:|\/\/)/i.test(target)) continue;
-    const [location, fragment] = target.split('#', 2);
+    // Split at the first `#` only, so that a fragment such as `a#b` is checked whole.
+    const hash = target.indexOf('#');
+    const location = hash === -1 ? target : target.slice(0, hash);
+    const fragment = hash === -1 ? undefined : target.slice(hash + 1);
     const [file] = location.split('?', 1);
     const anchor = fragment && decoded(fragment);
     const fileName = file && decoded(file);
@@ -266,6 +281,12 @@ test('a malformed percent escape is reported against its document', () => {
   assert.deepEqual(linkProblems('docs/README.md', '[a](notes%E0%A4.md) [b](README.md#%E0%A4)'), [
     'docs/README.md: malformed link notes%E0%A4.md',
     'docs/README.md: malformed link README.md#%E0%A4',
+  ]);
+});
+
+test('a fragment is checked whole, including any later #', () => {
+  assert.deepEqual(linkProblems('docs/CONFIGURATION.md', '[a](README.md#1-purpose) [b](README.md#1-purpose#b)'), [
+    'docs/CONFIGURATION.md: missing anchor README.md#1-purpose#b',
   ]);
 });
 

@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { dirname, relative, resolve, sep } from "node:path";
+import { dirname, posix, relative, resolve, sep } from "node:path";
 import MarkdownIt from "markdown-it";
 import { describe, expect, it } from "vitest";
 import {
@@ -19,6 +19,7 @@ const sourceSet = new Set(sources);
 const markdown = new MarkdownIt({ html: true });
 type Token = ReturnType<MarkdownIt["parse"]>[number];
 
+/** Every link and image destination in `content`, as markdown-it reads it. */
 function linkTargets(content: string): string[] {
   return markdown.parse(content, {}).flatMap((token: Token) =>
     (token.children ?? []).flatMap((child: Token) => {
@@ -29,6 +30,7 @@ function linkTargets(content: string): string[] {
   );
 }
 
+/** The decoded path of a link destination, without its query or fragment. */
 function filePart(target: string) {
   const path = target.split(/[?#]/, 1)[0];
   try {
@@ -38,10 +40,15 @@ function filePart(target: string) {
   }
 }
 
+/** Whether a link destination is a relative path. */
 const isRelative = (target: string) =>
   Boolean(filePart(target)) && !target.startsWith("/") && !/^[a-z][a-z0-9+.-]*:/i.test(target);
 
+/** An absolute path as a repository-relative path with forward slashes. */
 const repositoryPath = (absolute: string) => relative(repositoryRoot, absolute).split(sep).join("/");
+
+/** The query string and fragment of a link destination, if any. */
+const suffixPart = (target: string) => target.slice(target.split(/[?#]/, 1)[0].length);
 
 describe("repository documentation mirrors", () => {
   for (const source of sources) {
@@ -63,6 +70,10 @@ describe("repository documentation mirrors", () => {
           if (mirrorTargets[index] !== target) broken.push(`${mirror}: ${mirrorTargets[index]} (source ${target})`);
           return;
         }
+        if (suffixPart(mirrorTargets[index]) !== suffixPart(target)) {
+          broken.push(`${mirror}: ${mirrorTargets[index]} (source ${target})`);
+          return;
+        }
         const fromSource = resolve(repositoryRoot, dirname(source), filePart(target));
         // A link that is broken in the source is reported by documentation-quality.test.mjs.
         if (!existsSync(fromSource)) return;
@@ -79,6 +90,7 @@ describe("repository documentation mirrors", () => {
 
 describe("mirror link rewriting", () => {
   const known = new Set(["hardware/keys/README.md", "backend/README.md", "deploy/vps/README.md", "SECURITY.md"]);
+  /** The mirror text of `content`, written in `source`. */
   const mirrored = (source: string, content: string) => mirrorContent(source, content, known);
 
   it("gives every root document links into any folder", () => {
@@ -127,5 +139,53 @@ describe("mirror link rewriting", () => {
   it("leaves external, absolute and same-page links alone", () => {
     const source = "[a](https://example.com/x.md) [b](#section) [c](/absolute) [d](mailto:a@b.c)";
     expect(mirrored("backend/README.md", source)).toBe(source);
+  });
+
+  it("keeps the percent-encoding of a link to another mirrored document", () => {
+    const sources = new Set([...known, "folder name/README.md"]);
+    expect(mirrorContent("SECURITY.md", "[a](folder%20name/README.md#b)", sources)).toBe(
+      "[a](../folder%20name/README.md#b)",
+    );
+  });
+
+  it("leaves link-like text inside inline HTML alone but rewrites links beside it", () => {
+    const source = '<span title="[x](LICENSE)">[y](LICENSE)</span> [z](<LICENSE>)\n\n[ref]: <LICENSE>';
+    expect(mirrored("SECURITY.md", source)).toBe(
+      '<span title="[x](LICENSE)">[y](../../LICENSE)</span> [z](<../../LICENSE>)\n\n[ref]: <../../LICENSE>',
+    );
+  });
+
+  it("rewrites reference definitions inside a blockquote", () => {
+    const source = "> Read [the guide][ref].\n>\n> [ref]: ../../docs/x.md";
+    const mirror = mirrored("deploy/vps/README.md", source);
+    expect(mirror).toBe(source.replace("../../docs/x.md", "../../x.md"));
+    const [target] = linkTargets(mirror);
+    expect(posix.join(posix.dirname(mirrorPath("deploy/vps/README.md")), target)).toBe("docs/x.md");
+  });
+
+  it("treats escaped backticks as text but still protects code spans", () => {
+    const source = "a \\` [x](LICENSE) \\` and `[y](LICENSE)` and \\\\`[z](LICENSE)`";
+    expect(mirrored("SECURITY.md", source)).toBe(source.replace("[x](LICENSE)", "[x](../../LICENSE)"));
+  });
+
+  it("leaves a code span that crosses a line break alone", () => {
+    const source = "Run `cat\n[x](LICENSE)` first, then read [y](LICENSE).";
+    expect(linkTargets(source)).toEqual(["LICENSE"]);
+    expect(mirrored("SECURITY.md", source)).toBe(source.replace("[y](LICENSE)", "[y](../../LICENSE)"));
+  });
+
+  it("rewrites destinations that start on the next line, but not in code or HTML", () => {
+    const source = [
+      "[t](",
+      "  ../../docs/x.md) and `[c](",
+      "../../docs/x.md)` and <a title='[h](",
+      "../../docs/x.md)'>",
+      "",
+      "[ref]:",
+      "  ../../docs/y.md",
+    ].join("\n");
+    expect(mirrored("deploy/vps/README.md", source)).toBe(
+      source.replace("  ../../docs/x.md) and", "  ../../x.md) and").replace("  ../../docs/y.md", "  ../../y.md"),
+    );
   });
 });

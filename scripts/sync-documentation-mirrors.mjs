@@ -12,12 +12,14 @@ const scriptPath = fileURLToPath(import.meta.url);
 const repositoryRoot = resolve(dirname(scriptPath), "..");
 const outputEol = process.platform === "win32" ? "\r\n" : "\n";
 
+/** The text of a repository file with LF line endings and no trailing whitespace. */
 export function normalizedFile(path) {
   return readFileSync(resolve(repositoryRoot, path), "utf8")
     .replace(/\r\n/g, "\n")
     .trimEnd();
 }
 
+/** Tracked Markdown documents outside docs/, which are the mirror sources. */
 export function documentationSources() {
   return execFileSync("git", ["ls-files"], {
     cwd: repositoryRoot,
@@ -29,6 +31,7 @@ export function documentationSources() {
     .filter((path) => path.toLowerCase().endsWith(".md") || path.endsWith("/README"));
 }
 
+/** The docs/ path that mirrors the repository path `source`. */
 export function mirrorPath(source) {
   if (source.startsWith(".github/")) {
     return `docs/github/${source.slice(".github/".length)}`;
@@ -37,6 +40,7 @@ export function mirrorPath(source) {
   return `docs/${source}`;
 }
 
+/** `value` with percent-encoding decoded, or unchanged if it is malformed. */
 function safeDecode(value) {
   try {
     return decodeURIComponent(value);
@@ -62,10 +66,8 @@ function rewriteDestination(destination, source, mirror, sources) {
   if (target === ".." || target.startsWith("../")) return destination;
   const decoded = safeDecode(target);
   const from = posix.dirname(mirror);
-  let rewritten = sources.has(decoded)
-    ? // mirrorPath only moves the folder, so the author's escaped file name is kept.
-      posix.join(posix.relative(from, posix.dirname(mirrorPath(decoded))), posix.basename(target))
-    : posix.relative(from, target) || ".";
+  // mirrorPath only changes the leading folder, so the author's percent-encoding is kept.
+  let rewritten = sources.has(decoded) ? posix.relative(from, mirrorPath(target)) : posix.relative(from, target) || ".";
   if (path.endsWith("/") && !rewritten.endsWith("/")) rewritten += "/";
   return `${rewritten}${suffix}`;
 }
@@ -78,46 +80,99 @@ function rewriteWrapped(destination, ...context) {
   return rewriteDestination(destination, ...context);
 }
 
-// Code spans are matched first so that link-like text inside them is left alone.
-// Inline destinations allow one level of balanced parentheses, as CommonMark does.
-const inlineSyntax =
-  /(`+)[^\n]*?\1|(\]\()(<[^>\n]*>|[^\s()<>]*(?:\([^\s()]*\)[^\s()<>]*)*)|^( {0,3}\[[^\]\n]+\]:[ \t]*)(<[^>\n]*>|\S+)/gm;
+// A destination may start on the line after `](` or `]:`, behind blockquote markers.
+const destinationGap = String.raw`[ \t]*(?:\n[ \t>]*)?`;
+// One level of balanced parentheses is allowed, as CommonMark does.
+const destination = String.raw`<[^>\n]*>|[^\s()<>]*(?:\([^\s()]*\)[^\s()<>]*)*`;
+// One attribute of an inline HTML tag.
+const htmlAttribute = String.raw`\s+[A-Za-z_:][\w.:-]*(?:\s*=\s*(?:[^\s"'=<>\x60]+|'[^']*'|"[^"]*"))?`;
+
+// Matched from left to right, so whichever starts first wins, as in CommonMark:
+// an escaped character, a code span, an unmatched backtick run, an inline HTML
+// tag or comment, or an inline link destination. Only the last is rewritten.
+// \x60 is a backtick.
+const inlineSyntax = new RegExp(
+  [
+    String.raw`\\[!-/:-@[-\x60{-~]`,
+    String.raw`(\x60+)(?!\x60)[\s\S]*?(?<!\x60)\1(?!\x60)`,
+    String.raw`\x60+`,
+    String.raw`<[A-Za-z][A-Za-z0-9-]*(?:${htmlAttribute})*\s*\/?>|<\/[A-Za-z][A-Za-z0-9-]*\s*>|<!--[\s\S]*?-->`,
+    String.raw`(\]\(${destinationGap})(${destination})`,
+  ].join("|"),
+  "g",
+);
+
+// A reference definition may sit inside blockquotes or list items.
+const definitionSyntax = new RegExp(
+  String.raw`^((?:[ \t]*(?:>|[-+*][ \t]|\d{1,9}[.)][ \t]))*[ \t]*\[[^\]\n]+\]:${destinationGap})(<[^>\n]*>|\S+)`,
+  "gm",
+);
 
 const markdown = new MarkdownIt({ html: true });
+const containers = new Set(["blockquote_open", "bullet_list_open", "ordered_list_open", "list_item_open"]);
+const inlineBlocks = new Set(["paragraph_open", "heading_open", "tr_open"]);
 
-/** Lines that hold code or raw HTML, where text is never a Markdown link. */
-function literalLines(content) {
-  const lines = new Set();
+/**
+ * Splits `content` into runs of lines: Markdown text (a paragraph, heading or
+ * table row), reference definitions, or anything else, which is copied as is.
+ * markdown-it decides; it emits no block for a reference definition, so a
+ * non-blank line that no block covers holds one.
+ */
+function lineRuns(content) {
+  const lines = content.split("\n");
+  const covered = new Array(lines.length).fill(false);
+  const textEnd = new Map();
   for (const token of markdown.parse(content, {})) {
-    if (token.map && (token.type === "fence" || token.type === "code_block" || token.type === "html_block")) {
-      for (let line = token.map[0]; line < token.map[1]; line += 1) lines.add(line);
-    }
+    if (!token.map || containers.has(token.type)) continue;
+    covered.fill(true, token.map[0], token.map[1]);
+    if (inlineBlocks.has(token.type)) textEnd.set(token.map[0], token.map[1]);
   }
-  return lines;
+  /** Whether `line` is part of a reference definition. */
+  const definition = (line) => line < lines.length && !covered[line] && !/^[ \t>]*$/.test(lines[line]);
+  const runs = [];
+  for (let start = 0; start < lines.length; ) {
+    let end = start + 1;
+    let kind = "other";
+    if (textEnd.has(start)) {
+      kind = "text";
+      end = textEnd.get(start);
+    } else if (definition(start)) {
+      kind = "definitions";
+      while (definition(end)) end += 1;
+    }
+    runs.push({ kind, text: lines.slice(start, end).join("\n") });
+    start = end;
+  }
+  return runs;
 }
 
 /** The mirror text for `content`, which is the normalized text of `source`. */
 export function mirrorContent(source, content, sources = new Set(documentationSources())) {
-  const mirror = mirrorPath(source);
-  const literal = literalLines(content);
-  return content
-    .split("\n")
-    .map((line, index) =>
-      literal.has(index)
-        ? line
-        : line.replace(inlineSyntax, (match, ticks, open, inline, definition, reference) => {
-            if (ticks) return match;
-            if (open) return `${open}${rewriteWrapped(inline, source, mirror, sources)}`;
-            return `${definition}${rewriteWrapped(reference, source, mirror, sources)}`;
-          }),
-    )
+  const context = [source, mirrorPath(source), sources];
+  return lineRuns(content)
+    .map(({ kind, text }) => {
+      if (kind === "text") {
+        return text.replace(inlineSyntax, (match, ticks, open, inline) =>
+          open ? `${open}${rewriteWrapped(inline, ...context)}` : match,
+        );
+      }
+      if (kind === "definitions") {
+        return text.replace(
+          definitionSyntax,
+          (match, label, reference) => `${label}${rewriteWrapped(reference, ...context)}`,
+        );
+      }
+      return text;
+    })
     .join("\n");
 }
 
+/** The mirror text for the tracked document `source`. */
 export function expectedMirror(source, sources = new Set(documentationSources())) {
   return mirrorContent(source, normalizedFile(source), sources);
 }
 
+/** Writes the mirror of every documentation source. */
 export function syncDocumentationMirrors() {
   const sources = new Set(documentationSources());
   for (const source of sources) {
