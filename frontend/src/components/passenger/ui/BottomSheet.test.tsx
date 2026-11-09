@@ -9,7 +9,8 @@ afterEach(cleanup);
 function swipe(target: HTMLElement, fromY: number, toY: number, toX = 100, click = true) {
   fireEvent.pointerDown(target, { pointerId: 1, pointerType: "touch", clientX: 100, clientY: fromY });
   fireEvent.pointerUp(target, { pointerId: 1, pointerType: "touch", clientX: toX, clientY: toY });
-  if (click) fireEvent.click(target);
+  // A pointer's click carries detail >= 1; keyboard activation sends 0.
+  if (click) fireEvent.click(target, { detail: 1 });
 }
 function Sheet() {
   const [open, setOpen] = useState(false);
@@ -80,6 +81,14 @@ describe("swiping the handle", () => {
     swipe(toggle, 400, 300);
     swipe(toggle, 400, 300);
     expect(toggle.getAttribute("aria-expanded")).toBe("true");
+  });
+  it("lets the keyboard toggle right after a swipe whose click the browser never sent", async () => {
+    render(<Sheet />); const user = userEvent.setup();
+    const toggle = screen.getByRole("button", { name: "Configured route" });
+    swipe(toggle, 400, 300, 100, false);
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    toggle.focus(); await user.keyboard("{Enter}");
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
   });
   it("still toggles on a tap with a little finger wobble", () => {
     render(<Sheet />);

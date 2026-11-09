@@ -436,7 +436,7 @@ describe("phone Live routes sheet", () => {
     const drag = (fromY: number, toY: number) => {
       fireEvent.pointerDown(toggle, { pointerId: 1, pointerType: "touch", clientX: 100, clientY: fromY });
       fireEvent.pointerUp(toggle, { pointerId: 1, pointerType: "touch", clientX: 100, clientY: toY });
-      fireEvent.click(toggle);
+      fireEvent.click(toggle, { detail: 1 });
     };
     drag(600, 450);
     expect(toggle.getAttribute("aria-expanded")).toBe("true");

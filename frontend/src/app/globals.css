@@ -152,11 +152,14 @@ body {
 }
 
 .transit-landing-content h1 {
-  /* 13vw keeps "campus bus" on one line from 320px phones up, whatever the
-     system font. The floor also stays below 11vw, so enlarged text cannot
-     push the longest word out of a narrow column. */
-  font-size: clamp(min(2.5rem, 11vw), 13vw, 3.75rem);
+  /* 0.6rem + 10vw equals the old 13vw at 320px, so "campus bus" stays on one
+     line from 320px phones up at the default text size, and it grows with the
+     browser's default font size for readers who enlarge text. The floor stays
+     below 11vw, and the heading wraps (breaking a word only as a last resort)
+     instead of clipping. */
+  font-size: clamp(min(2.5rem, 11vw), calc(0.6rem + 10vw), 3.75rem);
   text-wrap: balance;
+  overflow-wrap: break-word;
   margin-bottom: clamp(0.75rem, 3dvh, 1.5rem);
 }
 

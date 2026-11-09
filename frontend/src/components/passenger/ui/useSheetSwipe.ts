@@ -17,7 +17,8 @@ interface SheetSwipeOptions {
  * Swipe handling for a sheet handle that is already a toggle button: swiping up
  * opens a closed sheet and swiping down closes an open one. Taps and the
  * keyboard keep working through the button's own click. A drag is never also a
- * tap, so swiping the wrong way does nothing instead of toggling.
+ * tap, so swiping the wrong way does nothing instead of toggling, and a
+ * keyboard activation right after a swipe still toggles.
  */
 export function useSheetSwipe({ isOpen, onToggle }: SheetSwipeOptions) {
   const start = useRef<{ id: number; x: number; y: number; at: number } | null>(null);
@@ -56,6 +57,9 @@ export function useSheetSwipe({ isOpen, onToggle }: SheetSwipeOptions) {
       if (start.current?.id === event.pointerId) start.current = null;
     },
     onClickCapture(event: MouseEvent<HTMLElement>) {
+      // Keyboard and assistive-technology activation sends a click with
+      // detail 0; only a pointer's click (detail >= 1) can be the swipe's own.
+      if (event.detail === 0) return;
       if (Date.now() >= suppressClickUntil.current) return;
       suppressClickUntil.current = 0;
       event.preventDefault();
