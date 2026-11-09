@@ -99,7 +99,9 @@ nominal radius. Keep close buttons circular and grabbers as capsules.
 On touch screens the Live routes panel rests as a peek above the tab bar
 (date, title, route count and hint) so the passenger artwork shows in full.
 The whole peek is one button ("Show live routes" / "Hide live routes") that
-raises the list; while lowered the list is inert. Choosing a route leaves the
+raises the list; while lowered the list is inert. Swiping the peek up raises
+the sheet and swiping it down lowers it (2026-11-09, `useSheetSwipe`); the map's
+Route timeline handle swipes the same way. A drag is never also a tap. Choosing a route leaves the
 sheet raised for Back. Until the passenger toggles it, the sheet opens by
 itself when it has something to say: an admin announcement, or loaded data
 with no route to choose. It is a sheet only while the heading leaves at least

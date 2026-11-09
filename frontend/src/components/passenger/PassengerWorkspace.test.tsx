@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { lazy, Suspense, type ComponentType } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, configure, render, screen, act, waitFor } from "@testing-library/react";
+import { cleanup, configure, fireEvent, render, screen, act, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import PassengerWorkspace from "./PassengerWorkspace";
 import { BUS_EXPIRY_MS } from "@/lib/liveBusFreshness";
@@ -425,6 +425,24 @@ describe("phone Live routes sheet", () => {
 
     await user.click(toggle);
     expect(toggle.getAttribute("aria-label")).toBe("Show live routes");
+    expect(card.closest("[inert]")).not.toBeNull();
+  });
+
+  it("raises with an upward swipe on the peek and lowers with a downward one", async () => {
+    useTouchScreen(true);
+    render(<PassengerWorkspace />);
+    const card = await screen.findByRole("button", { name: "Track QA route" });
+    const toggle = screen.getByRole("button", { name: "Show live routes" });
+    const drag = (fromY: number, toY: number) => {
+      fireEvent.pointerDown(toggle, { pointerId: 1, pointerType: "touch", clientX: 100, clientY: fromY });
+      fireEvent.pointerUp(toggle, { pointerId: 1, pointerType: "touch", clientX: 100, clientY: toY });
+      fireEvent.click(toggle, { detail: 1 });
+    };
+    drag(600, 450);
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    expect(card.closest("[inert]")).toBeNull();
+    drag(450, 600);
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
     expect(card.closest("[inert]")).not.toBeNull();
   });
 
