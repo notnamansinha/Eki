@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-PKG-003 | 1.0 | Current | 2026-10-30 |
+| EKI-PKG-003 | 1.1 | Current | 2026-11-07 |
 
 ## 1. Purpose
 
@@ -50,7 +50,7 @@ The repository evidences the components below. Prices are in the [cost model](..
 
 | ESP32 pin | Connects to | Firmware setting |
 |---|---|---|
-| GPIO16 (UART2 RX) | Receiver `TX` | `Serial2.begin(9600, SERIAL_8N1, 16, 17)` in `src/main.cpp`; 8,192-byte receive buffer |
+| GPIO16 (UART2 RX) | Receiver `TX` | `gpsSerial.begin(9600, SERIAL_8N1, 16, 17)` on `Serial2` in `src/main.cpp`; 8,192-byte receive buffer |
 | GPIO17 (UART2 TX) | Receiver `RX` | Used at boot to send UBX `CFG-MSG` commands |
 | `5V/VIN` | Receiver `VCC` | Connect only if the receiver module accepts 5 V; otherwise use the supply voltage its specification allows |
 | `GND` | Receiver `GND` and supply ground | Common reference |
@@ -75,13 +75,13 @@ At boot the firmware sends volatile UBX `CFG-MSG` commands [1] that enable GGA a
 
 ### 4.1 PlatformIO environments
 
-All environments in `platformio.ini` use `espressif32@7.0.1` (Arduino-ESP32 2.0.17; ESP-IDF 4.4 for the mixed Arduino and ESP-IDF builds), TinyGPSPlus 1.1.0, ArduinoJson 7.4.3 and `monitor_speed = 115200`. Board environments link wrappers around `mbedtls_ssl_config_defaults` and `mbedtls_ecdh_make_public`, which apply the TLS profile in `src/tls_profile.cpp`.
+Every environment in `platformio.ini` pins TinyGPSPlus 1.1.0 and ArduinoJson 7.4.3. The four board environments use `espressif32@7.0.1` (Arduino-ESP32 2.0.17; ESP-IDF 4.4 for the mixed Arduino and ESP-IDF builds) and `monitor_speed = 115200`. Board environments link wrappers around `mbedtls_ssl_config_defaults` and `mbedtls_ecdh_make_public`, which apply the TLS profile in `src/tls_profile.cpp`.
 
 | Environment | Framework | Partition table | Distinguishing settings | Use |
 |---|---|---|---|---|
 | `esp32dev` (default) | Arduino | `partitions_development.csv` | `EKI_FLEET_BUILD=0`, `EKI_FIRMWARE_VERSION="development"`, `DISABLE_OTA` | Bench development. Detailed serial traces are on. Never install this image in a vehicle. |
 | `esp32dev-quiet` | Arduino | `partitions_development.csv` | Adds `EKI_ENABLE_FLEET_TRACES=0` | Same runtime with trace output compiled out |
-| `esp32dev-journal` | Arduino and ESP-IDF | Built with `partitions_development.csv`; only the application image is written | Adds `EKI_LEGACY_JOURNAL_BUILD=1`; `sdkconfig.journal.defaults` disables flash core dumps, Secure Boot and flash encryption | App-only checkpoint acceptance on an older development board ([cold power recovery](COLD_POWER_RECOVERY.md)) |
+| `esp32dev-journal` | Arduino and ESP-IDF | Built with `partitions_development.csv`; only the application image is written | Adds `EKI_LEGACY_JOURNAL_BUILD=1`; `sdkconfig.journal.defaults`, which `CMakeLists.txt` selects for this environment, disables flash core dumps, Secure Boot and flash encryption | App-only checkpoint acceptance on an older development board ([cold power recovery](COLD_POWER_RECOVERY.md)) |
 | `esp32dev-secure` | Arduino and ESP-IDF | `partitions_secure.csv` | `EKI_FLEET_BUILD=1`, `EKI_FIRMWARE_SEQUENCE=1`, signing key `keys/secure_boot_signing_key.pem`, pre-build check `scripts/verify_secure_fleet.py`, `sdkconfig.defaults` | The only environment for fleet artifacts |
 | `native` | Host, Unity | None | `-std=gnu++11`; DNS test stubs on the include path | Host policy tests without a board |
 
@@ -109,6 +109,8 @@ The firmware's only configuration source is the ignored file `include/secrets.h`
 | `BACKEND_URL` | Backend origin, for example `https://<backend-host>` | `http://` or `https://`, at most 256 characters, printable ASCII, no path, query, fragment or `@`. Fleet builds accept only `https://`, checked at compile time and at boot. |
 | `BACKEND_ROOT_CA` | PEM root certificate that issues the backend certificate, with line breaks written as `\n` | At most 3,072 bytes with `BEGIN CERTIFICATE` and `END CERTIFICATE` markers. Required for `https://`, ignored for `http://`. |
 
+The template's Wi-Fi and device definitions are placeholders. Its `BACKEND_URL` is the origin of the Cloud Run staging service, `https://eki-backend-staging-449313371438.asia-south2.run.app`, and its `BACKEND_ROOT_CA` is GTS Root R1, valid until 2036-06-22. The service certificate chains through Google Trust Services WR2 to that root. Keep both values for a staging tracker. For any other backend, replace `BACKEND_URL` and set `BACKEND_ROOT_CA` to the root that issues that backend's certificate, for example for a tunnel origin ([ngrok tunnel](../operations/NGROK_TUNNEL.md#5-provision-tls-trust-in-the-firmware)). The firmware calls this origin directly and appends the `/api/devices/...` paths itself.
+
 The template's `DEVICE_SECRET` placeholder is shorter than 20 characters. An unedited copy compiles, flashes and then halts at boot with two LED pulses and the serial line `[Boot] Invalid compile-time configuration field DEVICE_SECRET; halted.`
 
 Do not put Firebase keys, service-account credentials, bearer tokens, bus or route IDs, or signing keys in `secrets.h`. Never commit, print, upload or archive `secrets.h` or an unencrypted firmware image built from it.
@@ -117,10 +119,10 @@ Do not put Firebase keys, service-account credentials, bearer tokens, bus or rou
 
 ### 5.1 Prerequisites
 
-- PlatformIO Core 6.2.0, the version CI and `npm run qa:native` require: `py -m pip install platformio==6.2.0`.
+- PlatformIO Core 6.2.0, pinned in `hardware/requirements.txt`, which CI installs and `npm run qa:native` requires. Install it from the repository root with `py -m pip install --requirement hardware/requirements.txt`.
 - The board's serial port name, written below as `<port>` (for example `COM5` on Windows).
 - A backend that the tracker's Wi-Fi network reaches by hostname. The tracker cannot reach `localhost` or `127.0.0.1` on a laptop. [Getting started](../GETTING_STARTED.md) and [configuration](../CONFIGURATION.md) cover the backend.
-- For an `https://` backend: the issuing root CA in PEM form, and a backend certificate with an RSA key. The firmware's TLS profile offers only ECDHE-RSA cipher suites with AES-GCM on curve P-256; a server that presents an ECDSA certificate fails the handshake.
+- For an `https://` backend: the issuing root CA in PEM form, and a backend certificate with an RSA key. The firmware's TLS profile offers only ECDHE-RSA cipher suites with AES-GCM on curve P-256; a server that presents an ECDSA certificate fails the handshake. The Cloud Run staging origin in the template meets this requirement: a tracker built with that origin and root reported through Cloud Run on 2026-11-02 ([Cloud Run latency evidence](../testing/CLOUD_RUN_LATENCY_2026_11_02.md)).
 - A route with ordered stops, and a bus whose `assignedRoutes` contains that route.
 
 ### 5.2 Steps
@@ -143,7 +145,7 @@ Run every command from the repository root.
 
    Expected result: the command prints `Device provisioned. Copy this secret now; it is not stored in plaintext:` followed by the secret. Copy it once, directly into step 3. The command refuses a bus and route that has an active ride, a bus lock or another device. If it reports that cache invalidation failed twice, the printed secret is still valid: restore Realtime Database connectivity before you rely on the device, and do not rerun the command, because a rerun rotates the secret.
 
-3. Create the configuration file and set all six definitions from Section 4.3.
+3. Create the configuration file. Set `WIFI_SSID`, `WIFI_PASS`, `DEVICE_ID` and `DEVICE_SECRET`, and keep or replace `BACKEND_URL` and `BACKEND_ROOT_CA` as Section 4.3 describes.
 
    ```powershell
    Copy-Item hardware/include/secrets.example.h hardware/include/secrets.h
@@ -252,10 +254,11 @@ OTA never changes the bootloader, the partition table or eFuses. The application
 | `[HTTPS] Transport failure <code> (<reason>)` | Backend unreachable, `localhost` URL, wrong root CA, ECDSA server certificate, or wrong clock | Reach the backend `GET /health` from the same network; check the certificate key type and issuer | Fix the network, URL, CA or certificate. Never disable certificate validation. |
 | `[HTTPS] Telemetry rejected (HTTP 400)` | Timestamp outside the backend window or schema mismatch | Clock lines in the serial log; deployed backend version | Restore clock agreement; deploy a backend that accepts the nine-field schema |
 | Three LED pulses; HTTP 401 | Wrong `DEVICE_ID` or `DEVICE_SECRET`, or the device is disabled | Device record in the registry | Reprovision and reflash, or re-enable the device; then restart the board |
-| `[HTTPS] Device assignment unavailable; retrying without disabling Wi-Fi.` (HTTP 403) | Device has no usable bus and route assignment | Device record and the bus's `assignedRoutes` | Repair the assignment. The device retries every 60 s without a reflash. |
+| `[HTTPS] Device assignment unavailable; retrying without disabling Wi-Fi.` (HTTP 403) | Device has no usable bus and route assignment, or Cloud Run refuses the request because `allUsers` lacks the `roles/run.invoker` role on the service | Device record and the bus's `assignedRoutes`; the service's IAM policy ([staging runtime configuration](../operations/STAGING_RUNTIME_CONFIG.md#2-project-facts)) | Repair the assignment, or restore the invoker binding that `deploy-backend-staging` grants. The device retries every 60 s without a reflash. |
 | `[HTTPS] Check BACKEND_URL; the telemetry endpoint was not found.` (HTTP 404) | `BACKEND_URL` points at the wrong host | The URL in `secrets.h` | Correct and reflash |
 | `[HTTPS] Rate limited; server retry delay=<n>s.` (HTTP 429) | Backend ingress or per-device limit reached | `HTTPS_INGRESS_DEVICES_PER_IP` and `HTTPS_DEVICE_RATE_PER_MINUTE` in [configuration](../CONFIGURATION.md) | Raise the limit for the fleet size, or find the extra sender |
 | `[HTTPS] Backend dependency is unavailable; retaining the latest fix.` (HTTP 5xx) | Backend or Firebase outage | Backend `GET /health` | Restore the backend; the device keeps retrying |
+| `[HTTPS] Transport failure <code> (read timeout)` on the first requests after the backend has been idle, then accepted telemetry | The Cloud Run service has no running instance and is starting one | The service's minimum instances ([staging runtime configuration](../operations/STAGING_RUNTIME_CONFIG.md#2-project-facts)) | None. The firmware retries after 250 ms to 2 s and keeps the newest fresh sample. On 2026-11-03 a client with the tracker's timeouts got its first answer about 5.7 s after its first request ([cold start measurement](../operations/STAGING_RUNTIME_CONFIG.md#8-verification)). |
 | `[Boot] Recovered from task-wdt reset` repeatedly | A task stalled for more than 25 s | Serial log before the reset; `resetTotal` in diagnostics | Capture the log and report it with the firmware version |
 | `[PowerCheckpoint] ready=false` | Board flashed with an older partition table without `gps_log` | `slots=` value and the board's partition table | Follow [cold power recovery](COLD_POWER_RECOVERY.md) |
 

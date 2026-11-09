@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-TST-002 | 3.0 | Current | 2026-10-30 |
+| EKI-TST-002 | 3.1 | Current | 2026-11-07 |
 
 ## 1. Purpose and scope
 
@@ -36,11 +36,11 @@ The QA test maps (`qa/*-test-map.mjs`) and the execution ledger label every obse
 | Tool | Version | Needed for |
 |---|---|---|
 | Node.js | 24 (CI version) | Every JavaScript suite |
-| npm dependencies | `npm ci` from `package-lock.json` | Every suite; Playwright `^1.63.0`, Vitest and Stryker 10.0.0 are development dependencies |
+| npm dependencies | `npm ci` from `package-lock.json` | Every suite; Playwright `^1.64.1` and Stryker 10.1.1 are development dependencies in the root [`package.json`](../../package.json), and Vitest `^4.1.12` in the backend and frontend `package.json` files |
 | Java | 21 (CI version) | Firebase emulators: `test:rules`, `qa:browser`, `qa:api`, nightly emulator, browser and API campaigns |
 | Firebase CLI | 15.14.0, fetched by `npx --yes firebase-tools@15.14.0` inside `scripts/run-rules-emulator.mjs` | Emulator suites; no global install is needed |
 | Chromium for Playwright | `npx playwright install chromium` (CI adds `--with-deps`) | Every browser suite |
-| Python and PlatformIO | Python 3.12 and `platformio==6.2.0` in CI | Native firmware tests, firmware builds, `qa:native` |
+| Python and PlatformIO | Python 3.12 in CI; `platformio==6.2.0`, pinned in [`hardware/requirements.txt`](../../hardware/requirements.txt) and installed with `pip install --requirement hardware/requirements.txt`. `qa:native` refuses any other PlatformIO version | Native firmware tests, firmware builds, `qa:native` |
 | C++ compiler | Host `g++` or equivalent | Native firmware tests; without it every native suite fails at compilation |
 
 ### 3.2 Emulator isolation
@@ -58,7 +58,7 @@ The QA test maps (`qa/*-test-map.mjs`) and the execution ledger label every obse
 
 Before tooling starts, `scripts/qa/safety-preflight.mjs` rejects provider and cloud credentials (for example `GOOGLE_APPLICATION_CREDENTIALS` and Maps keys), any project other than `demo-eki-qa`, and non-loopback target URLs. The runner fails fast when a previous run still holds an emulator port. The child processes preload `scripts/qa/network-guard.mjs`, which blocks non-loopback sockets and DNS from Node; it is not an operating-system sandbox.
 
-On some Windows hosts the Firestore emulator fails to start with a Java `SocketException` from Unix domain socket initialisation. The run is then reported as BLOCKED. Use the Linux CI run as evidence in that case.
+On some Windows hosts the Firestore emulator fails to start with a Java `SocketException` from Unix domain socket initialisation. In the current shell only, set `JAVA_TOOL_OPTIONS` to `-Djdk.net.unixdomain.tmpdir=<folder>`, where `<folder>` is a short writable path with no spaces, and run again ([emulator acceptance](../../qa/EMULATOR_ACCEPTANCE.md#6-troubleshooting)). If the error remains, the run is reported as BLOCKED; use the Linux CI run as evidence in that case.
 
 ## 4. Commands
 
@@ -87,7 +87,9 @@ npm run verify
 | `npm run test:e2e:admin` | Playwright with `playwright.admin-access.config.ts` | Chromium |
 | `npm run verify:openapi` | Reconciles the OpenAPI document with Express registrations and `backend/API.md` | Node |
 | `npm run verify:ui-contracts` | Rejects removed UI behaviour, such as the obsolete route type, in named source files | Node |
-| `npm run verify:rtdb-instance` | Checks that frontend and backend RTDB URLs name the same instance | `FIREBASE_DATABASE_URL`, `NEXT_PUBLIC_FIREBASE_DATABASE_URL` |
+| `npm run verify:rtdb-instance` | Checks that frontend and backend RTDB URLs name the same instance. With `RTDB_EXPECTED_REGION` it also checks the region; `npm run verify:rtdb-instance -- --require-region`, which the Deploy workflow runs, fails when that variable is unset | `FIREBASE_DATABASE_URL`, `NEXT_PUBLIC_FIREBASE_DATABASE_URL` |
+| `npm run verify:web-backend-contract` | Checks that the backend origin in `NEXT_PUBLIC_BACKEND_URL` is in the CSP `connect-src` (the last step of `npm run build`). With `EKI_RUNTIME_SMOKE=1` it also retries the deployed backend's `/health` for up to 90 s and checks CORS and the browser preflight for `EKI_FRONTEND_ORIGIN` | Node; a deployed backend for the runtime check |
+| `npm run verify:hosting-rewrites -- --hosting <origin>` | Read-only GET checks that a Hosting site with rewrites to the backend forwards `/api/**`, `/health` and `/live` to the backend as JSON, passes the `Authorization` header, returns `no-store` API responses, and still serves pages, `/sw.js` and `/__/auth/handler` itself. `--direct <origin>` adds a `/live` latency comparison (`--samples`, default 30). `firebase.json` defines no such rewrite, so the check is for a rewrite proposal ([HTTP contract](../api/HTTP_CONTRACT.md#34-hosting-rewrite-check)). Not run in CI | A Hosting preview channel that carries the rewrites |
 | `npm run docs:sync`, `npm run docs:check` | Documentation mirrors and the documentation quality, mirror and configuration tests | Node |
 | `npm run telemetry:load`, `telemetry:analyze`, `realtime:analyze` | Load generator and trace analysers; see [load test](../operations/TELEMETRY_INGESTION_LOAD_TEST.md) | Node; a target for `telemetry:load` |
 
@@ -122,12 +124,12 @@ Every configuration except the default and the live Maps check starts its own Vi
 |---|---|---|---|---|---|
 | `playwright.config.ts` | `npm run test:e2e` | All of `e2e/` except admin-access, routing, passenger-layout and production-audit | None; `EKI_E2E_BASE_URL`, default `http://127.0.0.1:3000` | mobile 360 x 800, desktop 1280 x 800 | No |
 | `playwright.admin-access.config.ts` | `npm run test:e2e:admin` | `e2e/admin-access.spec.ts`, `e2e/admin-access/*.spec.ts` | Admin fixture, port 3105 | mobile 390 x 844, desktop 1280 x 800 | Yes |
-| `playwright.passenger-layout.config.ts` | `npx playwright test --config playwright.passenger-layout.config.ts` | `e2e/passenger-layout/` | Passenger fixture, `EKI_QA_PORT` or 3100 | narrow 360 x 800, mobile 390 x 844, reported-phone 440 x 956, short-desktop 1280 x 585, desktop 1280 x 800 | Yes |
+| `playwright.passenger-layout.config.ts` | `npx playwright test --config playwright.passenger-layout.config.ts` | `e2e/passenger-layout/` | Passenger fixture, `EKI_QA_PORT` or 3100 | narrow 360 x 800, mobile 390 x 844 and reported-phone 440 x 956 (these three with touch), short-desktop 1280 x 585, desktop 1280 x 800 | Yes |
 | `playwright.passenger-progress.config.ts` | `npx playwright test --config playwright.passenger-progress.config.ts` | `e2e/passenger-progress/` | Progress fixture, port 3127 | mobile 390 x 844, desktop 1280 x 800 | Yes |
 | `playwright.production-audit.config.ts` | `npx playwright test --config playwright.production-audit.config.ts` | `e2e/production-audit/` | Audit fixture, port 3123 | narrow 360 x 800, mobile 390 x 844, desktop 1280 x 800 | Yes |
 | `playwright.emulator.config.ts` | `npm run qa:browser` (never directly) | `e2e/emulator-acceptance.spec.ts` | Compiled backend 3116, frontend 3115, control 3117, with emulators | mobile 390 x 844, desktop 1280 x 800; one worker, no retries | Yes |
 | `playwright.routing.config.ts` | `npx playwright test --config playwright.routing.config.ts` | `e2e/routing/marker.spec.ts` | Routing fixture, port 3162 | Desktop Chrome default (1280 x 720) | No |
-| `playwright.routing.maps.config.ts` | Manual; see [live Maps check](../../e2e/routing/live-maps/README.md) | `e2e/routing/live-maps/in-app.spec.ts` | Live Maps fixture, port 3163 | 1920 x 1080 | No |
+| `playwright.routing.maps.config.ts` | Manual; see [live Maps check](../../e2e/routing/live-maps/README.md) | `e2e/routing/live-maps/in-app.spec.ts` | Live Maps fixture, port 3163 | 1920 x 1080; one test at 360 x 800 with touch | No |
 
 Fixture guides: [admin access](../../e2e/admin-access/README.md), [passenger UI](../../e2e/fixtures/README.md), [moving marker](../../e2e/motion/README.md), [production audit](../../e2e/production-audit/README.md), [live Maps](../../e2e/routing/live-maps/README.md), [disposable browser acceptance](../../qa/BROWSER_ACCEPTANCE.md).
 
@@ -166,7 +168,7 @@ The [QA programme](../../qa/README.md) describes the evidence model. Every runne
 | `npm run qa:nightly` | Campaign | `qa:check`, then all six families through `scripts/qa/campaign.mjs`, then `campaign-report.mjs` | [Scheduled reliability](../../qa/SCHEDULED_RELIABILITY.md) |
 | `npm run qa:mutation`, `qa:soak`, `qa:weekly` | Campaign | Stryker mutation of `telemetryPayload.ts`; five admission-helper trials | [Scheduled reliability](../../qa/SCHEDULED_RELIABILITY.md) |
 
-`scripts/qa/campaign.mjs` refuses a dirty checkout. `npm run qa:report` blocks any family report from another commit or a dirty tree.
+`scripts/qa/campaign.mjs` refuses a dirty checkout. `npm run qa:report` blocks any family report from another commit or a dirty tree. `npm run build`, and therefore `npm run verify`, rewrites the Content-Security-Policy in the tracked `firebase.json` (`scripts/update-csp.mjs`); restore it with `git checkout -- firebase.json` before a QA run that must record a clean tree.
 
 ## 5. Choosing checks for a change
 
@@ -176,11 +178,12 @@ Run `npm run verify` for every code change, then add the checks for the area cha
 |---|---|
 | Documentation | `npm run docs:sync`, `npm run docs:check`, `git diff --check` |
 | Firestore or RTDB rules, transactions, workers | `npm run test:rules` |
-| Authentication, admin, feedback | `npm run test:e2e:admin`; `npm run test:rules` for rules |
-| Passenger UI, map or progress | Passenger layout and passenger progress configurations |
+| Authentication, landing page, admin, feedback | `npm run test:e2e:admin`; `npm run test:rules` for rules |
+| Passenger UI, artwork, map or progress | Passenger layout and passenger progress configurations |
 | A Google map element, `MapProviders` or `config/maps.ts` | The map construction counters in Section 7.6 (in `npm test`); after deploying, the Dynamic Maps metric in the Cloud Console |
 | Admin dashboard, route editor, history | Production audit configuration; `npm run qa:browser` for persisted flows |
 | HTTP routes or OpenAPI | `npm run verify:openapi` (in `npm test`); `npm run qa:api` for authorization |
+| Workflows, `deploy/cloud-run/` or the Hosting configuration in `firebase.json` | The workflow, manifest, deploy-target and CSP script tests (`scripts/*.test.mjs`, in `npm test`); for a change that adds Hosting rewrites to the backend, `npm run verify:hosting-rewrites` against a Hosting preview channel before release and against the live site after it |
 | Critical source listed by `scripts/qa/coverage-budget.mjs` | A reviewed mapping and a changed test file, checked by `qa:budget` on pull requests |
 | Firmware | Native tests and the affected board environments |
 | Device movement, power, radio, live latency, provider enforcement | A witnessed L4 or L5 procedure with redacted evidence |
@@ -190,15 +193,17 @@ Run `npm run verify` for every code change, then add the checks for the area cha
 | Workflow (file) | Trigger | Jobs and checks |
 |---|---|---|
 | Production verification (`ci.yml`) | Every push and pull request | `web`: `qa:check`; `qa:budget` on pull requests; `qa:catalog`; `qa:gnss`; `qa:unit:reviewed`; `verify:rtdb-instance`; `verify:openapi`; `lint`; `npm test`; emulator suites; admission benchmark; admin-access, passenger-layout, passenger-progress and production-audit Playwright suites; `qa:browser`; `qa:api`; `build:production` with placeholder values and exported origin checks; `npm audit --omit=dev --omit=optional`; full `npm audit`; CycloneDX SBOM |
-| | | `backend-image`: builds `backend/Dockerfile`, checks `/health` returns 503 `degraded` and `/live` returns 200 with placeholder configuration, Trivy scan for critical and high findings |
-| | | `firmware`: secure-fleet configuration check, `qa:native`, host protocol tests, builds of `esp32dev`, `esp32dev-quiet`, `esp32dev-journal` and `esp32dev-secure` with an ephemeral signing key, signed-image tamper test |
+| | | `backend-image`: builds `backend/Dockerfile`, checks `/health` returns 503 `degraded` and `/live` returns 200 `alive` with placeholder configuration and that the image health check probes `/live`, Trivy scan that fails on fixable critical and high findings |
+| | | `firmware`: installs `hardware/requirements.txt`, secure-fleet configuration check, `qa:native`, host protocol tests, builds of `esp32dev` and `esp32dev-quiet` with a check that trace strings are absent from the quiet image, a check that the SNTP guard is linked, builds of `esp32dev-journal` and `esp32dev-secure` with an ephemeral signing key, signed-image tamper test |
 | | | `qa-evidence`: after `web` and `firmware`, even when they fail, runs `qa:report` on their artifacts |
-| CodeQL (`codeql.yml`) | Every push and pull request | `security-extended` queries for JavaScript/TypeScript and Python |
+| CodeQL (`codeql.yml`) | Every pull request; every push except to `dependabot/**` branches | `security-extended` queries for JavaScript/TypeScript and Python |
 | Isolated nightly QA (`deep-qa.yml`) | Daily 20:17 UTC, manual dispatch, pushes to named QA branches | Six campaign shards (`gnss`, `emulator`, `browser`, `api`, `native`, `reviewedUnit`), two at a time, then `campaign-report.mjs` |
 | Isolated weekly reliability (`weekly-reliability.yml`) | Saturday 20:41 UTC, manual dispatch, pushes to `codex/qa-nightly-reliability` | `qa:check`, then `qa:mutation` and `qa:soak` shards, then `weekly-report.mjs` |
-| Deploy (`deploy.yml`) | Green Production verification push on `main`; manual dispatch | Staging and approval-gated production releases; see [CI, deployment and releases](../operations/CI_CD_AND_RELEASES.md) |
+| Deploy (`deploy.yml`) | Green Production verification push on `main`; manual dispatch from `main` | Staging release, with an optional manual Cloud Run backend deploy to staging before it, and the approval-gated production release; see [CI, deployment and releases](../operations/CI_CD_AND_RELEASES.md) |
+| Publish backend image (`publish-backend-image.yml`) | Green Production verification push on `main`; manual dispatch from `main` | Builds the backend image of a commit that `main` contains, runs the same Trivy scan as `backend-image` and pushes the image to Docker Hub; publishes nothing when the `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` secrets are absent |
+| Remove footer (`footer.yml`) | Issues and pull requests opened or edited | Removes a trailing "Generated with Claude Code" line from the body when the configured author wrote it; checks out and runs no repository code |
 
-Scheduled and manually dispatched nightly and weekly runs resolve the head of `main`. The `testing` branch was deleted on 2026-10-25; scheduled runs from then until the resolver was changed to `main` failed in `resolve` with `Not Found` and ran no suite. The last scheduled runs that executed suites were on 2026-10-24 (UTC). The [risk register](../operations/ARCHITECTURE_RISK_REGISTER.md) tracks the first green runs as OPS-02.
+Scheduled and manually dispatched nightly and weekly runs resolve the head of `main`; pushes to the listed `codex/qa-*` branches run the pushed commit. `npm run qa:check` (`scripts/qa/workflow-policy.mjs`) rejects a workflow whose resolver lacks these guards. The [risk register](../operations/ARCHITECTURE_RISK_REGISTER.md#36-ops-02-scheduled-qa-runs-no-suites) records the green scheduled runs on `main` that closed OPS-02.
 
 ```mermaid
 flowchart LR
@@ -285,7 +290,7 @@ The map-load tests run the real `@vis.gl/react-google-maps` `APIProvider` and `M
 |---|---|
 | `frontend/src/components/maps/PassengerMap.mapLoads.test.tsx` | The first open builds one map and loads the script once; bus, preview, direction and route changes reattach it; camera refit and follow mode work after reattach; a GPS tick neither constructs nor reattaches |
 | `frontend/src/components/passenger/PassengerWorkspace.mapLoads.test.tsx` | Back and reopen, the Profile and Routes tabs, route switch, direction resolution, a bus disappearing and returning, service start and the bus picker construct no further map |
-| `frontend/src/components/admin/AdminMapLoads.test.tsx` | Live Ops, the route editor and tab switches build one map, and overlays and listeners detach from the cached instance |
+| `frontend/src/components/admin/AdminMapLoads.test.tsx` | Live Ops, the route editor and tab switches build one map, and overlays and listeners detach from the cached instance; Live Ops draws no route line on that instance for in-service or long-offline buses, including after the route editor has drawn on it |
 | `frontend/src/config/maps.reuse.test.ts` | Every vis.gl `Map` element sets `reuseMaps`, `mapId={MAPS_MAP_ID}` and `{...MAP_OPTIONS}` |
 
 These tests count constructions, not Google billing (acceptance case OBS07). Billing evidence needs the Dynamic Maps metric in the Cloud Console; see [EKI-ADR-004](../design/GOOGLE_MAP_REUSE_DECISION.md).

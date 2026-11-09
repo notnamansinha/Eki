@@ -2,11 +2,11 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-ADR-004 | 1.0 | Current | 2026-10-30 |
+| EKI-ADR-004 | 1.1 | Current | 2026-11-07 |
 
 ## 1. Context
 
-Decision date: 2026-10-29 (record last revised 15:35 IST). Pull request #394, branch `codex/issue-2-map-reuse`, based on `main` at `c4d47b3` and merged to `main` as `a8e28d9`.
+Decision date: 2026-10-29 (decision recorded at 15:35 IST). Pull request #394, branch `codex/issue-2-map-reuse`, based on `main` at `c4d47b3` and merged to `main` as `a8e28d9`.
 
 Google bills the Dynamic Maps SKU per successful map load of the Maps JavaScript API [1], [2]. This record treats each construction of a `google.maps.Map` as one billed load and a reattached, already constructed map as no new load. The Cloud Console Dynamic Maps metric has not yet confirmed this (Section 4.2).
 
@@ -67,7 +67,7 @@ Set `reuseMaps` on every `@vis.gl/react-google-maps` `Map` element, keep every R
 
 ## 3. Status
 
-Accepted on 2026-10-29 and in force on `main` since `a8e28d9`. The administrator and desktop checks with the real Maps SDK (Section 4.2) and the billing confirmation remain open. Revisit this decision when the passenger view moves to a renderer that does not use Google Maps (Section 4.3).
+Accepted on 2026-10-29 and in force on `main` since `a8e28d9`. The locked `@vis.gl/react-google-maps` 1.10.1 keeps the cache key `mapId:renderingType:colorScheme` and the same reuse path, and also discards a cached instance whose element is no longer usable instead of reattaching it. The administrator and desktop checks with the real Maps SDK (Section 4.2) and the billing confirmation remain open. Revisit this decision when the passenger view moves to a renderer that does not use Google Maps (Section 4.3).
 
 ## 4. Consequences
 
@@ -84,7 +84,7 @@ Edge cases checked:
 
 | Case | Result |
 |---|---|
-| Options left on a reused instance | All maps pass identical options, per-mount defaults are re-applied, and the contract test enforces both |
+| Options left on a reused instance | Every map spreads `MAP_OPTIONS`, per-mount defaults are re-applied, and the contract test enforces the spread. The passenger map also passes `backgroundColor="#f2efec"` on every mount, while the administrator maps keep the `MAP_OPTIONS` value `#1a1a2e`. Google applies `backgroundColor` only when a map is constructed [4], so a reattached instance keeps the background colour of the mount that constructed it; the colour shows only where tiles have not loaded |
 | Route editor click listener | vis.gl removes it on unmount |
 | Traffic layer and polylines | Detached (test assertion) |
 | Camera | Refits after reattach (tests and the real SDK check) |
@@ -218,3 +218,5 @@ During testing, two `PassengerWorkspace.mapLoads` tests depended on an earlier t
 [2] Google, "Google Maps Platform API usage details," https://developers.google.com/maps/billing-and-pricing/sku-details. Accessed: 2026-10-30.
 
 [3] OpenStreetMap Foundation, "Tile Usage Policy," https://operations.osmfoundation.org/policies/tiles/. Accessed: 2026-10-30.
+
+[4] Google, "Maps JavaScript API reference: Map," https://developers.google.com/maps/documentation/javascript/reference/map. Accessed: 2026-11-07.

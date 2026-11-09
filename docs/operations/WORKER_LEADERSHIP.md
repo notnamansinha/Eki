@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-OPS-026 | 1.0 | Current | 2026-10-30 |
+| EKI-OPS-026 | 1.2 | Current | 2026-11-08 |
 
 ## 1. Purpose
 
@@ -53,6 +53,14 @@ A queue shared by fenced and unfenced callers, for example durable ride restores
 | Firebase Auth and recursive deletes | No destination fence exists. Local authority is checked immediately before each call; a dispatched call can finish after revocation with an unknown outcome. Fleet Auth reconciliation keeps its durable lock until every dispatched call settles, and lease expiry never authorizes a lock takeover or a blind replay. Durable deletion jobs survive an interrupted cleanup and are removed only under a valid lease. |
 
 Firestore and RTDB cannot share one lease atomically. An RTDB generation check applies only after a newer generation has written to that node, and deleting a node also deletes its generation. Requests already dispatched cannot be recalled.
+
+### 3.4 Single-instance deployments
+
+The staging Cloud Run service (`deploy/cloud-run/staging.service.yaml`) runs at most one instance per revision (`maxScale` 1) with `WORKER_ENABLED=true` and CPU that is not throttled outside requests, so outside a deploy that instance is the worker leader while it runs. Each process starts the coordinator when its HTTP listener starts, and its first renewal runs at once and takes the lease when it is free or expired more than 2 s ago. Orderly shutdown on `SIGTERM` releases the lease when the process holds it and no renewal is in flight, so another instance takes it at its next renewal. After a crash, the lease stays held until 45 s after the last renewal, and another instance takes it at its first renewal more than 2 s after that.
+
+During a backend deploy, `deploy-backend-staging` gates a candidate revision on its `/health` before moving traffic to it (`.github/workflows/deploy.yml`), so the candidate's instance can run beside the serving one. The instance that holds the lease keeps it; the other runs no leader work until the lease is released or expires.
+
+While no instance runs, no leader work runs. When an instance takes the lease, the trip state engine rereads current state ([work admission](WORK_ADMISSION.md#32-lifecycle-recovery-after-overload)) and, with `RETENTION_SWEEPER_ENABLED=true`, the retention sweep runs at once. The staging minimum-instance schedule and wake-on-traffic behaviour are described in the [staging runtime configuration](STAGING_RUNTIME_CONFIG.md#2-project-facts). Before starting a local backend against shared staging, set `WORKER_ENABLED=false` in `backend/.env`. The example sets `true`, which allows the local process to acquire the shared lease and run stop progress, retention and other leader work against staging.
 
 ## 4. Configuration
 

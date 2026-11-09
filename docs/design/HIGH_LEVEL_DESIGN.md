@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-ARC-002 | 3.0 | Current | 2026-10-30 |
+| EKI-ARC-002 | 3.1 | Current | 2026-11-07 |
 
 ## 1. Introduction
 
@@ -23,10 +23,10 @@ Backend paths are relative to `backend/src/`, frontend paths to `frontend/src/`.
 | Lifecycle worker | Evaluate each fix against the next expected stop, checkpoint progress, complete rides, arm return trips, mark silent buses offline, interrupt abandoned rides | `services/tripStateEngine.ts`, `services/tripStateReducer.ts`, `services/staleBusSweeper.ts`, `services/abandonedRideReconciler.ts` | Run in more than one process at a time |
 | Public projection | Copy an allow-listed subset of each live record into route-scoped browser views and the live route catalog | `services/liveBusProjection.ts` | Expose anchors, claims, histories or device identifiers |
 | Fleet and route administration | Buses, operators, devices, routes, settings and passenger route schedules; route geometry previews and saves as recoverable operations; fleet authorization reconciliation; place search | `routes/fleet.ts`, `routes/polyline.ts`, `routes/settings.ts`, `routes/places.ts`, `services/httpOperations.ts` | Edit a route while a ride uses it |
-| Identity and authorization | Verify Firebase ID tokens with revocation checks, publish role claims with a rotating `authorizationVersion`, mirror it for database rules | `middleware/requireAuth.ts`, `middleware/requireAdmin.ts`, `services/authTokenVerifier.ts`, `services/userAuthorization.ts`, `syncRoleClaims.ts`, `firestore.rules`, `database.rules.json` | Accept a role stated by the browser |
+| Identity and authorization | Verify Firebase ID tokens with revocation checks, publish role claims with a rotating `authorizationVersion`, mirror it for database rules | `middleware/requireAuth.ts`, `middleware/requireAdmin.ts`, `middleware/adminAuthority.ts`, `services/authTokenVerifier.ts`, `services/userAuthorization.ts`, `syncRoleClaims.ts`, `firestore.rules`, `database.rules.json` | Accept a role stated by the browser |
 | Data lifecycle | Retention sweeps, account deletion requests, administrator history deletion, each resumable after partial failure | `services/retentionSweeper.ts`, `services/rtdbRetention.ts`, `services/privacyDeletionWorker.ts`, `services/rideHistoryDeletion.ts` | Delete active rides or their locks |
 | Coordination and health | Hold the worker lease and fence stale leaders, expose readiness and metrics, export OpenTelemetry data when configured | `services/workerCoordinator.ts`, `lib/workerFence.ts`, `lib/healthState.ts`, `lib/metrics.ts`, `instrumentation.ts` | Report readiness from a single failed background write |
-| Web client | Passenger and administrator workspaces, live map, client-side ETA and liveness, direct feedback writes, service worker | `app/`, `components/`, `lib/liveBusStore.ts`, `lib/liveBusHealth.ts`, `lib/busEta.ts`, `lib/feedbackStore.ts`, `sw.js` | Write ride lifecycle or live state |
+| Web client | Passenger and administrator workspaces, live map, client-side ETA and liveness, direct feedback writes, a guide to adding Eki to the home screen, service worker | `app/`, `components/`, `lib/installPlatform.ts`, `lib/liveBusStore.ts`, `lib/liveBusHealth.ts`, `lib/busEta.ts`, `lib/feedbackStore.ts`, `sw.js` | Write ride lifecycle or live state |
 
 ## 3. Interfaces between subsystems
 
@@ -86,6 +86,7 @@ Both databases deny by default. No client can write RTDB, ride lifecycle, fleet 
 | Tracker loses network, or the backend is unreachable | Missing fixes; HTTP errors or timeouts on the tracker | The tracker keeps up to 100 samples in RTC memory and retries with jittered backoff from 1 to 30 s, replaying only fresh samples. Passengers see "Updates delayed" after 12 s and "Live tracking lost" after 30 s, timed in the browser on the server timeline. The stale sweep marks the bus offline after `BUS_STALE_MS` (300 s by default) without ending the ride |
 | Tracker loses power | Boot after a cold start | A flash checkpoint written every 10 s restores the last committed fix; samples not yet sent can be lost ([cold power recovery](../hardware/COLD_POWER_RECOVERY.md)) |
 | Backend process stops or crashes | Lease not renewed within 45 s | Another process acquires the lease with a higher generation; fencing rejects writes from the old leader. The new leader replays `activeBuses` and fleet state. Telemetry restores missing live lifecycle fields from `active_rides` ([worker leadership](../operations/WORKER_LEADERSHIP.md)) |
+| Backend scaled to zero (Cloud Run staging without a minimum instance) | The first request after an idle period starts an instance; a cold start took about 4.5 s on 2026-11-03 | The tracker's 1.5 s request timeout expires and it retries until the instance answers. `/health` returns 503 until the first Firestore and RTDB probes succeed. With no other lease holder, the new instance becomes the worker leader and replays live state as above ([staging runtime configuration](../operations/STAGING_RUNTIME_CONFIG.md#8-verification)) |
 | Write succeeds in Firestore but not in RTDB | Live record behind the durable checkpoint | Firestore is always written first. The next fix or replay republishes the live state without moving the durable stop index backwards. Ride creation retries reuse a stable creation key and resume the same session |
 | Delayed work for an old session | Session ID differs from the current owner | Every lifecycle, completion and cleanup transaction compares the session ID and aborts on mismatch |
 | Ride left open | No activity for 12 h | The hourly reconciler marks the session `interrupted` and releases only its own lock and recovery record |

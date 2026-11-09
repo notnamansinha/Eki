@@ -43,7 +43,7 @@ These operations have no alias: `POST /api/shifts/stop` (End ride early), `GET /
 
 ## 4. Current status
 
-- Both generations of every pair in Section 3 are implemented and listed in [`openapi.json`](openapi.json).
+- Both generations of every pair in Section 3 are implemented and listed in [`openapi.json`](../../backend/openapi.json).
 - The web app calls three resource-style paths: settings, privacy deletion and ride start. It calls the original path for every other pair it uses. It also calls the v2-only `PUT /api/v2/settings/passenger-routes` from the administrator settings tab.
 - The backend counts requests by generation and result class for every pair except device disable and fleet reconciliation, and also for End ride early and geometry reads (`backend/src/lib/apiCompatibilityTraffic.ts`). The counts are process-local, reset on restart, and appear in `telemetry.apiCompatibility` of `GET /api/health` and in the OpenTelemetry metric `eki.api.compatibility.requests`. They contain no client identifiers.
 
@@ -55,7 +55,7 @@ An original path may be removed only in a separate change that:
 
 1. shows, from persistent metrics rather than process-local counters, at least 30 consecutive days without supported-client traffic on that path;
 2. is made at least 90 days after the web app stopped calling the path;
-3. updates [`openapi.json`](openapi.json), [API.md](API.md), this document and the route tests in the same change;
+3. updates [`openapi.json`](../../backend/openapi.json), [API.md](API.md), this document and the route tests in the same change;
 4. is announced to the owners of any other clients.
 
 The compatibility rules for changing the contract are in the [HTTP contract](../api/HTTP_CONTRACT.md).

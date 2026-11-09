@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-HW-004 | 1.0 | Current | 2026-10-30 |
+| EKI-HW-004 | 1.1 | Current | 2026-11-07 |
 
 ## 1. Introduction
 
@@ -22,7 +22,7 @@ The telemetry publisher keeps one verified HTTPS connection open between samples
 
 ### 3.1 Connection ownership
 
-One publisher-owned, static `HTTPClient` lives for the whole process, so its destructor never closes the socket between samples. It is configured once: 1 s connect timeout, 1.5 s request timeout, reuse on, redirects off, and six collected response headers (`Retry-After`, `X-Eki-Server-Received-At`, `X-Eki-Server-Responded-At`, `Ngrok-Error-Code`, `Content-Length`, `Transfer-Encoding`). Root CA, hostname and clock validation stay on. The backend's keep-alive timeout is 65 s, so the 1 s telemetry cadence keeps the socket warm.
+One publisher-owned, static `HTTPClient` lives for the whole process, so its destructor never closes the socket between samples. It is configured once: 1 s connect timeout, 1.5 s request timeout, reuse on, redirects off, and six collected response headers (`Retry-After`, `X-Eki-Server-Received-At`, `X-Eki-Server-Responded-At`, `Ngrok-Error-Code`, `Content-Length`, `Transfer-Encoding`). Root CA, hostname and clock validation stay on. The server that terminates the device's TLS connection decides how long an idle socket stays open: Google's front end for the Cloud Run backend, the ngrok edge for a tunnelled workstation, or the TLS reverse proxy in front of a VPS backend ([VPS guide](../../deploy/vps/README.md)). The repository sets none of these idle limits. The Node.js server's own limits, a 65 s keep-alive timeout and at most 100 requests per socket (`backend/src/server.ts`), apply only to a device that connects to the backend process directly over `http://` on a bench network. Between accepted samples the telemetry socket is idle for about 1 s.
 
 ### 3.2 Request boundary guard
 

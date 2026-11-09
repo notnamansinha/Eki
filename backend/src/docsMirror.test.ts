@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, relative, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const repositoryRoot = resolve(__dirname, "../..");
@@ -40,7 +40,9 @@ function expectedMirror(source: string) {
       .replaceAll("](LICENSE)", "](../../LICENSE)")
       .replaceAll("](hardware/", "](../hardware/");
   } else if (!source.includes("/")) {
-    content = content.replaceAll("](docs/", "](../");
+    content = content
+      .replaceAll("](docs/", "](../")
+      .replaceAll("](.github/", "](../../.github/");
   } else if (source === "hardware/README.md") {
     content = content
       .replaceAll("](../docs/hardware/", "](")
@@ -48,11 +50,21 @@ function expectedMirror(source: string) {
       .replaceAll("](../docs/", "](../")
       .replaceAll("](../backend/", "](../../backend/")
       .replaceAll("](../frontend/", "](../../frontend/");
-  } else if (/^(backend|frontend|hardware)\//.test(source)) {
+  } else if (/^(backend|deploy|e2e|frontend|hardware|qa)\//.test(source)) {
+    // The mirror sits one folder deeper, under docs/, so a link written as
+    // "../" repeated once per source folder level, then "docs/<path>", needs
+    // the same "../" run followed by "<path>". Dropping "docs/" from the
+    // "../docs/" suffix does that at any depth: "../../docs/x" becomes "../../x".
     content = content.replaceAll("../docs/", "../");
+  }
+  if (source.startsWith("backend/")) {
+    content = content.replaceAll("](openapi.json)", "](../../backend/openapi.json)");
   }
   return content;
 }
+
+const linkTargets = (content: string) =>
+  [...content.matchAll(/\]\(([^)\s]+)\)/g)].map((match) => match[1].split("#")[0]);
 
 describe("repository documentation mirrors", () => {
   for (const source of documentationSources()) {
@@ -61,4 +73,23 @@ describe("repository documentation mirrors", () => {
       expect(normalizedFile(mirror)).toBe(expectedMirror(source));
     });
   }
+
+  it("resolves every link into docs/ to the same file from the mirror", () => {
+    const broken: string[] = [];
+    for (const source of documentationSources()) {
+      const mirror = mirrorPath(source);
+      const sourceTargets = linkTargets(normalizedFile(source));
+      const mirrorTargets = linkTargets(normalizedFile(mirror));
+      expect(mirrorTargets).toHaveLength(sourceTargets.length);
+      sourceTargets.forEach((target, index) => {
+        if (!target || /^[a-z][a-z0-9+.-]*:/i.test(target)) return;
+        const fromSource = resolve(repositoryRoot, dirname(source), target);
+        if (!relative(resolve(repositoryRoot, "docs"), fromSource).match(/^[^.]/)) return;
+        if (!existsSync(fromSource)) return;
+        const fromMirror = resolve(repositoryRoot, dirname(mirror), mirrorTargets[index]);
+        if (fromMirror !== fromSource) broken.push(`${mirror}: ${mirrorTargets[index]} (source ${target})`);
+      });
+    }
+    expect(broken).toEqual([]);
+  });
 });

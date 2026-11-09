@@ -8,7 +8,7 @@
 
 This package defines how to prepare, capture and review witnessed L5 evidence: a tracker in a moving vehicle or on a bench, observed against an independent reference. It performs no drive, flash, provisioning, RF transmission, cloud change or provider experiment by itself. Automated reports from the [QA programme](README.md) never ingest this form or promote it to software acceptance.
 
-[Issue #351](https://github.com/notnamansinha/Eki/issues/351) is the working acceptance checklist. It consolidates the original requirements of issues #245, #246, #300 (GNSS truth and compound recovery during motion) and #337. A checkmark in a software pull request or in this document does not close a field requirement. The [field capture procedure](../docs/operations/FIELD_CAPTURE.md) describes the serial recording and archive steps for a ride.
+[Issue #351](https://github.com/notnamansinha/Eki/issues/351) is the working acceptance checklist. It consolidates the original requirements of issues #245, #246, #300 (GNSS truth and compound recovery during motion) and #337. A checkmark in a software pull request or in this document does not close a field requirement. The [field capture procedure](../operations/FIELD_CAPTURE.md) describes the serial recording and archive steps for a ride.
 
 ## 2. Capture identity before a run
 
@@ -71,7 +71,7 @@ Compare cloud usage only across matched, approved observation windows with equiv
 | Power, thermal and watchdog | Dedicated current-limited spare board, supply measurements, measured task and reset behaviour, retained queue integrity |
 | Journal and reset recovery | Actual board, environment and storage layout; safe interrupted-write and reset setup; measured loss window for the last useful checkpoint |
 | TLS, receiver and network | Correct CA, hostname and clock; receiver firmware and setup; measured connection and fix recovery |
-| OTA and protected fleet | Witnessed spare-board procedure and signing-key custody; valid and rejected image boots; active-ride deferral; follow [hardware security provisioning](../docs/security/HARDWARE_SECURITY_PROVISIONING.md) |
+| OTA and protected fleet | Witnessed spare-board procedure and signing-key custody; valid and rejected image boots; active-ride deferral; follow [hardware security provisioning](../security/HARDWARE_SECURITY_PROVISIONING.md) |
 | Live OAuth and Maps | Disposable staging access with owner permission, bounded quotas and cost acknowledgement, actual provider and browser evidence (L4, outside unattended CI) |
 | Production rollout | Maintainer review, required checks, environment, retention and security ownership, release sign-off |
 
@@ -101,7 +101,7 @@ Untested or blocked partitions:
 Named owner review and decision, date and reason:
 ```
 
-An OBSERVED result means evidence exists for that run. It is not a whole-case or fleet release pass. Review failures and uncertainty against the predefined oracle, keep adverse evidence, and update issue #351 only after the owner reviews it. Record the reviewed result as a new evidence record in `docs/testing/` and list it in the [testing index](../docs/testing/README.md).
+An OBSERVED result means evidence exists for that run. It is not a whole-case or fleet release pass. Review failures and uncertainty against the predefined oracle, keep adverse evidence, and update issue #351 only after the owner reviews it. Record the reviewed result as a new evidence record in `docs/testing/` and list it in the [testing index](../testing/README.md).
 
 Software gaps stay software work. The [execution ledger](EXECUTION_EVIDENCE.md) lists every requirement without a reviewed mapping; do not move a software gap into a field gate.
 

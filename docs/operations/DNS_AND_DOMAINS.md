@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-OPS-002 | 1.1 | Current | 2026-11-02 |
+| EKI-OPS-002 | 1.2 | Current | 2026-11-07 |
 
 ## 1. Purpose
 
@@ -13,7 +13,7 @@ This procedure connects custom domains to the Eki frontend and backend, and list
 | Component | Origin | Notes |
 |---|---|---|
 | Frontend | `https://bustrack-be165.web.app` (also `https://bustrack-be165.firebaseapp.com`) | Firebase Hosting default domains; no custom domain is configured in the repository |
-| Backend (staging) | `https://eki-backend-staging-449313371438.asia-south2.run.app` | The Cloud Run service URL; there are no DNS records to manage. Devices flashed earlier may name the offline ngrok domain ([ngrok tunnel](NGROK_TUNNEL.md)). |
+| Backend (staging) | `https://eki-backend-staging-449313371438.asia-south2.run.app` | The Cloud Run service URL, which the firmware template `hardware/include/secrets.example.h` also names; there are no DNS records to manage. A device built with the ngrok origin keeps calling that offline tunnel until it is reflashed ([ngrok tunnel](NGROK_TUNNEL.md)). |
 | Production frontend (planned) | `https://eki-production.web.app` | Named in `.github/workflows/deploy.yml`; the project is not provisioned |
 
 A custom domain changes three build or runtime values, each in a different place:
@@ -30,9 +30,9 @@ A custom domain changes three build or runtime values, each in a different place
 
 1. In the Firebase console, open Hosting for the project and add the custom domain. Expected: the console lists the DNS records to create.
 2. At the DNS provider, create exactly those records: a TXT record that proves ownership and A records (AAAA as well in advanced setup) that point to Hosting. Remove existing A, AAAA or CNAME records for that name that point elsewhere [1]. Expected: after propagation the console shows the domain as connected and issues a certificate.
-3. Add `NEXT_PUBLIC_SITE_URL: https://<frontend-host>` to the build step of `.github/workflows/deploy.yml` through a pull request; the workflow does not pass it today. Set the `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN` secret as described in Section 4. Expected: after the next Deploy run, the page's canonical link uses the custom host.
-4. Add `https://<frontend-host>` to `CORS_ORIGIN` on the backend and restart it. For the staging service, change `deploy/cloud-run/staging.service.yaml` through a pull request, then dispatch Deploy from `main` with `environment: staging` and `deploy_backend: true`. Keep the `web.app` origin as well: the Deploy workflow's backend check sends `Origin: https://bustrack-be165.web.app` and fails without it.
-5. Add the host to the HTTP referrer restrictions of the Firebase browser API key and the Maps JavaScript API key in the Google Cloud console. Expected: maps load on the custom host.
+3. Add `NEXT_PUBLIC_SITE_URL: https://<frontend-host>` to the `env` of the `npm run build:production` step in the Deploy job that publishes that host (`deploy-staging` or `deploy-production` in `.github/workflows/deploy.yml`) through a pull request; neither job passes it. Set the `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN` secret as described in Section 4. Expected: after the next Deploy run, the page's canonical link uses the custom host.
+4. Add `https://<frontend-host>` to `CORS_ORIGIN` on the backend and restart it. For the staging service, change `deploy/cloud-run/staging.service.yaml` through a pull request, then dispatch Deploy from `main` with `environment: staging` and `deploy_backend: true`. Keep the `web.app` origin as well: on such a dispatch the staging release check sends `Origin: https://bustrack-be165.web.app` and fails without it.
+5. Add the host to the HTTP referrer restrictions of the Firebase browser API key and of the Maps browser key, which belongs to the Google Cloud project `bustrack-501917` ([CI, deployment and releases](CI_CD_AND_RELEASES.md#53-environments-secrets-and-variables)). Expected: maps load on the custom host.
 
 ## 4. Firebase Authentication domains
 
@@ -44,13 +44,14 @@ Keeping the Auth helper on the frontend's own host prevents browsers that partit
 
 ## 5. Backend hostname
 
-Any backend hostname must serve HTTPS with a certificate chain that ends in the root CA compiled into the device firmware. The frontend and firmware store the origin only, without a path; they append `/api/...` themselves. A production frontend build rejects a backend URL that is not HTTPS or that points at a local host.
+Any backend hostname must serve HTTPS with a certificate chain that ends in the root CA compiled into the device firmware. The frontend and firmware store the origin only, without a path; they append `/api/...` themselves. A production frontend build rejects a backend URL that is not HTTPS or that points at a local host. The firmware template `hardware/include/secrets.example.h` names the Cloud Run origin and its root CA, GTS Root R1, so a build from an unchanged copy compiles both in; the template's comment records the chain through Google Trust Services WR2 to that root.
 
 | Option | DNS work | Frontend and device settings |
 |---|---|---|
-| Current: Cloud Run service URL | None | `NEXT_PUBLIC_BACKEND_URL` names the Cloud Run origin; trackers built with the ngrok origin need a reflash with it |
+| Current: Cloud Run service URL | None | `NEXT_PUBLIC_BACKEND_URL` and the firmware template name the Cloud Run origin; trackers built with the ngrok origin need a reflash with it |
 | Evaluated and not adopted on 2026-11-02 ([issue #372](https://github.com/notnamansinha/Eki/issues/372)): same origin as the frontend through Hosting rewrites | None beyond Section 3 | Both settings name the frontend origin; the device trusts the Hosting certificate's root CA |
 | Separate API host, for example `api.<domain>` | Create the records that the Cloud Run domain mapping or load balancer shows | Both settings name the API origin; the strict build adds it to the CSP; backend `CORS_ORIGIN` lists the frontend origins |
+| Backup: the backend image on a Docker host behind a TLS reverse proxy ([VPS guide](../../deploy/vps/README.md)) | An A record (and an AAAA record for IPv6) for the API host that points at the server | Both settings name the API origin; the device trusts the root CA of the proxy's certificate; the backend sets `TRUST_PROXY=1` behind one proxy and lists the frontend origins in `CORS_ORIGIN` |
 
 After any change to `NEXT_PUBLIC_BACKEND_URL`, run the strict build (`npm run build:production` locally, or the Deploy workflow). It writes the backend origin into the CSP `connect-src` in `firebase.json` and fails if the policy would block it. Do not edit the generated CSP by hand. `BACKEND_URL` is a firmware setting, not a backend environment variable.
 
@@ -66,7 +67,7 @@ Run from the repository root in PowerShell:
 
 1. `Resolve-DnsName <frontend-host>`. Expected: the A records from the Hosting console.
 2. `curl.exe -sI https://<frontend-host>`. Expected: `HTTP/1.1 200` (or `HTTP/2 200`) with `content-security-policy` and `strict-transport-security` headers.
-3. `Invoke-RestMethod https://<backend-host>/health`. Expected: `status: ok`.
+3. `Invoke-RestMethod https://<backend-host>/health`. Expected: `status: ok`. A Cloud Run instance that is starting from zero answers `503` until its first Firestore and RTDB probes succeed; repeat the request after a few seconds ([staging runtime configuration](STAGING_RUNTIME_CONFIG.md#8-verification)).
 4. `node scripts/check-stationary-runtime.mjs --frontend https://<frontend-host> --backend https://<backend-host>`. Expected: every check passes, each allowing the frontend origin.
 5. Sign in with Google on the custom host. Expected: no `auth/unauthorized-domain` error.
 6. Watch a device's serial log. Expected: telemetry responses `200` or `202` to the backend host.
@@ -80,6 +81,7 @@ Run from the repository root in PowerShell:
 | Google sign-in returns to a blank page or loses state | Auth domain not on the frontend host, or redirect URI missing | Section 4, steps 2 and 3 |
 | Browser blocks API calls with a CSP error | Frontend built with another backend origin | Correct `NEXT_PUBLIC_BACKEND_URL` and redeploy |
 | Browser blocks API calls with a CORS error | Frontend origin missing from `CORS_ORIGIN` | Add it and restart the backend |
+| Cloud Run answers every request, including `/health`, with HTTP `403` | `allUsers` lacks `roles/run.invoker` on the service | Restore the binding; `deploy-backend-staging` grants it on every run ([CI, deployment and releases](CI_CD_AND_RELEASES.md#52-steps)) |
 | Device TLS or DNS failure after a hostname change | Device still compiled with the old origin or root | Reflash |
 
 ## 9. References

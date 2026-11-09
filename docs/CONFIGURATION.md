@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-GEN-005 | 1.5 | Current | 2026-11-03 |
+| EKI-GEN-005 | 1.6 | Current | 2026-11-07 |
 
 ## 1. Purpose
 
@@ -18,9 +18,11 @@ Values in this document are placeholders. Use a separate Firebase project and se
 | `frontend/.env.local` | `frontend/env.production.example` | The Next.js dev server and build, and the build scripts `scripts/update-csp.mjs` and `scripts/verify-web-backend-contract.mjs` through `scripts/load-frontend-env.mjs` | Dev server restart or rebuild. `NEXT_PUBLIC_*` values are compiled into the browser bundle. |
 | `hardware/include/secrets.h` | `hardware/include/secrets.example.h` | The firmware build | Rebuild and reflash |
 | Shell environment | `qa/qa.env.example` for the GNSS property run | QA, test and release scripts | Next command |
-| GitHub environment secrets and variables | Section 7 | `.github/workflows/deploy.yml` | Next workflow run |
+| GitHub secrets and variables | Section 7 | `.github/workflows/deploy.yml`, `.github/workflows/publish-backend-image.yml` | Next workflow run |
+| `deploy/cloud-run/staging.service.yaml` | Tracked manifest; the values and their reasons are in [staging runtime configuration](operations/STAGING_RUNTIME_CONFIG.md#3-values) | The `deploy-backend-staging` job in `.github/workflows/deploy.yml`, which renders it with `envsubst` and applies it with `gcloud run services replace` | Next `deploy-backend-staging` run |
+| `deploy/vps/backend.env` | `backend/.env.example` | Docker Compose (`env_file` in `deploy/vps/docker-compose.yml`) for the backup VPS backend. Compose reads `backend.env` from the directory that holds the Compose file, so on a server it sits next to the copied `docker-compose.yml`. The shell variable `EKI_BACKEND_IMAGE` names the image, and Compose refuses to start without it. See the [VPS guide](../deploy/vps/README.md). | `docker compose up -d` |
 
-Git ignores `backend/.env`, `frontend/.env*` and `hardware/include/secrets.h`. Never commit a filled copy, and never paste service-account JSON, device secrets, Wi-Fi passwords, bearer tokens or signing keys into an issue, a pull request or a log. Browser Firebase and Maps values are public identifiers: restrict them by hostname and API, and do not treat them as authorization.
+Git ignores `backend/.env`, `frontend/.env*`, `deploy/vps/backend.env` and `hardware/include/secrets.h`. Never commit a filled copy, and never paste service-account JSON, device secrets, Wi-Fi passwords, bearer tokens or signing keys into an issue, a pull request or a log. Browser Firebase and Maps values are public identifiers: restrict them by hostname and API, and do not treat them as authorization.
 
 ## 3. Backend variables
 
@@ -145,7 +147,9 @@ All frontend variables are `NEXT_PUBLIC_*` values: Next.js compiles them into th
 | `NEXT_PUBLIC_SITE_INDEXING` | No | Enabled | `false` disables search indexing and sitemap discovery; any other value enables them. Use `false` for preview and staging builds. | `src/lib/siteMetadata.ts` |
 | `NEXT_PUBLIC_SERVICE_TIME_ZONE` | No | `Asia/Kolkata` | IANA time zone for ride history timestamps. | `src/components/admin/RideHistoryPanel.tsx` |
 | `NEXT_PUBLIC_PASSENGER_BUS_START_TIME` | No | `8:00 am` | Service start time shown to passengers when no bus is running and the admin setting is empty. | `src/config/passenger.ts` |
-| `NEXT_PUBLIC_BUS_EXPIRY_MS` | No | `300000` (template `3600000`) | How long a silent bus stays on the passenger map and route list; Live Ops never removes it. The passenger "Live tracking lost" threshold is the smaller of 30 s and half this value; "Updates delayed" is the smaller of 12 s and that threshold. | `src/lib/liveBusFreshness.ts` |
+| `NEXT_PUBLIC_BUS_EXPIRY_MS` | No | `300000` | How long a silent bus stays on the passenger map and route list; Live Ops never removes it. The passenger "Live tracking lost" threshold is the smaller of 30 s and half this value; "Updates delayed" is the smaller of 12 s and that threshold. | `src/lib/liveBusFreshness.ts` |
+| `NEXT_PUBLIC_BUILD_VERSION` | No | Empty | Build label that the passenger **Profile** footer shows as `build <value>`; the footer omits it when empty. No workflow sets it. | `src/config/university.ts`, `src/components/passenger/AccountTab.tsx` |
+| `NEXT_PUBLIC_BUILD_DATE` | No | Empty | Build date that the same footer shows after the build label; omitted when empty. No workflow sets it. | `src/config/university.ts`, `src/components/passenger/AccountTab.tsx` |
 
 `scripts/update-csp.mjs` and `scripts/verify-web-backend-contract.mjs` load `frontend/.env*` with `@next/env` in production mode, and shell values take precedence, as in `next build`. The contract check is skipped only when neither the shell nor a `frontend/.env*` file sets `NEXT_PUBLIC_BACKEND_URL`.
 
@@ -196,7 +200,7 @@ These variables are set in the shell or by the scripts themselves. None belongs 
 
 ## 7. CI and deployment secrets
 
-`.github/workflows/deploy.yml` reads these names from the `staging` and `production` GitHub environments. No other workflow reads secrets or variables.
+`.github/workflows/deploy.yml` reads the names marked "Secret" or "Variable" from the `staging` and `production` GitHub environments. `.github/workflows/publish-backend-image.yml` reads the two Docker Hub repository secrets. No other workflow reads secrets or variables.
 
 | Name | Kind | Used for |
 |---|---|---|
@@ -204,15 +208,17 @@ These variables are set in the shell or by the scripts themselves. None belongs 
 | `FIREBASE_DATABASE_URL` | Secret | RTDB instance that the deployed backend uses; compared with the frontend value by `npm run verify:rtdb-instance` |
 | `NEXT_PUBLIC_FIREBASE_API_KEY` | Secret | Strict production build |
 | `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN` | Secret | Strict production build |
-| `NEXT_PUBLIC_FIREBASE_DATABASE_URL` | Secret | Strict production build and RTDB preflight |
+| `NEXT_PUBLIC_FIREBASE_DATABASE_URL` | Secret | Strict production build and RTDB preflight. `deploy-backend-staging` also compares it with `FIREBASE_DATABASE_URL` in `deploy/cloud-run/staging.service.yaml` |
 | `NEXT_PUBLIC_FIREBASE_PROJECT_ID` | Secret | Strict production build |
 | `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET` | Secret | Strict production build |
 | `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID` | Secret | Strict production build |
 | `NEXT_PUBLIC_FIREBASE_APP_ID` | Secret | Strict production build |
 | `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` | Secret | Strict production build |
 | `NEXT_PUBLIC_GOOGLE_MAP_ID` | Secret | Strict production build |
-| `NEXT_PUBLIC_BACKEND_URL` | Secret | Strict production build and live backend check |
+| `NEXT_PUBLIC_BACKEND_URL` | Secret | Strict production build and live backend check. On staging the check runs only when the dispatch also deploys the backend (`deploy_backend`) |
 | `RTDB_EXPECTED_REGION` | Variable | Expected RTDB region. Every Deploy release requires it (`--require-region`); the CI preflight checks it only when set |
+| `DOCKERHUB_USERNAME` | Repository secret | Docker Hub account that receives `<username>/eki-backend:<commit-sha>`. While it or the token is unset, the workflow skips publishing |
+| `DOCKERHUB_TOKEN` | Repository secret | Docker Hub access token for that push. Only the credential check and the push step read it |
 
 The release flow is described in [CI, deployment and releases](operations/CI_CD_AND_RELEASES.md).
 
@@ -265,6 +271,7 @@ These values are source constants, not environment variables. Changing one is a 
 | Passenger route schedules: at most 50 routes, 24-hour `HH:mm` stop times | `MAX_PASSENGER_ROUTES`, `STOP_TIME_PATTERN` | `backend/src/routes/settings.ts`, `frontend/src/lib/passengerRouteSchedule.ts` |
 | Slow sign-in restoration notice: 8 s | `AUTH_RESTORE_SLOW_MS` | `frontend/src/hooks/useAuth.ts` |
 | Navigation wait before the service worker serves cached HTML: 2.5 s | `NAVIGATION_NETWORK_BUDGET_MS` | `frontend/src/sw.js` |
+| University links in the passenger **Profile** footer (privacy notice, terms of use, accessibility, help and contact): each is hidden while its URL is empty, and all four URLs are empty | `UNIVERSITY_LINKS` | `frontend/src/config/university.ts` |
 
 The [tracking algorithms](design/TRACKING_ALGORITHMS.md) document explains the ride thresholds. Queue, deadline and cache bounds are documented in [telemetry deadlines](operations/TELEMETRY_DEADLINES.md), [work admission](operations/WORK_ADMISSION.md), [operation resources](api/OPERATION_RESOURCES.md), [reconciliation](operations/RECONCILIATION.md), [privacy deletion](operations/PRIVACY_DELETION.md), [route catalog](operations/ROUTE_CATALOG.md) and [worker leadership](operations/WORKER_LEADERSHIP.md).
 

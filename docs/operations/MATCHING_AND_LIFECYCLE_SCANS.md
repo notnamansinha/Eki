@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-OPS-014 | 1.0 | Current | 2026-10-30 |
+| EKI-OPS-014 | 1.1 | Current | 2026-11-07 |
 
 ## 1. Purpose
 
@@ -41,6 +41,10 @@ Admin health (`GET /api/health`) exposes:
 
 Counters are process-local. Compare deltas per fix or per cycle on the current leader; do not sum them across replicas.
 
+### 3.4 Replay of swept records
+
+When the trip engine starts, for example after a restart or a leadership change, it replays every live record in `activeBuses`. For a record that the sweep marked `deviceState: offline` and whose fix time differs from the backend clock by more than 60 s, the engine writes neither the ride's `active_rides` lifecycle checkpoint nor the live record, so the replay does not refresh the ride's activity for the [abandoned-session reconciler](RECONCILIATION.md#33-cross-store-safety) (`backend/src/services/tripStateEngine.ts:991` to `:999`). The ride's recorded signal-loss time for that fix stays unchanged, both on replay and when the record is later removed (`backend/src/services/tripStateEngine.ts:433`). The next fresh fix from the device marks the record online again and the ride continues.
+
 ## 4. Configuration
 
 | Item | Value | Source |
@@ -62,7 +66,7 @@ Counters are process-local. Compare deltas per fix or per cycle on the current l
 | Page read or transaction fails | The cursor is kept and the page is retried after the backoff. | Inspect `worker.staleSweep` background failures in admin health. |
 | Wall clock steps backwards | A scheduled wait longer than its bound is discarded, so cleanup does not stall until wall time catches up. | None. |
 | Leadership lost during a page | Fenced transactions abort; the next leader starts a new cycle. | None. |
-| `timestamp` index missing on the RTDB instance | Ordered queries are not served from an index. | Deploy `database.rules.json` to the selected RTDB instance before the backend that uses these queries. Leaving the index installed after a backend rollback is safe. |
+| `timestamp` index missing on the RTDB instance | Ordered queries are not served from an index. | Deploy `database.rules.json` through the `rtdb` deploy target (`firebase deploy --only database:rtdb`), which `.firebaserc` maps to the selected RTDB instance, before the backend that uses these queries. Leaving the index installed after a backend rollback is safe. |
 
 ## 6. Verification
 
@@ -72,6 +76,7 @@ Counters are process-local. Compare deltas per fix or per cycle on the current l
 | Progress rule after a GNSS gap and near a turnaround | `backend/src/services/routeMatchingGapBraking.integration.test.ts` |
 | Sweep cursor, ties, partial-page failure and stale generations | `backend/src/services/staleBusSweeper.test.ts` |
 | Sweep against a real RTDB emulator | `backend/src/staleBusSweeper.integration.test.ts`, run by `npm run test:rules` |
+| Replay of a swept-offline record after an engine restart: no activity refresh, unchanged signal-loss time | `backend/src/services/routingLifecycle.integration.test.ts` |
 
 The search benchmark compares the optimized matcher with a frozen full-scan copy (`backend/src/test-support/routeMatchingBaseline.ts`), asserts equal answers, then times both. Run it from the repository root:
 

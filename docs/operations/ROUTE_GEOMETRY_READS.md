@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-OPS-020 | 1.0 | Current | 2026-10-30 |
+| EKI-OPS-020 | 1.1 | Current | 2026-11-07 |
 
 ## 1. Purpose
 
@@ -16,7 +16,7 @@ The document covers `GET /api/routes/{routeId}/geometry`, the shared admin route
 
 ### 3.1 Read endpoint
 
-`GET /api/routes/{routeId}/geometry` requires a signed-in user and returns the stored forward and reverse polylines with their distances, durations, `configVersion` and `geometryVersion`. It never calls Google, never starts a repair and never writes Firestore, including when the caller is an administrator. Responses set `Cache-Control: private, no-store`, and only the listed geometry fields are returned.
+`GET /api/routes/{routeId}/geometry` requires a signed-in user and returns the stored forward and reverse polylines with their distances, durations, `configVersion` and `geometryVersion`. It never calls Google, never starts a repair and never writes Firestore, including when the caller is an administrator. Every response for a valid route ID sets `Cache-Control: private, no-store`. The 400 response and authentication and rate-limit rejections keep the `Cache-Control: no-store` default that the backend sets on every `/api` response ([`backend/src/server.ts`](../../backend/src/server.ts)). Only the listed geometry fields are returned.
 
 | Condition | Response |
 |---|---|

@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-HW-001 | 1.0 | Current | 2026-10-30 |
+| EKI-HW-001 | 1.1 | Current | 2026-11-07 |
 
 ## 1. Introduction
 
@@ -45,7 +45,7 @@ Messages are not signed. The firmware adds no per-message signature or MAC. Auth
 1. TLS server authentication. The firmware validates the certificate chain against `BACKEND_ROOT_CA` and the hostname from `BACKEND_URL`, and does not follow redirects on telemetry requests.
 2. The shared device secret. The backend compares it with a salted scrypt verifier in the device registry and takes the bus and route from the registry, never from the request body.
 
-The TLS profile in `tls_profile.cpp` offers only `TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256` and `TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384` with curve P-256, for every TLS client in the firmware. The backend and the firmware artifact host must therefore present an RSA certificate that chains to `BACKEND_ROOT_CA`. Telemetry and diagnostics prepare a fresh, single-use P-256 key after DNS resolution and before they connect. The TLS handshake timeout is 10 s.
+The TLS profile in `tls_profile.cpp` offers only `TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256` and `TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384` with curve P-256, for every TLS client in the firmware. The backend and the firmware artifact host must therefore present an RSA certificate that chains to `BACKEND_ROOT_CA`. The Cloud Run staging origin and the GTS Root R1 certificate in the firmware template meet this requirement ([hardware guide](../../hardware/README.md#43-compile-time-configuration-file)). Telemetry and diagnostics prepare a fresh, single-use P-256 key after DNS resolution and before they connect. The TLS handshake timeout is 10 s.
 
 Development builds also accept an `http://` backend. The device secret then crosses the network unencrypted, so use `http://` only on a trusted bench network. Fleet builds reject `http://` at compile time and at boot.
 
@@ -81,7 +81,7 @@ The firmware classifies each telemetry response as follows. A delay is the minim
 | Any other status, for example `400`, `413` or `422` | Drop | 30 s |
 | The firmware cannot serialize a complete payload | Drop | 30 s |
 
-A retried sample stays queued only if it will still be fresh after the delay (Section 4.4); otherwise the firmware drops it and the next attempt sends the newest fresh sample. Each attempt always sends the newest fresh sample in the queue, which may be a capture made during the delay. The consecutive-failure count is capped at 6.
+A retried sample stays queued only if it will still be fresh after the delay (Section 4.4); otherwise the firmware drops it and the next attempt sends the newest fresh sample. Each attempt always sends the newest fresh sample in the queue, which may be a capture made during the delay. The consecutive-failure count is capped at 6. The firmware reads `Retry-After` only on `429`; the backend's `503` also carries `Retry-After: 1`, and the firmware applies the `5xx` backoff to it instead.
 
 ## 3. Operations
 
@@ -209,7 +209,7 @@ Each RMC sentence with a valid checksum and status `A` produces a candidate fix.
 
 A valid fix is captured only if it is plausible against the last captured fix. The firmware mirrors the backend rule in `backend/src/lib/telemetryMotion.ts`:
 
-- Travel envelope: the distance must not exceed an error budget plus travel at the faster of the two reported speeds (capped at 200 km/h) over the whole gap. The error budget is 15 m plus 7 m per HDOP unit (50 m when HDOP is unknown), plus 10 m when both speeds are at most 2.5 km/h, plus 1 m per 2 s of gap beyond 10 s (at most 10 m), bounded to 15 to 50 m.
+- Travel envelope: the distance must not exceed an error budget plus travel at the faster of the two reported speeds (capped at 200 km/h) over the whole gap. The firmware computes the error budget with each fix's HDOP and uses the larger value. Each budget is 15 m plus 7 m per HDOP unit (50 m when HDOP is unknown), plus 10 m when both speeds are at most 2.5 km/h, plus 1 m per 2 s of gap beyond 10 s (at most 10 m), bounded to 15 to 50 m.
 - Reacquisition: after 5 min without a capture, any valid fix is accepted.
 - Re-anchoring: three consecutive rejected fixes re-anchor the reference (about 3 s). Each must have HDOP from 0 to 4, follow the previous one by 0.5 to 5 s, be plausible against it, and be reachable from the old reference at 200 km/h. A single outlier, or one sentence evaluated twice, never re-anchors.
 
@@ -288,12 +288,13 @@ Wi-Fi runs in station mode only, with persistence off, automatic reconnection on
 | Receiver, antenna or UART | `[GNSS] Not connected`, `gnssFixAvailable` `false`, checksum or UART overflow counters | One GNSS-loss packet, then silence until a valid fix | Physical inspection, antenna placement |
 | Wi-Fi or hotspot | `[WiFi]` lines, RSSI, transport errors | Indefinite bounded retry; samples queue and expire after 55 s | Coverage and hotspot redundancy |
 | Clock | `[Clock]` rejection lines | No telemetry or TLS while untrusted | Check receiver time and NTP reachability |
-| Backend or Firebase | `5xx`, transport errors | Exponential retry with jitter; newest sample first on recovery | Backend availability |
+| Backend or Firebase | `5xx`, transport errors | Exponential retry with jitter after `5xx`, and 250 ms to 2 s after transport errors (Section 2.4); newest sample first on recovery | Backend availability |
 | Device credential | `401`, three LED pulses | Publishing stops and the radio switches off until restart | Repair the registry, reprovision or reflash, then restart |
-| Device assignment | `403` | Wi-Fi stays on; retry every 60 s | Repair the bus and route assignment |
+| Device assignment | `403` | Wi-Fi stays on; retry every 60 s | Repair the bus and route assignment. Cloud Run also answers `403` when `allUsers` lacks the invoker role ([hardware guide](../../hardware/README.md#10-troubleshooting)). |
 | Root CA rotation | TLS failure | Fails closed | Reflash with the new root CA before the old issuer expires |
 | Hardware security (fleet) | Four LED pulses, diagnostics booleans | Halts after the `secrets.h` checks and before it starts networking | [Hardware security provisioning](../security/HARDWARE_SECURITY_PROVISIONING.md) |
 | Task stall | Watchdog reset, `[Boot] Recovered from ... reset` | Restart; the RTC queue survives | Capture the serial log |
+| Backend cold start (Cloud Run with no running instance) | Read timeouts on the first requests after an idle period | Transport retry after 250 ms to 2 s; samples stay queued under the 55 s expiry | None, or a minimum instance ([staging runtime configuration](../operations/STAGING_RUNTIME_CONFIG.md#8-verification)) |
 
 ## 7. Diagnosis and evidence
 

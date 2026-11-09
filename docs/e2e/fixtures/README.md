@@ -2,11 +2,11 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-PKG-008 | 2.1 | Current | 2026-11-04 |
+| EKI-PKG-008 | 2.2 | Current | 2026-11-07 |
 
 ## 1. Purpose
 
-This Vite fixture renders the real passenger workspace, route carousel, passenger map logic, timeline, route schedule tab, profile, feedback modal and application CSS with synthetic data held in memory. It has no Firebase connection, credentials or backend writes. It serves manual layout checks and the automated passenger layout suite.
+This Vite fixture renders the real passenger layout and theme, transit artwork, passenger workspace with its Live routes panel, route carousel, passenger map logic, timeline, route schedule tab, profile, feedback modal and application CSS with synthetic data held in memory. It serves the static files in `frontend/public`, so the artwork images are the published ones. It has no Firebase connection, credentials or backend writes. It serves manual layout checks and the automated passenger layout suite.
 
 ## 2. What is real and what is replaced
 
@@ -32,7 +32,9 @@ This Vite fixture renders the real passenger workspace, route carousel, passenge
 
 3. Open a route card and check Back and the **Live**, **Routes** and **Profile** tabs. With `multiple`, select the second bus. The synthetic `settings/passengerRoutes` approves the Campus Loop and then QA route; add `?schedule=demo` to add the five-stop Campus Loop route, which has no live service and appears only in the **Routes** tab, with one stop deliberately left without a time. Without that parameter the Routes tab shows QA route alone. `many-routes` adds seven more QA routes, each with one bus, so the desktop Live Routes list overflows and scrolls. `device` opens the route with a stationary tracker position and no ride. `empty` and `completed` offer no selectable service.
 
-4. Check at desktop size and at 390 x 844. Inactive panels must be absent from the accessibility tree and must not intercept pointer clicks.
+4. Check at desktop size and at 390 x 844. Inactive panels must be absent from the accessibility tree and must not intercept pointer clicks. With touch emulation the Live routes panel rests as a peek above the tab bar; select **Show live routes** to raise it before opening a route card. With a mouse or other fine pointer the panel stays centred and has no toggle.
+
+5. Add `?role=admin` to sign the synthetic user in as an administrator, which adds the **Admin panel** link to Profile. `?view=admin&role=admin` mounts the real admin page with the placeholder panels of Section 2. The **QA view** list also offers `settings`, which mounts the real settings panel.
 
 ## 4. Automated layout suite
 
@@ -40,7 +42,9 @@ This Vite fixture renders the real passenger workspace, route carousel, passenge
 npx playwright test --config playwright.passenger-layout.config.ts
 ```
 
-The configuration starts this fixture and runs every spec in `e2e/passenger-layout/` (`warnings`, `video-audit`, `routes-schedule`, `transit-artwork` and `desktop-live-routes`) in five projects: touch-enabled narrow 360 x 800, mobile 390 x 844 and reported-phone 440 x 956, short-desktop 1280 x 585 and desktop 1280 x 800. The tests check, among other things, that location-delay, reconnecting and GNSS-loss warnings sit below the variable-height ride header without overlap and clear on recovery; that offline and stale buses leave the picker; that the footer, navigation, chat overlay and feedback modal keep their positions on short and landscape screens; that on landscape touch phones (844 x 390 and 568 x 320) a route card shows inside the Live Routes panel and the open route timeline header is not covered by the ride controls; and that the passenger frame cannot scroll under the viewport. `routes-schedule.spec.ts` opens `/?schedule=demo` and checks the compact published-route rows, local search, one-sided scheduled timeline, keyboard focus, navigation at phone and desktop widths, browser history and the return to live routes. Screenshots and traces go to `artifacts/passenger-layout/`, which CI keeps for seven days.
+The configuration starts this fixture and runs every spec in `e2e/passenger-layout/` (`warnings`, `video-audit`, `routes-schedule`, `transit-artwork`, `desktop-live-routes` and `home-sheet`) in five projects, one worker at a time: touch-enabled narrow 360 x 800, mobile 390 x 844 and reported-phone 440 x 956, short-desktop 1280 x 585 and desktop 1280 x 800. The tests check, among other things, that location-delay, reconnecting and GNSS-loss warnings sit below the variable-height ride header without overlap and clear on recovery; that offline and stale buses leave the picker; that the footer, navigation, chat overlay and feedback modal keep their positions on short and landscape screens; that on landscape touch phones (844 x 390 and 568 x 320) a route card shows inside the Live Routes panel and the open route timeline header is not covered by the ride controls; that the collapsed route timeline takes pointer input only on its header; and that the passenger frame cannot scroll under the viewport. `routes-schedule.spec.ts` opens `/?schedule=demo` and checks the compact published-route rows, local search, one-sided scheduled timeline, keyboard focus, navigation at phone and desktop widths, browser history and the return to live routes.
+
+`home-sheet.spec.ts` checks the touch-screen Live routes sheet with `many-routes`: at rest only its heading shows above the tab bar and the route list is inert; a tap on **Show live routes** or **Hide live routes**, or Enter and Space from the keyboard, raises and lowers it; and in portrait the artwork slides up while it is raised. Pointer devices get no toggle. `desktop-live-routes.spec.ts` checks that phones show the raised sheet at full width and desktops a centred, scrolling list of eight routes with a "Scroll for more routes" hint, and that keyboard focus returns to the chosen route card after Back. `transit-artwork.spec.ts` checks that the artwork fills the viewport from one WebP composition sharp enough for the device pixel ratio, keeps the same image after a tab switch, and changes between the portrait and landscape compositions on rotation. Specs that open or measure a route card first raise the sheet through the shared helper `liveRoutes.ts`. Screenshots and traces go to `artifacts/passenger-layout/`, which CI keeps for seven days.
 
 ## 5. Limits
 

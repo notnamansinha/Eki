@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-TST-005 | 1.0 | Current | 2026-10-30 |
+| EKI-TST-005 | 1.1 | Current | 2026-11-07 |
 
 ## 1. Purpose
 
@@ -11,7 +11,7 @@
 ## 2. Prerequisites
 
 - Node 24, Java 21 and locked dependencies.
-- Free ports: Firestore 8085, RTDB 9005, Auth 9095, hub 4405, logging 4505. The launcher stops with a message naming the port and its owner when a previous run still holds one.
+- Free ports: Firestore 8085, Firestore WebSocket 9150, RTDB 9005, Auth 9095, hub 4405, logging 4505. The launcher stops with a message naming the port and its owner when a previous run still holds one.
 - No real credentials in the environment. The safety preflight rejects them before any tooling starts.
 
 ## 3. Procedure
@@ -36,7 +36,7 @@ Deadlines: the Vitest child stops after 4 minutes and the launcher after 6 minut
 
 `qaTelemetryChain.integration.test.ts` mounts the real device router and bounded JSON parser on an ephemeral loopback port. Device credential checks, payload parsing, the RTDB transaction, route watcher, trip worker, public projection and Firestore lifecycle all run against the emulators. Firebase initialisation is injected; database operations are real. Google route computation throws if called; route geometry and identities are synthetic.
 
-It asserts that unauthorised, forged and oversized requests change nothing; that a valid device fix creates presence without inventing passenger service; that response timing headers are present; that duplicate and delayed old samples are handled; and that ride identity, activation and the public projection are durable. It does not exercise every global middleware or the production bootstrap.
+It asserts that unauthorised, forged and oversized requests change nothing; that a valid device fix creates presence without inventing passenger service; that response timing headers are present; that duplicate and delayed old samples are handled; and that ride identity, activation and the public projection are durable. It also asserts that authenticated telemetry admits one automatic service without a start request, and starts none when service is paused, the bus assignment is ambiguous or the fix is poor; that the next fresh fix repairs an interrupted setup or admits a repaired assignment; that a stationary midpoint session stays pending and keeps its identity after RTDB loss; that a service starts with a new ride identity after cleanup interruption, a reconciler timeout or a failed return; and that a qualified terminal recovers exactly once after stale deletion and a leader restart. It does not exercise every global middleware or the production bootstrap.
 
 ## 5. Evidence
 
@@ -48,7 +48,7 @@ Teardown drains route processing, stops workers, closes HTTP connections and ter
 
 | Symptom | Cause and action |
 |---|---|
-| `SocketException: Invalid argument: connect` during Java startup on Windows | The emulator cannot open its Unix domain socket in this environment. The run is BLOCKED, not passed. Use the Linux CI run as evidence |
+| `SocketException: Invalid argument: connect` during Java startup on Windows | The emulator cannot open its Unix domain socket in this environment. In the current shell only, point `jdk.net.unixdomain.tmpdir` at a short writable folder whose path contains no spaces, for example `$env:JAVA_TOOL_OPTIONS = '-Djdk.net.unixdomain.tmpdir=C:/eki-sockets'`, and run again ([Java networking properties](https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/net/doc-files/net-properties.html)). If the error remains, the run is BLOCKED, not passed. Use the Linux CI run as evidence |
 | A port is reported as held by another process | A previous run left an emulator running. Stop that process and run again |
 | `npm test` passes but no emulator test ran | The suites are declared with `describe.skip` unless `FIREBASE_RULES_TEST=1`. Run `npm run test:rules` |
 

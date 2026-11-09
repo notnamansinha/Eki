@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-API-001 | 3.2 | Current | 2026-11-06 |
+| EKI-API-001 | 3.3 | Current | 2026-11-07 |
 
 ## 1. Introduction
 
@@ -10,7 +10,7 @@
 
 This document specifies every HTTP operation that the Eki backend serves: who may call it, how to authenticate, what to send, what comes back and which limits apply. It is written for developers of the web app, the device firmware and any other client.
 
-The machine-readable contract is [`openapi.json`](openapi.json) (OpenAPI 3.1.1 [1]). `npm run verify:openapi` fails when an operation registered in the code is missing from that file or from this document, or when either names an operation that does not exist. How the contract is validated, and the boundary between HTTP operations and Firebase SDK reads and writes, are described in the [HTTP contract](../api/HTTP_CONTRACT.md). Firebase listeners are not HTTP operations and are not listed here.
+The machine-readable contract is [`openapi.json`](../../backend/openapi.json) (OpenAPI 3.1.1 [1]). `npm run verify:openapi` fails when an operation registered in the code is missing from that file or from this document, or when either names an operation that does not exist. How the contract is validated, and the boundary between HTTP operations and Firebase SDK reads and writes, are described in the [HTTP contract](../api/HTTP_CONTRACT.md). Firebase listeners are not HTTP operations and are not listed here.
 
 ### 1.2 Callers
 
@@ -49,7 +49,7 @@ The API has one version. Paths under `/api/v2/` are resource-style aliases that 
 
 ```mermaid
 flowchart TD
-    A[Incoming request] --> B[Metrics, security headers, CORS]
+    A[Incoming request] --> B[Metrics, security headers, no-store default under /api, CORS]
     B --> C[Browser ingress limiter, per client IP]
     C --> D{TRACE or CONNECT}
     D -- yes --> D1[405]
@@ -153,7 +153,7 @@ These are not repeated under each operation. Operations list their own statuses 
 
 Headers:
 
-- Every response under `/api` carries `Cache-Control: no-store`, including authentication failures, rate-limit rejections and parse errors; geometry reads set `private, no-store`. Clients and proxies must not cache API responses.
+- Every response under `/api` carries `Cache-Control: no-store`, including authentication failures, rate-limit rejections, parse errors and CORS preflights. The backend sets this default before CORS and routing (`backend/src/server.ts`); a handler that sets its own header replaces it, and geometry reads set `private, no-store`. Clients and proxies must not cache API responses.
 - CORS allows only the origins in `CORS_ORIGIN` (plus `http://localhost:3000` outside production), without credentials, and exposes `Location`, `Retry-After`, `X-Reconciliation-Complete` and `X-Next-Cursor` to browser code.
 
 Retry guidance: do not resend a 400, 401, 403, 404, 409 or 422 unchanged. On 429 and 503, wait for `Retry-After` or `retryAfterMs`. When `outcomeUnknown` is `true`, retry with the same idempotency key, save ID or request ID, or read the status resource, so that the backend can return the original outcome.
@@ -213,7 +213,7 @@ Each operation lists its caller, request, success response and the statuses spec
 `GET /api/health`
 
 - Caller: administrator. Exempt from the per-account read budget.
-- Success: 200, or 503 when not ready, with `status`, `firestore` and `rtdb` (`connected` or `disconnected`), `telemetry`, `backgroundTasks` and `checkedAt`. `telemetry` holds process-local counters: accepted and rejected samples, credential cache hit rate, work queue states, latency summaries over the last 512 samples, rate-limit counters, route processing, API read caches and legacy-path traffic. `backgroundTasks` flags a source as `sustained` after 5 failures within 5 minutes and logs `[BackgroundFailures] SUSTAINED failure alert` once per episode. Counters reset when the process restarts. The schema is `AdminHealth` in [`openapi.json`](openapi.json); queue fields are explained in [work admission](../operations/WORK_ADMISSION.md).
+- Success: 200, or 503 when not ready, with `status`, `firestore` and `rtdb` (`connected` or `disconnected`), `telemetry`, `backgroundTasks` and `checkedAt`. `telemetry` holds process-local counters: accepted and rejected samples, credential cache hit rate, work queue states, latency summaries over the last 512 samples, rate-limit counters, route processing, API read caches and legacy-path traffic. `backgroundTasks` flags a source as `sustained` after 5 failures within 5 minutes and logs `[BackgroundFailures] SUSTAINED failure alert` once per episode. Counters reset when the process restarts. The schema is `AdminHealth` in [`openapi.json`](../../backend/openapi.json); queue fields are explained in [work admission](../operations/WORK_ADMISSION.md).
 
 ### 3.2 Device ingestion
 
@@ -400,7 +400,7 @@ A ride session is a `ride_sessions/{sessionId}` document with status `pending`, 
 `POST /api/sessions/:sessionId/boarding-code` and `POST /api/v2/ride-sessions/:sessionId/boarding-code`
 
 - Caller: an administrator, or the operator whose `driverId` and `assignedBusId` claims match the session.
-- Success: 200 `{"sessionId","boardingCode"}`, with an 8-character code created on the first call and stored on the session. Boarding (Section 3.6.1) does not use the code, and the web app, including Live Ops, no longer calls this operation; it remains for older clients.
+- Success: 200 `{"sessionId","boardingCode"}`, with an 8-character code created on the first call and stored on the session. Boarding (Section 3.6.1) does not use the code, and the web app, including Live Ops, does not call this operation. The backend serves it for older clients.
 - Errors: 400 invalid ID; 403 not allowed, or session not `armed` or `active`; 404 unknown session; 500.
 
 #### 3.6.3 Send a chat message
