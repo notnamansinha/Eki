@@ -66,8 +66,16 @@ function rewriteDestination(destination, source, mirror, sources) {
   if (target === ".." || target.startsWith("../")) return destination;
   const decoded = safeDecode(target);
   const from = posix.dirname(mirror);
-  // mirrorPath only changes the leading folder, so the author's percent-encoding is kept.
-  let rewritten = sources.has(decoded) ? posix.relative(from, mirrorPath(target)) : posix.relative(from, target) || ".";
+  let rewritten;
+  if (!sources.has(decoded)) {
+    rewritten = posix.relative(from, target) || ".";
+  } else if (decoded.split("/").length === target.split("/").length) {
+    // mirrorPath only changes the leading folder, so the author's percent-encoding is kept.
+    rewritten = posix.relative(from, mirrorPath(target));
+  } else {
+    // An encoded separator such as %2F: pick the mirror folder from the decoded path.
+    rewritten = posix.relative(from, mirrorPath(decoded)).split("/").map(encodeURIComponent).join("/");
+  }
   if (path.endsWith("/") && !rewritten.endsWith("/")) rewritten += "/";
   return `${rewritten}${suffix}`;
 }
@@ -86,27 +94,46 @@ const destinationGap = String.raw`[ \t]*(?:\n[ \t>]*)?`;
 const destination = String.raw`<[^>\n]*>|[^\s()<>]*(?:\([^\s()]*\)[^\s()<>]*)*`;
 // One attribute of an inline HTML tag.
 const htmlAttribute = String.raw`\s+[A-Za-z_:][\w.:-]*(?:\s*=\s*(?:[^\s"'=<>\x60]+|'[^']*'|"[^"]*"))?`;
+// An optional link title, then the closing parenthesis. Both are kept as written.
+const linkTitle = String.raw`"(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*'|\((?:\\[\s\S]|[^()\\])*\)`;
+const linkEnd = String.raw`(?:(?:[ \t]+|[ \t]*\n[ \t>]*)(?:${linkTitle}))?[ \t]*(?:\n[ \t>]*)?\)`;
 
 // Matched from left to right, so whichever starts first wins, as in CommonMark:
-// an escaped character, a code span, an unmatched backtick run, an inline HTML
-// tag or comment, or an inline link destination. Only the last is rewritten.
+// an escaped character, a code span, an unmatched backtick run, an autolink, an
+// inline HTML tag or comment, a complete inline link destination, or a bracket.
+// Only a link destination is rewritten, and only after an unescaped `[`.
 // \x60 is a backtick.
 const inlineSyntax = new RegExp(
   [
     String.raw`\\[!-/:-@[-\x60{-~]`,
     String.raw`(\x60+)(?!\x60)[\s\S]*?(?<!\x60)\1(?!\x60)`,
     String.raw`\x60+`,
+    String.raw`<[A-Za-z][A-Za-z0-9+.-]{1,31}:[^\s<>]*>`,
     String.raw`<[A-Za-z][A-Za-z0-9-]*(?:${htmlAttribute})*\s*\/?>|<\/[A-Za-z][A-Za-z0-9-]*\s*>|<!--[\s\S]*?-->`,
-    String.raw`(\]\(${destinationGap})(${destination})`,
+    String.raw`(\]\(${destinationGap})(${destination})(${linkEnd})`,
+    String.raw`(\[|\])`,
   ].join("|"),
   "g",
 );
 
-// A reference definition may sit inside blockquotes or list items.
+// A reference definition may sit inside blockquotes or list items. Its label may
+// hold escaped brackets and span lines.
 const definitionSyntax = new RegExp(
-  String.raw`^((?:[ \t]*(?:>|[-+*][ \t]|\d{1,9}[.)][ \t]))*[ \t]*\[[^\]\n]+\]:${destinationGap})(<[^>\n]*>|\S+)`,
+  String.raw`^((?:[ \t]*(?:>|[-+*][ \t]|\d{1,9}[.)][ \t]))*[ \t]*\[(?:\\[\s\S]|[^\\\[\]])+\]:${destinationGap})(<[^>\n]*>|\S+)`,
   "gm",
 );
+
+/** Rewrites the destinations of the inline links in one run of Markdown text. */
+function rewriteInlineLinks(text, context) {
+  let openBrackets = 0;
+  return text.replace(inlineSyntax, (match, ticks, open, inline, end, bracket) => {
+    if (bracket === "[") openBrackets += 1;
+    if (bracket === "]" && openBrackets > 0) openBrackets -= 1;
+    if (!open || openBrackets === 0) return match;
+    openBrackets -= 1;
+    return `${open}${rewriteWrapped(inline, ...context)}${end}`;
+  });
+}
 
 const markdown = new MarkdownIt({ html: true });
 const containers = new Set(["blockquote_open", "bullet_list_open", "ordered_list_open", "list_item_open"]);
@@ -152,9 +179,7 @@ export function mirrorContent(source, content, sources = new Set(documentationSo
   return lineRuns(content)
     .map(({ kind, text }) => {
       if (kind === "text") {
-        return text.replace(inlineSyntax, (match, ticks, open, inline) =>
-          open ? `${open}${rewriteWrapped(inline, ...context)}` : match,
-        );
+        return rewriteInlineLinks(text, context);
       }
       if (kind === "definitions") {
         return text.replace(

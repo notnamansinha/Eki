@@ -57,23 +57,14 @@ function proseOnly(text) {
   return text.replace(/^(```|~~~)[^\n]*\n[\s\S]*?^\1[^\n]*$/gm, '').replace(/`[^`\n]*`/g, '');
 }
 
-/** Strips HTML tags until none remain, so nested fragments such as `<scr<x>ipt>` cannot leave a tag behind. */
-function withoutTags(text) {
-  let previous;
-  do {
-    previous = text;
-    text = text.replace(/<[^<>]*>/g, '');
-  } while (text !== previous);
-  return text;
-}
-
 /**
- * The GitHub anchor for heading text. No trim: markdown-it already strips raw boundary
- * whitespace, and a space decoded from an entity such as `&#x20;` stays in the anchor.
+ * The GitHub anchor for rendered heading text from `inlineText`. Markup and HTML tags are
+ * already gone, so code such as `[foo](bar)` is kept as written. No trim: markdown-it
+ * already strips raw boundary whitespace, and a space decoded from an entity such as
+ * `&#x20;` stays in the anchor.
  */
 function slug(heading) {
-  return withoutTags(heading.toLowerCase())
-    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
+  return heading.toLowerCase()
     .replace(/[^\p{L}\p{N}\s_-]/gu, '')
     .replace(/\s/g, '-');
 }
@@ -164,6 +155,11 @@ test('anchors follow the rendered headings', () => {
     '## Route `v2` [guide](x.md)',
     '## Route v2 guide',
     '# &#x20;Entity',
+    '## Use `[foo](bar)` and `<b>`',
+    '',
+    'Multi',
+    'line',
+    '-----',
     '',
     '```md',
     '# Fenced',
@@ -178,7 +174,10 @@ test('anchors follow the rendered headings', () => {
     '',
     'Text <a name="inline"></a> and `<a id="code"></a>`',
   ].join('\n');
-  assert.deepEqual([...anchorsOf(example)].sort(), ['-entity', 'explicit', 'inline', 'route-v2-guide', 'route-v2-guide-1', 'setup']);
+  // A soft line break inside a heading adds no separator, so `Multi` / `line` gives `multiline`.
+  assert.deepEqual([...anchorsOf(example)].sort(), [
+    '-entity', 'explicit', 'inline', 'multiline', 'route-v2-guide', 'route-v2-guide-1', 'setup', 'use-foobar-and-b',
+  ]);
 });
 
 test('controlled documents carry a valid control block', () => {

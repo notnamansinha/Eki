@@ -174,6 +174,33 @@ describe("mirror link rewriting", () => {
     expect(mirrored("SECURITY.md", source)).toBe(source.replace("[y](LICENSE)", "[y](../../LICENSE)"));
   });
 
+  it("maps an encoded separator to the mirror folder of the decoded path", () => {
+    expect(mirrored("SECURITY.md", "[b](backend%2FREADME.md)")).toBe("[b](../backend/README.md)");
+  });
+
+  it("leaves autolinks alone", () => {
+    const source = "<https://example.com/[a](LICENSE)> and [b](LICENSE)";
+    expect(mirrored("SECURITY.md", source)).toBe(source.replace("[b](LICENSE)", "[b](../../LICENSE)"));
+  });
+
+  it("rewrites only complete links after an unescaped bracket, and never the title", () => {
+    const source = [
+      "\\[a](LICENSE) and [b](LICENSE and [c] d](LICENSE)",
+      '[e](LICENSE "See [f](LICENSE)") and [g [h] i](LICENSE)',
+    ].join("\n");
+    expect(linkTargets(source)).toEqual(["LICENSE", "LICENSE"]);
+    expect(mirrored("SECURITY.md", source)).toBe(
+      source.replace('[e](LICENSE "', '[e](../../LICENSE "').replace("i](LICENSE)", "i](../../LICENSE)"),
+    );
+  });
+
+  it("rewrites reference definitions whose label has escaped brackets or spans lines", () => {
+    const source = "Read [one][a\\]b] and [two][c\nd].\n\n[a\\]b]: LICENSE\n[c\nd]: LICENSE";
+    expect(mirrored("SECURITY.md", source)).toBe(
+      "Read [one][a\\]b] and [two][c\nd].\n\n[a\\]b]: ../../LICENSE\n[c\nd]: ../../LICENSE",
+    );
+  });
+
   it("rewrites destinations that start on the next line, but not in code or HTML", () => {
     const source = [
       "[t](",
