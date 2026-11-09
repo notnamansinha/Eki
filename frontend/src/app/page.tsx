@@ -117,7 +117,7 @@ export default function HomePage() {
         </h1>
 
         <p
-          className="text-white/90 text-balance max-w-[30em] mx-auto font-medium"
+          className="text-white text-balance max-w-[30em] mx-auto font-medium"
           style={{
             letterSpacing: "0.2px",
             textShadow: "0 2px 8px rgba(0,0,0,0.45)",
@@ -139,7 +139,7 @@ export default function HomePage() {
             ) : (
               <Image src="/google-g.svg" width={20} height={20} className="shrink-0" alt="" />
             )}
-            {loginLoading ? "Opening Google…" : loginReady ? "Continue with Google" : "Preparing sign-in…"}
+            <span>{loginLoading ? "Opening Google…" : loginReady ? "Continue with Google" : "Preparing sign-in…"}</span>
           </button>
         </div>
         <div className="mt-3 text-sm text-white drop-shadow-md">
@@ -181,7 +181,7 @@ export default function HomePage() {
         )}
       </section>
 
-      <footer className="transit-landing-footer relative z-10 w-full pb-8 px-6 md:px-12 flex flex-wrap gap-x-4 gap-y-2 justify-between items-center text-white/70">
+      <footer className="transit-landing-footer relative z-10 w-full pb-8 px-6 md:px-12 flex flex-wrap gap-x-4 gap-y-2 justify-between items-center text-white">
         <span className="text-xs font-bold drop-shadow-md">© 2026 Eki Transit</span>
         <span className="text-xs font-bold uppercase tracking-widest drop-shadow-md">Ahmedabad, India</span>
       </footer>
