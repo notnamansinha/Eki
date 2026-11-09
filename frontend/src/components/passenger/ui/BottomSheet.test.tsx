@@ -1,10 +1,16 @@
 // @vitest-environment jsdom
 import { useState } from "react";
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import BottomSheet from "./BottomSheet";
 afterEach(cleanup);
+/** A finger drag on the handle, followed by the click a browser sends on lift. */
+function swipe(target: HTMLElement, fromY: number, toY: number, toX = 100, click = true) {
+  fireEvent.pointerDown(target, { pointerId: 1, pointerType: "touch", clientX: 100, clientY: fromY });
+  fireEvent.pointerUp(target, { pointerId: 1, pointerType: "touch", clientX: toX, clientY: toY });
+  if (click) fireEvent.click(target);
+}
 function Sheet() {
   const [open, setOpen] = useState(false);
   return <BottomSheet isOpen={open} onToggle={() => setOpen(value => !value)} headerTitle="Configured route">
@@ -48,5 +54,41 @@ describe("timeline keyboard and hidden content", () => {
     expect(sheet.style.clipPath).toBe("inset(-40px 0 0)");
     // One transition for the slide and the clip keeps the moving edge on the navigation.
     expect(sheet.classList.contains("transition-[translate,clip-path]")).toBe(true);
+  });
+});
+describe("swiping the handle", () => {
+  it("opens on an upward swipe and closes on a downward swipe", () => {
+    render(<Sheet />);
+    const toggle = screen.getByRole("button", { name: "Configured route" });
+    // The gesture alone toggles: a finger that ends off the handle sends no click.
+    swipe(toggle, 400, 300, 100, false);
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    swipe(toggle, 300, 400, 100, false);
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    swipe(toggle, 400, 300);
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    swipe(toggle, 300, 400);
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  });
+  it("ignores swipes the wrong way and sideways drags instead of toggling", () => {
+    render(<Sheet />);
+    const toggle = screen.getByRole("button", { name: "Configured route" });
+    swipe(toggle, 300, 400);
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    swipe(toggle, 400, 395, 200);
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    swipe(toggle, 400, 300);
+    swipe(toggle, 400, 300);
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+  });
+  it("still toggles on a tap with a little finger wobble", () => {
+    render(<Sheet />);
+    const toggle = screen.getByRole("button", { name: "Configured route" });
+    swipe(toggle, 400, 396);
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+  });
+  it("keeps the browser from scrolling the page while the handle is dragged", () => {
+    render(<Sheet />);
+    expect(screen.getByRole("button", { name: "Configured route" }).classList.contains("touch-none")).toBe(true);
   });
 });

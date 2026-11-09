@@ -47,6 +47,7 @@ import {
 } from "@/lib/rideDirection";
 import InAppSelect from "@/components/ui/InAppSelect";
 import PassengerDate from "@/components/passenger/ui/PassengerDate";
+import { useSheetSwipe } from "@/components/passenger/ui/useSheetSwipe";
 import { isLiveChatDeviceOnline } from "@/lib/activeBusEntries";
 import { stopEstimateContext, stopEstimateLabel, type PassengerStopEstimates } from "@/lib/passengerStopEstimates";
 import {
@@ -632,6 +633,8 @@ export default function PassengerWorkspace() {
     }
     setHomeSheetChoice(!homeSheetOpen);
   };
+  // Swipe the peek up to raise the list and down to lower it; tapping still toggles.
+  const homeSheetSwipe = useSheetSwipe({ isOpen: homeSheetOpen, onToggle: toggleHomeSheet });
   // Only ride-recovery messages are written for riders; the others name internals.
   const plainDataError = !routesError && !catalogError && !detailDataError && rideRecoveryError
     ? rideRecoveryError
@@ -692,6 +695,7 @@ export default function PassengerWorkspace() {
                 aria-controls={homeRoutesId}
                 aria-label={homeSheetOpen ? "Hide live routes" : "Show live routes"}
                 onClick={toggleHomeSheet}
+                {...homeSheetSwipe}
               >
                 <ChevronUp className="pp-home-sheet-chevron" aria-hidden="true" />
               </button>
