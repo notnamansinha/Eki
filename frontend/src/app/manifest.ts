@@ -10,7 +10,10 @@ export default function manifest(): MetadataRoute.Manifest {
     start_url: '/',
     display: 'standalone',
     background_color: '#09090b',
-    theme_color: '#f2efec',
+    // Android paints the installed app's navigation-bar strip with this one
+    // colour on every page. It matches the dark start page (`/`) and its
+    // status bar so the sign-in painting runs to the gesture bar.
+    theme_color: '#09090b',
     icons: [
       {
         src: '/icon-192.png',

@@ -1,6 +1,7 @@
 import React, { ReactNode, useEffect, useId, useRef } from 'react';
 import { ChevronUp, ChevronDown } from 'lucide-react';
 import { passengerNavClearance } from '../passengerFrame';
+import { useSheetSwipe } from './useSheetSwipe';
 
 interface BottomSheetProps {
   isOpen: boolean;
@@ -26,6 +27,8 @@ export default function BottomSheet({
   // desktop dock floats and leaves the translated body visible around it.
   const bodyVisibility = `transition-opacity duration-200 ${isOpen ? "opacity-100" : "opacity-0"}`;
   const toggleRef = useRef<HTMLButtonElement>(null);
+  // Swipe the handle up to open and down to close; tapping still toggles.
+  const swipe = useSheetSwipe({ isOpen, onToggle });
   useEffect(() => {
     if (!isOpen) return;
     const close = (event: KeyboardEvent) => {
@@ -74,8 +77,9 @@ export default function BottomSheet({
           aria-expanded={isOpen}
           aria-controls={contentId}
           data-map-sheet-toggle
-          className="w-full h-[56px] flex items-center justify-between px-5 cursor-pointer relative rounded-t-[var(--pp-sheet-radius)]"
+          className="w-full h-[56px] flex items-center justify-between px-5 cursor-pointer relative rounded-t-[var(--pp-sheet-radius)] touch-none select-none"
           onClick={onToggle}
+          {...swipe}
         >
           {/* Drag handle */}
           <div className="pp-grabber absolute top-2 left-1/2 -translate-x-1/2 w-9 h-[5px] rounded-full" aria-hidden="true" />
