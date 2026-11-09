@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-UIX-001 | 3.0 | Current | 2026-11-08 |
+| EKI-UIX-001 | 3.1 | Current | 2026-11-09 |
 
 ## 1. Purpose
 
@@ -577,10 +577,12 @@ Under `prefers-reduced-motion: reduce`, `app/globals.css` sets every animation a
 | `start_url` | `/` |
 | `display` | `standalone` |
 | `background_color` | `#09090b` (`--surface-0`) |
-| `theme_color` | `#f2efec` (the AU off-white page) |
+| `theme_color` | `#09090b` (`--surface-0`, the dark start page) |
 | Icons | `/icon-192.png` 192 × 192 as `any` and as `maskable`; `/icon-512.png` 512 × 512 as `maskable` |
 
 The browser and installed-app status bar follow the page: `viewport.themeColor` is `#09090b` in `app/layout.tsx` for the dark landing page and `#f2efec` in `app/passenger/layout.tsx` and `app/admin/layout.tsx`, so no accent-coloured strip shows above the content.
+
+On Android, an installed app that does not draw behind the gesture bar gets a strip there painted with the manifest `theme_color` saved at install time, whatever page is open (it does not follow `viewport.themeColor`). The old orange `#FA5D29` showed as an orange band under the sign-in page. `theme_color` therefore matches the dark start page and `background_color`; on Passenger and Admin the strip reads as an ordinary dark navigation bar. An installed copy picks up the new colour when Chrome next updates the WebAPK, or on reinstall.
 
 `app/icon.png` (128 × 128) and `app/apple-icon.png` (180 × 180) supply the browser icon and the Apple touch icon through Next.js file conventions. The open-graph image is `/images/hero-background.webp`.
 

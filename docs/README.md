@@ -86,7 +86,7 @@ The register lists every controlled document by its source path. A mirror carrie
 
 | ID | Document | Version | Status | Last updated |
 |---|---|---|---|---|
-| EKI-UIX-001 | [Eki UI Design System](design/UI_DESIGN_SYSTEM.md) | 3.0 | Current | 2026-11-08 |
+| EKI-UIX-001 | [Eki UI Design System](design/UI_DESIGN_SYSTEM.md) | 3.1 | Current | 2026-11-09 |
 | EKI-UIX-002 | [Transit artwork delivery](context-docs/TRANSIT_ARTWORK.md) | 1.1 | Current | 2026-11-03 |
 
 ### 4.6 Interfaces (API)

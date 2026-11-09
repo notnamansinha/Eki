@@ -152,7 +152,11 @@ body {
 }
 
 .transit-landing-content h1 {
-  font-size: clamp(2.5rem, 15vw, 3.75rem);
+  /* 13vw keeps "campus bus" on one line from 320px phones up, whatever the
+     system font. The floor also stays below 11vw, so enlarged text cannot
+     push the longest word out of a narrow column. */
+  font-size: clamp(min(2.5rem, 11vw), 13vw, 3.75rem);
+  text-wrap: balance;
   margin-bottom: clamp(0.75rem, 3dvh, 1.5rem);
 }
 

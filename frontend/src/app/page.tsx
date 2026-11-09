@@ -117,7 +117,7 @@ export default function HomePage() {
         </h1>
 
         <p
-          className="text-white/90 text-balance max-w-[650px] mx-auto font-medium"
+          className="text-white/90 text-balance max-w-[30em] mx-auto font-medium"
           style={{
             letterSpacing: "0.2px",
             textShadow: "0 2px 8px rgba(0,0,0,0.45)",
@@ -132,7 +132,7 @@ export default function HomePage() {
             type="button"
             onClick={loginWithGoogle}
             disabled={loginLoading || !loginReady}
-            className="flex items-center justify-center gap-3 px-10 py-5 text-lg font-bold bg-white text-black rounded-full hover:bg-gray-200 active:scale-95 transition-transform disabled:opacity-60 shadow-xl"
+            className="flex items-center justify-center gap-3 px-5 sm:px-10 py-5 text-lg font-bold bg-white text-black rounded-[2.125rem] text-balance hover:bg-gray-200 active:scale-95 transition-transform disabled:opacity-60 shadow-xl"
           >
             {loginLoading || !loginReady ? (
               <Loader2 className="size-6 animate-spin" aria-hidden="true" />
