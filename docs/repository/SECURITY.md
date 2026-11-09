@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-SEC-001 | 1.2 | Current | 2026-11-03 |
+| EKI-SEC-001 | 1.3 | Current | 2026-11-07 |
 
 ## 1. Purpose
 
@@ -13,7 +13,7 @@ This policy states which Eki code receives security fixes, how to report a vulne
 | Component | Supported | Notes |
 |---|---|---|
 | Web app, Firestore and RTDB rules, Hosting configuration | Head of `main` | Staging deploys them from each successful push build on `main`, and only commits that `main` contains. Production deploys only by a manual workflow run from `main`. See [CI/CD and releases](../operations/CI_CD_AND_RELEASES.md). |
-| Backend | Head of `main`, and the revision serving the staging Cloud Run service | The manual `deploy-backend-staging` job deploys the backend from `main`, so the serving revision can be older than the head of `main`. A fix reaches staging at the next backend deployment. |
+| Backend | Head of `main`, and the revision serving the staging Cloud Run service | The manual `deploy-backend-staging` job deploys the backend from `main`, so the serving revision can be older than the head of `main`. A fix reaches staging at the next backend deployment. The backup `Publish backend image` workflow tags each Docker Hub image with its commit SHA and moves `latest` only to the head of `main`; a VPS host receives a fix when it pulls a newer image ([VPS backup path](../deploy/vps/README.md)). |
 | Tracker firmware | Signed builds of the `esp32dev-secure` PlatformIO environment | The `esp32dev`, `esp32dev-quiet` and `esp32dev-journal` environments are development builds without Secure Boot or flash encryption. |
 | Other branches, forks and earlier commits | Not supported | Reproduce a finding on `main` before reporting it. |
 
@@ -24,7 +24,7 @@ Fixes are made on `main` and reach deployments through the normal release pipeli
 ### 3.1 How to report
 
 1. Do not describe the vulnerability in a public issue, pull request, discussion or commit.
-2. Send the report privately to the repository owner listed in [`.github/CODEOWNERS`](.github/CODEOWNERS). If you cannot find a private channel, open a public issue that asks for one and contains no vulnerability details.
+2. Send the report privately to the repository owner listed in [`.github/CODEOWNERS`](../../.github/CODEOWNERS). If you cannot find a private channel, open a public issue that asks for one and contains no vulnerability details.
 3. Include the affected component and commit, the steps to reproduce, the impact you observed, and whether you accessed any data that is not yours.
 4. Use synthetic accounts and data. Do not attach real credentials, ID tokens, device secrets, location traces or unredacted logs.
 
@@ -47,7 +47,8 @@ This repository does not define a response time, a disclosure deadline or a boun
 | Security rules | `firestore.rules`, `database.rules.json` |
 | Hosting headers and Content Security Policy | `firebase.json`, `scripts/update-csp.mjs` |
 | Tracker firmware and fleet build configuration | `hardware/` |
-| Build, test and deployment automation | `scripts/`, `.github/workflows/` |
+| Build, test and deployment automation | `scripts/`, `.github/workflows/`, `.github/dependabot.yml` |
+| Backend deployment configuration (Cloud Run manifest, VPS compose file) | `deploy/` |
 
 Out of scope:
 
@@ -59,12 +60,13 @@ Out of scope:
 
 | Secret | Where it belongs |
 |---|---|
-| Firebase Admin service-account JSON | Backend runtime environment (`FIREBASE_SERVICE_ACCOUNT`) or Application Default Credentials |
+| Firebase Admin service-account JSON | Backend runtime environment (`FIREBASE_SERVICE_ACCOUNT`) or Application Default Credentials. On Cloud Run the backend uses the runtime service account and needs no key file. |
 | Device secret and Wi-Fi password | Ignored `hardware/include/secrets.h`, only inside the controlled signing environment |
 | Signed firmware image (`firmware-signed.bin`) | Contains the compiled `secrets.h` values. Publish it for OTA only on a backend that serves one device, at a URL protected like the device secret ([hardware security provisioning](../security/HARDWARE_SECURITY_PROVISIONING.md#6-signed-ota-release-and-rollback)) |
-| Secure Boot signing key | Offline signing environment ([key custody](hardware/keys/README.md)) |
+| Secure Boot signing key | Offline signing environment ([key custody](../hardware/keys/README.md)) |
 | Firebase deploy token | GitHub environment secret `FIREBASE_TOKEN` |
 | Server Google Maps key | Backend environment (`GOOGLE_MAPS_API_KEY`); on Cloud Run, Secret Manager secret `google-maps-server-key` |
+| Docker Hub publish token | GitHub repository secrets `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN`, referenced only by `.github/workflows/publish-backend-image.yml` |
 
 Rules for contributors:
 
@@ -78,6 +80,7 @@ If a secret is exposed:
 |---|---|
 | Device secret | Run `npm run provision-device --workspace=backend -- --device-id <id> --bus-id <id> --route-id <id>` to issue a new secret, then build and flash a new signed image. To stop the device first, an administrator calls `POST /api/devices/<deviceId>/disable`. |
 | Firebase Admin credential, deploy token or API key | Revoke it at Google Cloud or Firebase, issue a replacement, and update the store listed above. |
+| Docker Hub publish token | Revoke it in Docker Hub, issue a replacement and update `DOCKERHUB_TOKEN`. Then run `Publish backend image` from `main`, which rebuilds, scans and pushes the head of `main` under its commit tag and `latest`, and point each VPS host at that commit tag. Treat every tag pushed before the revocation as possibly replaced. |
 | Secure Boot signing key | Unset all six `FIRMWARE_RELEASE_*` backend variables to stop OTA distribution, and inform the university security owner who holds the key. Fleet trackers trust the public key digest burned into their eFuses; the repository defines no key replacement procedure. See [Hardware security provisioning](../security/HARDWARE_SECURITY_PROVISIONING.md). |
 
 ## 6. Handling personal and location data

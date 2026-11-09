@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-OPS-027 | 1.0 | Current | 2026-10-30 |
+| EKI-OPS-027 | 1.1 | Current | 2026-11-07 |
 
 ## 1. Purpose
 
@@ -36,7 +36,7 @@ Rejected or expired lifecycle work, and any failed live event, requests a reread
 
 The passenger projection uses the same pager for its own recovery: it reads a page of 25 each second while a pass is requested and fewer than 32 keys wait, and it requests a full pass every 60 s.
 
-Recovery starts from current state and already committed progress. It cannot reconstruct a movement or event time that was never observed or committed during the overload. Shutdown stops replay intake and waits for its single read within the engine's shutdown budget.
+Recovery starts from current state and already committed progress. It cannot reconstruct a movement or event time that was never observed or committed during the overload. Replaying a ride that went silent, at engine start or from a recovery page, does not make it look active again. A live record marked offline whose capture time is more than 60 s from the server clock writes no ride lifecycle progress, so it cannot refresh `active_rides.updatedAt`, which the [abandoned-session reconciler](RECONCILIATION.md) reads as activity. A signal-loss event already recorded on the ride session for that fix keeps its original time. Shutdown stops replay intake and waits for its single read within the engine's shutdown budget.
 
 ## 4. Configuration
 
@@ -93,6 +93,7 @@ Cross-store races between RTDB and Firestore, and dispatched effects that cannot
 | Newest-position replacement and follow-ups | `backend/src/lib/latestPendingScheduler.test.ts` |
 | Durable write FIFO and fingerprints | `backend/src/services/serializedChangeWriter.test.ts` |
 | Recovery paging, capacity waits and cursor retry | `backend/src/services/pagedLifecycleReplay.test.ts`, `backend/src/services/tripStateEngine.lifecycle.test.ts` |
+| A silent ride replayed after an engine restart still times out as abandoned, resumes when its receiver reports again and keeps its original signal-loss time (mocked Firebase) | `backend/src/services/routingLifecycle.integration.test.ts` |
 | Committed write with a held acknowledgement, queued expiry and a newer final write (Firebase emulators) | `backend/src/workerFence.integration.test.ts`, run by `npm run test:rules` |
 
 A synthetic stalled-dependency benchmark checks the limits and retained memory without any Firebase, provider or network access. Run it from the repository root:

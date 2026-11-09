@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-OPS-013 | 1.0 | Current | 2026-10-30 |
+| EKI-OPS-013 | 1.1 | Current | 2026-11-07 |
 
 ## 1. Purpose
 
@@ -23,10 +23,10 @@ The trace also installs a console API on `window.__ekiTelemetryTrace`:
 | Function | Effect |
 |---|---|
 | `clear()` | Starts a new run with a new `runId` and an empty buffer. The last server time offset is kept and no extra observers are added. |
-| `setScenario(name)` | Labels every later record with `name` (1 to 40 characters of `a-z`, `0-9`, `_` or `-`) and records a `browser_scenario` event. |
+| `setScenario(name)` | Trims and lower-cases `name`, labels every later record with it (1 to 40 characters of `a-z`, `0-9`, `_` or `-`; anything else throws) and records a `browser_scenario` event. |
 | `snapshot()` | Returns the current export object. |
 | `download(filename?)` | Saves the export as JSON. The default name is `eki-telemetry-<runId>.json`. |
-| `downloadHealth(filename?)` | Saves the response of `GET /api/health`. The signed-in user must be an administrator. |
+| `downloadHealth(filename?)` | Saves the response of `GET /api/health`. The signed-in user must be an administrator. The default name is `eki-telemetry-health-<epoch-ms>.json`. |
 
 ### 3.2 Record contents
 
@@ -48,7 +48,9 @@ A tab keeps at most 25,000 records. When the buffer is full the oldest record is
 
 ### 3.4 Liveness states during a capture
 
-The screens a trace records show the live bus health states specified in [tracking algorithms](../design/TRACKING_ALGORITHMS.md#9-live-bus-health): passengers see **GPS signal lost** as soon as a packet reports GNSS loss, **Updates delayed** after 12 s without a backend receipt, **Live tracking lost** after 30 s and **Bus offline** once the backend marks the device offline. ETAs and boarding stay available while updates are only delayed and are withheld in every other degraded state. The admin dashboard uses only the 30 s threshold, re-evaluated every 15 s, and then shows **Live location updates delayed** and, for an active ride, **Service paused**. Client-side timers apply these thresholds, so the states change even when no data and no backend are reachable. The trace records deliveries and renders, not the state changes. Silence alone does not identify whether the GNSS receiver, Wi-Fi, the backend or the browser failed.
+The screens a trace records show the live bus health states specified in [tracking algorithms](../design/TRACKING_ALGORITHMS.md#9-live-bus-health): passengers see **GPS signal lost** as soon as a packet reports GNSS loss, **Updates delayed** after 12 s without a backend receipt, **Live tracking lost** after 30 s and **Bus offline** once the backend marks the device offline. ETAs and boarding stay available while updates are only delayed and are withheld in every other degraded state. The admin dashboard uses only the 30 s threshold, re-evaluated every 15 s, and then shows **Live location updates delayed** and, for a ride with a session, **Service paused** with an orange marker. Client-side timers apply these thresholds, so the states change even when no data and no backend are reachable. The trace records deliveries and renders, not the state changes. Silence alone does not identify whether the GNSS receiver, Wi-Fi, the backend or the browser failed.
+
+The passenger banner `Reconnecting to live bus data…` (`Connecting to live bus data…` before the first connection) appears only while the RTDB connection is down, which the trace records as a `realtime_connection` event. A connected tab that is still waiting for live data, for example because the backend's passenger projection is not ready, shows `Live bus data is not available right now.` instead (`frontend/src/components/passenger/PassengerWorkspace.tsx`).
 
 ## 4. Configuration
 

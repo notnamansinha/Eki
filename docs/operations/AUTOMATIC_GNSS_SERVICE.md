@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-OPS-009 | 1.1 | Current | 2026-10-30 |
+| EKI-OPS-009 | 1.2 | Current | 2026-11-07 |
 
 ## 1. Purpose
 
@@ -77,18 +77,22 @@ While the bus is at a stop, the live record publishes `atStopIndex`, and passeng
 
 ## 5. Outages and liveness
 
-The session survives GNSS, network, tunnel and backend outages. The passenger and admin views time the silence on the viewer's own clock, so they change state even when the backend is stopped. Live Ops re-checks every 15 s, so its states can lag the passenger view by up to 15 s. The state rules are specified in [live bus health](../design/TRACKING_ALGORITHMS.md#9-live-bus-health).
+The session survives GNSS, network and backend outages. The passenger and admin views time the silence on the viewer's own clock, so they change state even when the backend is stopped. Live Ops re-checks every 15 s, so its states can lag the passenger view by up to 15 s. The state rules are specified in [live bus health](../design/TRACKING_ALGORITHMS.md#9-live-bus-health).
 
 | Condition | Passenger view | Live Ops |
 |---|---|---|
-| Firmware sends its GNSS-loss packet | `GPS signal lost` at once | Marker drawn orange (uncertain fix) |
+| Firmware sends its GNSS-loss packet | `GPS signal lost` at once | `Motion uncertain`; the marker is yellow for a ride in service and orange otherwise |
 | No location update for 12 s | `Updates delayed` | No change |
-| No location update for 30 s | `Live tracking lost`; ETAs, boarding and `Bus is here` are held back | `Service paused` and `Live location updates delayed` |
+| No location update for 30 s | `Live tracking lost`; ETAs, boarding and `Bus is here` are held back | `Service paused` and `Live location updates delayed`; the marker turns orange, the delay buttons are disabled with `Delay returns when the receiver reports again.`, and `End ride early` stays available |
 | No location update for 5 min | The ride leaves the map and the route list; it returns if the device reconnects while the session exists | `Last seen <time>`; the bus stays on the map at its last accepted position |
 | Device reconnects | Same session and stop progress | Same session |
-| No ride activity for 12 h | Session closed by the abandoned-ride reconciler; the next qualified fix starts a new service | Same |
+| No ride activity for 12 h | Session closed by the abandoned-ride reconciler; the next qualified fix starts a new service. A backend restart that replays the silent device's last fix does not count as activity | Same |
 
 The 5-minute browser limit is `NEXT_PUBLIC_BUS_EXPIRY_MS` (default `300000`); the backend's stale limit is `BUS_STALE_MS` (default `300000`, minimum `90000`); the 12-hour limit is `ABANDONED_RIDE_THRESHOLD_HOURS`. Keep the browser and backend values equal when overriding them ([configuration](../CONFIGURATION.md)).
+
+The History tab lists one `Signal lost` time per lost fix, the time at which the backend first recorded the loss; a backend restart or the later removal of the live record does not move it (`backend/src/services/tripStateEngine.ts:433`).
+
+Stop progress, the stale sweep and the abandoned-ride reconciler run only in the worker leader ([worker leadership](WORKER_LEADERSHIP.md)). On a backend that scales to zero, such as the staging service, the first telemetry after an idle period starts an instance, and the device's first attempts can time out while it starts; the device retries them ([staging runtime configuration](STAGING_RUNTIME_CONFIG.md#8-verification)).
 
 ## 6. Ending, pausing and resuming a service
 
@@ -112,6 +116,7 @@ Resume uses the protected ride-session API with a stable retry key. It starts in
 
 | Symptom | Check | Action |
 |---|---|---|
+| Device powered but never online | `[HTTPS]` lines in the serial log; `BACKEND_URL` and `BACKEND_ROOT_CA` in the build's `hardware/include/secrets.h` | Reflash with the current backend origin and its root CA ([hardware guide](../../hardware/README.md#43-compile-time-configuration-file)) |
 | Device online, no service, no label | Fix age and HDOP in the serial log | Move to open sky; wait for HDOP of 4 or less |
 | `Assignment required` | Device registry, bus route list, operators assigned to the bus | Correct the records in Fleet & People; the next fix after 30 s retries |
 | `Tracking paused` but no Resume button | Device offline | Power the device and wait until Live Ops shows it online |

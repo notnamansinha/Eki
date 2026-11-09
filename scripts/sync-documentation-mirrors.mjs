@@ -41,7 +41,9 @@ function expectedMirror(source) {
       .replaceAll("](LICENSE)", "](../../LICENSE)")
       .replaceAll("](hardware/", "](../hardware/");
   } else if (!source.includes("/")) {
-    content = content.replaceAll("](docs/", "](../");
+    content = content
+      .replaceAll("](docs/", "](../")
+      .replaceAll("](.github/", "](../../.github/");
   } else if (source === "hardware/README.md") {
     content = content
       .replaceAll("](../docs/hardware/", "](")
@@ -49,8 +51,16 @@ function expectedMirror(source) {
       .replaceAll("](../docs/", "](../")
       .replaceAll("](../backend/", "](../../backend/")
       .replaceAll("](../frontend/", "](../../frontend/");
-  } else if (/^(backend|frontend|hardware)\//.test(source)) {
+  } else if (/^(backend|deploy|e2e|frontend|hardware|qa)\//.test(source)) {
+    // The mirror sits one folder deeper, under docs/, so a link written as
+    // "../" repeated once per source folder level, then "docs/<path>", needs
+    // the same "../" run followed by "<path>". Dropping "docs/" from the
+    // "../docs/" suffix does that at any depth: "../../docs/x" becomes "../../x".
+    // backend/src/docsMirror.test.ts checks that every such link resolves.
     content = content.replaceAll("../docs/", "../");
+  }
+  if (source.startsWith("backend/")) {
+    content = content.replaceAll("](openapi.json)", "](../../backend/openapi.json)");
   }
   return content;
 }

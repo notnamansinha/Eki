@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-GEN-004 | 2.1 | Current | 2026-11-03 |
+| EKI-GEN-004 | 2.3 | Current | 2026-11-08 |
 
 ## 1. Purpose
 
@@ -20,7 +20,7 @@ Commands are written for PowerShell and run from the repository root unless a st
 | Node.js and npm | Node.js 24, the version CI uses; npm ships with it | Everything in this tutorial |
 | Google Chrome or another Chromium browser | Current release | The app, and DevTools location override in Section 10.1 |
 | Java | 21 | Only `npm run test:rules` and the emulator suites |
-| Python and PlatformIO Core | Python 3.12, PlatformIO 6.2.0 (the versions CI pins) | Only firmware builds and native firmware tests |
+| Python and PlatformIO Core | Python 3.12, PlatformIO 6.2.0 (the versions CI pins; `py -m pip install --requirement hardware/requirements.txt` installs that PlatformIO version) | Only firmware builds and native firmware tests |
 
 ### 2.2 Accounts and cloud resources
 
@@ -69,6 +69,8 @@ Create these before you start. Use a project that holds no production data.
    | `FIREBASE_DATABASE_URL` | Your development RTDB URL |
    | `GOOGLE_MAPS_API_KEY` | Your server Maps key |
    | `RETENTION_SWEEPER_ENABLED` | Keep `false` |
+
+   If you use shared staging for a test, set `WORKER_ENABLED=false` before starting the local backend. See [local testing](operations/LOCAL_TESTING.md) for the staging worker prerequisites.
 
 3. Provide Firebase Admin credentials in one of two ways:
    - Application Default Credentials [1] for the development project. Leave `FIREBASE_SERVICE_ACCOUNT` unset.
@@ -127,7 +129,7 @@ The browser reads Firestore and RTDB directly under the repository's security ru
 
 3. Open `http://localhost:3000`.
 
-   Expected result: the sign-in page with a **Sign In with Google** button.
+   Expected result: the sign-in page with a **Continue with Google** button.
 
 <a id="create-initial-development-data"></a>
 
@@ -158,7 +160,7 @@ The browser reads Firestore and RTDB directly under the repository's security ru
 
 Use one of two methods:
 
-- In **Routes**, create a route with a route ID, a display name and at least two stops in travel order, then save it. The backend computes forward and reverse road geometry with the Routes API.
+- In **Routes**, press **Add Route** and enter a display name. The route ID is generated from the name, and you can change it until the route is first saved. Add at least two stops in travel order with **Search Stop** or **Pick on Map**, then press **Deploy**. The backend computes forward and reverse road geometry with the Routes API.
 - Or load the predefined Ahmedabad routes from `frontend/src/lib/predefinedRoutes.ts`:
 
   ```powershell
@@ -215,24 +217,24 @@ This loop never moves the bus, so stops do not advance. Stop progress needs a re
 
 ### 10.1 Passenger
 
-1. Sign in with the passenger account. The **Map** tab lists the routes that currently have a live or available bus. The **Routes** tab shows the route schedules that an administrator has published (Section 10.2), whether or not a bus is running.
+1. Sign in with the passenger account. The **Live** tab lists, under **Live routes**, the routes that currently have a live or available bus. The **Routes** tab lists the route schedules that an administrator has published (Section 10.2), whether or not a bus is running. Select a route to see its stops and times; with more than one route published, a search field filters by route or stop name.
 2. Select the route, then the bus, then a destination stop. The map shows the bus, the route in travel order and stop estimates when the bus is live.
 3. To board, choose a boarding stop and press **Board**. The backend accepts the request only while the ride is `armed` or `active`, the direction is known, a fresh bus position exists, and the browser's location is within 150 m of the bus. No boarding code is needed. At a desk, set a location near the bus with Chrome DevTools, **Sensors**, **Location**.
 
    Expected result: the ride card shows the passenger as on board, and the ride chat opens for members of the session.
 
-4. After a completed ride, the app asks for ride feedback. General feedback is available from **Profile**. Feedback is written directly to Firestore under security rules.
-5. **Profile**, **Delete Account** sends an account deletion request; after the confirmation is dismissed, the passenger is signed out and the backend deletes the account asynchronously. See [privacy deletion](operations/PRIVACY_DELETION.md).
+4. After a completed ride, the app asks for ride feedback. General feedback is available from **Profile**, **Send feedback**. Feedback is written directly to Firestore under security rules.
+5. **Profile**, **Delete account** sends an account deletion request; after the confirmation is dismissed, the passenger is signed out and the backend deletes the account asynchronously. See [privacy deletion](operations/PRIVACY_DELETION.md).
 
 ### 10.2 Administrator
 
 1. **Live Ops** shows every bus on a map and in a list with its live status and delay. From a bus you can change the delay, open the ride chat, or use **End ride early**, which saves the ride as `interrupted` and pauses automatic service for that bus. **Resume tracking** restarts automatic service after such a pause.
 2. **Routes** creates, edits and deletes routes and their ordered stops. **Fleet & People** manages vehicles and operators.
 3. **History** lists rides, newest first, with their status and stop evidence. **Feedback** shows the latest 200 feedback records and updates their status. **Settings** holds the passenger-facing service start time, the no-bus messages and the announcement text.
-4. To publish a route schedule, open **Settings** and scroll to **Passenger Routes**. Select the routes passengers may browse; they appear to passengers in the order you select them. Enter a time for every stop of each selected route, then press **Save routes**. This section saves separately from the settings above it, and leaving the tab with unsaved changes asks for confirmation.
+4. To publish a route schedule, open **Settings** and scroll to **Passenger Routes**. Select the routes passengers may browse; they appear to passengers in the order you select them. Type a time for every stop of each selected route, for example `8:30`, `0830` or `8:30 pm`; leaving the field converts it to 24-hour `HH:mm`. Then press **Save routes**. This section saves separately from the settings above it, and leaving the tab with unsaved changes asks for confirmation.
 
-   Expected result: the button changes to **Saved!** and then **No route changes**, and the passenger **Routes** tab shows each selected route as a timeline of its stops and times. A missing or invalid time marks the stop's field and keeps the schedule unsaved. After you delete a route or change its stops, open this section again and save: the passenger view skips deleted routes and shows "Time not set" for new stops until you do.
-5. **Passenger Panel** opens the passenger workspace; **Profile**, **Admin Panel** returns.
+   Expected result: the button changes to **Saved!** and then **No route changes**, and the passenger **Routes** tab shows each selected route as a timeline of its stops and times. A missing time shows "Time required" and an invalid one "Enter a valid time" under the stop's field, and the schedule stays unsaved. After you delete a route or change its stops, open this section again and save: the passenger view skips deleted routes and shows "Time not set" for new stops until you do.
+5. **Passenger Panel** opens the passenger workspace; **Profile**, **Admin panel** returns.
 
 ### 10.3 Operator
 
@@ -251,12 +253,14 @@ The operator account can sign in to the passenger workspace. It cannot board a r
 | Backend exits at startup naming `RETENTION_SWEEPER_ENABLED`, `CORS_ORIGIN` or `FIREBASE_DATABASE_URL` | `NODE_ENV` is still `production`. Set it to `development` (Section 4). |
 | Backend exits naming a boolean flag, `TRUST_PROXY` or `RATE_LIMIT_SHARD_FACTOR` | The value is outside the accepted set. See [backend variables](CONFIGURATION.md#3-backend-variables). |
 | `/health` returns 503 | Firebase Admin cannot reach Firestore or RTDB. Check the credentials, the project, and `FIREBASE_DATABASE_URL`. |
+| "Your browser blocked the Google sign-in popup" | Allow pop-ups for the site, or press **Continue with full-page Google sign-in**. |
+| "This site is not authorized for Google sign-in" | The host you opened is not a Firebase Auth authorized domain. Open `http://localhost:3000`, or add the host ([local authentication setup](CONFIGURATION.md#8-local-authentication-setup)). |
 | "Access could not be verified" with a message about trusted Auth claim synchronization | The Firestore profile says `admin` or `driver`, but the claims were not published. Run `npm run sync-role-claims --workspace=backend` and sign in again. Editing the profile alone grants nothing. |
 | "Your account is not permitted to verify this workspace" | Firestore rules denied the profile read: the project runs old rules, or the frontend and backend use different projects. Repeat Section 6 and check both configurations. |
 | Firestore or RTDB permission errors in the browser console | The development project runs old rules, or App Check enforcement is on. Repeat Section 6. |
 | Map is grey or shows a Maps error | Check the browser key, its referrer restriction for `http://localhost:3000`, and the map ID. |
 | Telemetry request returns 401 | Wrong device ID or secret, or the device is disabled. Provision again and use the new secret. |
-| Telemetry request returns 400 | A field is missing or out of range, or `timestamp` is more than 60 s old. |
+| Telemetry request returns 400 | A field is missing or out of range, or `timestamp` is more than 60 s old or more than 10 s ahead of the server. |
 | Telemetry request returns 403 | The device's bus or route assignment is not usable. Check that the route is assigned to the bus. |
 | The bus is live but no ride session starts | Automatic service needs an enabled device, a bus assigned to the route, exactly one operator on that bus, a valid route and a fix with HDOP at most 4. |
 | **Board** stays disabled or returns "You must be near the bus to board" | The browser's location is more than 150 m from the bus, or tracking is not live. |

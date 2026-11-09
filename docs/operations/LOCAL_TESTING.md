@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-OPS-004 | 1.2 | Current | 2026-11-03 |
+| EKI-OPS-004 | 1.3 | Current | 2026-11-07 |
 
 ## 1. Purpose
 
@@ -11,10 +11,10 @@ This procedure runs Eki on a developer workstation and exercises it end to end w
 ## 2. Prerequisites
 
 - The repository installed and both environment files configured as in [getting started](../GETTING_STARTED.md): `backend/.env` with `NODE_ENV=development` and `PORT=4000`, `frontend/.env.local` with `NEXT_PUBLIC_BACKEND_URL=http://localhost:4000`.
-- If `backend/.env` uses the shared staging project `bustrack-be165` instead of your own development project, set `WORKER_ENABLED=false`. The flag defaults to `true`, and a workstation that took the worker lease would run stop progress and retention against staging in place of the Cloud Run service ([worker leadership](WORKER_LEADERSHIP.md)). The trip progress in Section 3.4 (service start, stop progress and ride completion) then depends on the staging service holding the lease, and telemetry is still accepted when nothing does, so a missing leader fails silently. Before you start, confirm that the staging service logs `[Worker] Leadership acquired`; if it does not, use your own development project or ask the service owner to enable the workers.
+- If `backend/.env` uses the shared staging project `bustrack-be165` instead of your own development project, set `WORKER_ENABLED=false`. The flag defaults to `true`, and a workstation that took the worker lease would run stop progress and retention against staging in place of the Cloud Run service ([worker leadership](WORKER_LEADERSHIP.md)). Automatic service start in Section 3.4 runs in the process that receives the telemetry, but stop progress and ride completion then depend on the staging service holding the lease, and telemetry is still accepted when nothing does, so a missing leader fails silently. The staging service has no minimum instance ([staging runtime configuration](STAGING_RUNTIME_CONFIG.md#2-project-facts)), so it holds the lease only while an instance runs, and an idle instance closes 15 to 17 minutes after its last request. Telemetry sent to the workstation does not wake it. Before you start, ask the service owner to set a minimum of one instance for the test, then confirm that the staging service logs `[Worker] Leadership acquired`. If that is not possible, use your own development project.
 - Firebase Authentication configured for local sign-in ([configuration](../CONFIGURATION.md)).
 - For phones and devices: an ngrok assigned domain ([ngrok tunnel](NGROK_TUNNEL.md)).
-- For devices: PlatformIO, an ESP32 with a GNSS receiver ([hardware guide](../../hardware/README.md)) and a Wi-Fi network that the device can join.
+- For devices: PlatformIO Core at the version CI pins (`py -m pip install --requirement hardware/requirements.txt`), an ESP32 with a GNSS receiver ([hardware guide](../../hardware/README.md)) and a Wi-Fi network that the device can join.
 
 Run every command from the repository root.
 

@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-TST-009 | 1.0 | Current | 2026-10-30 |
+| EKI-TST-009 | 1.1 | Current | 2026-11-07 |
 
 ## 1. Purpose
 
@@ -31,12 +31,12 @@ The sweep reads operations from `backend/openapi.json`. `npm run verify:openapi`
 | Public health endpoints and CORS preflight | Minimal `no-store` JSON; allowed and disallowed origins answered without reflecting credentials |
 | Mixed-case GET and HEAD requests | Identity and admin checks still apply |
 | A saved `driver`-role token after unassignment, replacement and deletion | Database access is lost through the HTTP offboarding paths |
-| Admin demotion and restoration through the Auth CLI | A saved admin token never regains access in either database |
+| Admin demotion and restoration through the Auth CLI | A saved admin token never regains access in either database, and loses admin-only HTTP access even when revocation-checked token verification still accepts it |
 | Device OTA reservations | Real device verifiers and Firestore transactions enforce reservation ownership and recovery |
 
-Every denied response must be JSON with no `stack`, `token` or `boardingCode` field. After each denial sweep the test compares a snapshot of selected application collections, Auth claims and `activeBuses` with the snapshot taken before, and requires zero synthetic provider calls. The selected collections include sessions, routes, fleet, users, feedback, devices and diagnostics, active locks, privacy, and the route and fleet operation journals. Worker leases and metrics are not included.
+Every denied response must be JSON with no `stack`, `token` or `boardingCode` field. After each denial sweep the test compares a snapshot of selected application collections, Auth claims, `activeBuses`, the `_userAuthorization` records in both databases and the chat rate-limit document count with the snapshot taken before, and requires zero synthetic provider calls. The selected collections include sessions, routes, fleet, users, feedback, devices and diagnostics, active locks, privacy, and the route and fleet operation journals. Worker leases and metrics are not included.
 
-Each partition starts its own backend process, so earlier negative requests cannot use up a later partition's rate limit. The fixture records the backend's process ID and refuses to reuse another server. The test-only control listener is separate from the production Express routes.
+Each partition starts its own backend process from `e2e/emulator/backend.mjs` with `WORKER_ENABLED=false`, so earlier negative requests cannot use up a later partition's rate limit and background workers cannot write during a sweep. The fixture records the backend's process ID and refuses to reuse another server. The test-only control listener is separate from the production Express routes.
 
 ## 4. Evidence
 
@@ -45,3 +45,5 @@ Results are written to `artifacts/qa/api-report.json`, `api-report.md`, `api-jun
 ## 5. Limits
 
 The sweep does not cover token expiry, wrong device secrets outside the firmware installation endpoint, resource ownership for every operation, query and body parser partitions, full error and log redaction, private cache behaviour, or proxy and tunnel semantics. Other focused tests may cover parts of these; they need reviewed mappings and current execution evidence.
+
+The sweep sends no demoted, legacy or role-only administrator token to the handlers that also serve operators and passengers: ride start, delay and early end, the v2 ride read, the legacy boarding-code endpoint, chat and ride status. Those handlers grant administrator authority only through `hasCurrentAdminAuthority` in `backend/src/middleware/adminAuthority.ts`, which applies the `requireAdmin` policy (both admin claims and an `authorizationVersion` that is still current in Firestore and RTDB) and reads the authorization records once per request. A token that fails the check is treated as an operator or passenger token. The [reviewed unit family](REVIEWED_UNIT_EVIDENCE.md) covers the helper, ride status, the boarding code and the early ride end at L1, with mocked authorization records, through the AUTH13 links in `qa/critical-source-test-map.mjs`.

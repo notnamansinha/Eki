@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-GEN-001 | 1.2 | Current | 2026-11-02 |
+| EKI-GEN-001 | 1.3 | Current | 2026-11-07 |
 
 Eki tracks university buses in real time. An ESP32 tracker with a NEO-M8N GNSS receiver in each bus sends its position to an Express backend, which runs each ride through its stops in order and publishes live state through Firebase. Passengers follow buses and board rides in a progressive web app; administrators manage routes, the fleet and ride operations.
 
@@ -10,8 +10,8 @@ Eki tracks university buses in real time. An ESP32 tracker with a NEO-M8N GNSS r
 
 | Role | What Eki provides |
 |---|---|
-| Passenger | Routes with live buses, the bus position with live health ("Updates delayed", "GPS signal lost", "Live tracking lost"), stop estimates and progress, published route schedules with a time for each stop, boarding by location with no code, ride chat, ride feedback and account deletion |
-| Administrator | **Live Ops** map with delay, chat, **End ride early** and **Resume tracking**; route editor with Google road geometry; vehicles and operators; ride history with stop evidence; feedback review; passenger-facing settings and route schedules |
+| Passenger | Routes with live buses, the bus position with live health ("Updates delayed", "GPS signal lost", "Live tracking lost"), stop estimates and progress, published route schedules with a time for each stop, boarding by location with no code, ride chat, ride feedback, account deletion, and an install page (`/install`) with home-screen steps for Android and iPhone |
+| Administrator | **Live Ops** map with delay, chat, **End ride early** and **Resume tracking**; route editor with Google road geometry; vehicles and operators; ride history with stop evidence; feedback review; passenger-facing service hours, no-bus message, announcement banner and route schedules |
 | Operator | No browser action needed: the operator's assignment to a bus lets the tracker start, advance and complete rides automatically |
 | Tracker | Authenticated HTTPS telemetry once per second, GNSS loss reporting, signed fleet firmware and signed over-the-air updates |
 
@@ -39,7 +39,8 @@ The backend takes each tracker's bus and route from the device registry, never f
 
 - Git, and Node.js 24 with its bundled npm (the CI version).
 - A Firebase development project with Google sign-in, Firestore, Realtime Database and a web app, plus Google Maps browser and server keys.
-- Java 21 for Firebase rules tests; Python 3.12 and PlatformIO 6.2.0 for firmware work.
+- Java 21 for Firebase rules tests; Python 3.12 and PlatformIO 6.2.0 (pinned in `hardware/requirements.txt`) for firmware work.
+- Docker, only for the backend container image (`docker build -f backend/Dockerfile .` from the repository root) and the optional observability stack. The image runs Node.js 26 on Alpine Linux, pinned by digest in `backend/Dockerfile`.
 
 ### 3.2 Install and configure
 
@@ -66,16 +67,17 @@ Open `http://localhost:3000`. The health check returns `status: ok` when the bac
 
 | Path | Contents |
 |---|---|
-| `frontend/` | Next.js 16 and React 19 static-export PWA: passenger and admin workspaces |
+| `frontend/` | Next.js 16 and React 19 static-export PWA: passenger and admin workspaces, which share an Ahmedabad University brand theme |
 | `backend/` | Express 5 API, telemetry ingestion, ride lifecycle worker and admin command-line tools |
-| `hardware/` | ESP32 firmware (PlatformIO, Arduino and ESP-IDF), native tests and fleet build verification scripts |
+| `hardware/` | ESP32 firmware (PlatformIO, Arduino and ESP-IDF), native tests, fleet build verification scripts and the PlatformIO pin that CI installs (`requirements.txt`) |
 | `e2e/` | Playwright browser suites with synthetic Firebase and Maps fixtures |
 | `qa/` | Acceptance maps that link requirements to tests, and evidence guides |
-| `scripts/` | Build, CSP, documentation, QA and trace analysis scripts |
+| `scripts/` | Build, CSP, deployment preflight, documentation, QA, benchmark, field capture, artwork optimisation and trace analysis scripts, and tests for the workflows and the Cloud Run manifest |
 | `tools/` | `next-lint-glob`, a local replacement for the `fast-glob` dependency of the Next.js ESLint plugin |
 | `observability/` | Optional local OpenTelemetry Collector and Jaeger stack, and a Grafana dashboard |
+| `deploy/` | Cloud Run service manifest for the staging backend (`cloud-run/staging.service.yaml`) and a Docker Compose backup path that runs the published backend image on a VPS (`vps/`) |
 | `docs/` | Documentation set, including generated mirrors of Markdown files kept beside the code |
-| `.github/workflows/` | CI, CodeQL, scheduled QA and deployment workflows |
+| `.github/` | Workflows (CI, CodeQL, scheduled QA, deployment, backend image publishing and footer removal), Dependabot configuration, `CODEOWNERS`, and issue and pull request templates |
 | `firestore.rules`, `database.rules.json`, `firestore.indexes.json` | Firebase security rules and indexes |
 
 ## 5. Documentation
@@ -88,11 +90,11 @@ The [documentation index](../README.md) lists every document with reading paths 
 npm run verify
 ```
 
-This runs lint, all unit tests, the production build with service worker and CSP generation, and the production dependency audit. [Contributing](CONTRIBUTING.md) lists the extra checks for rules, browser, firmware and documentation changes.
+This runs lint; the script tests, the OpenAPI and UI contract checks, and the backend and frontend unit tests; the production build with service worker and CSP generation; and the production dependency audit. [Contributing](CONTRIBUTING.md) lists the extra checks for rules, browser, workflow, firmware and documentation changes.
 
 ## 7. Deployment status
 
-A green CI run on a push to `main` deploys Firebase Hosting, Firestore and RTDB rules, and Firestore indexes to the staging project. Production deploys run only by manual dispatch from `main`; the approving reviewer depends on a `production` GitHub environment and an `eki-production` Firebase project, neither of which exists yet. Only the manual job `deploy-backend-staging` deploys the Express backend: on 2026-11-01 it deployed the container built from `backend/Dockerfile` to the Cloud Run staging service in `asia-south2`, which the staging web app uses. Bench and demonstration setups can still run the backend on a workstation behind an [ngrok tunnel](../operations/NGROK_TUNNEL.md). A university production release also needs owned backend hosting, approved retention, monitoring, protected firmware provisioning and field acceptance; see the [risk register](../operations/ARCHITECTURE_RISK_REGISTER.md), the [deployment checklist](../operations/UNIVERSITY_DEPLOYMENT_CHECKLIST.md) and [CI, deployment and releases](../operations/CI_CD_AND_RELEASES.md).
+A green `Production verification` run on a push to `main` deploys Firebase Hosting, Firestore and RTDB rules, and Firestore indexes to the staging project `bustrack-be165`. Production deploys run only by manual dispatch from `main`; the approving reviewer depends on a `production` GitHub environment and an `eki-production` Firebase project, neither of which exists. Of the workflows, only the manual job `deploy-backend-staging` deploys the Express backend: it builds the container from `backend/Dockerfile`, deploys it from `deploy/cloud-run/staging.service.yaml` to the Cloud Run service `eki-backend-staging` in `asia-south2` (the default `cloud_run_region` input), and moves traffic from the serving revision to the new one only after the new one passes `/health`. The staging web app calls that service; the [staging runtime configuration](../operations/STAGING_RUNTIME_CONFIG.md) lists its settings. For a backup host, the `Publish backend image` workflow builds the same Dockerfile and pushes the image to Docker Hub after each green push to `main`, once the `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` secrets exist, and `deploy/vps/` runs it on any Docker host ([VPS backup path](../deploy/vps/README.md)). Bench and demonstration setups can run the backend on a workstation behind an [ngrok tunnel](../operations/NGROK_TUNNEL.md). A university production release also needs owned backend hosting, approved retention, monitoring, protected firmware provisioning and field acceptance; see the [risk register](../operations/ARCHITECTURE_RISK_REGISTER.md), the [deployment checklist](../operations/UNIVERSITY_DEPLOYMENT_CHECKLIST.md) and [CI, deployment and releases](../operations/CI_CD_AND_RELEASES.md).
 
 Report vulnerabilities as described in the [security policy](SECURITY.md).
 

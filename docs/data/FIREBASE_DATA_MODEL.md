@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-DAT-001 | 2.0 | Current | 2026-10-30 |
+| EKI-DAT-001 | 2.2 | Current | 2026-11-08 |
 
 ## 1. Purpose
 
@@ -65,6 +65,10 @@ Figure 1. Main entities. `LIVE_NODE` is the RTDB path `activeBuses/{busId}_{rout
 | Firestore | `bus_locations`, `completed_trips` | Leader | Read by a current admin |
 | Firestore | `feedbacks`, `feedbackCooldowns` | Browser | Create and read under rules (Section 4.10) |
 | Firestore | Every collection in Section 5 | Backend | None |
+
+### 2.6 Database instances and rule deployment
+
+Eki reads and writes one RTDB instance and the default Firestore database in each Firebase project. `firebase.json` declares `database.rules.json` under the deploy target `rtdb`, so the rules reach only the instance that `.firebaserc` maps to that target; for the project `bustrack-be165` the target is the instance `bustrack-be165-asia-rtdb` in `asia-southeast1` (`deploy/cloud-run/staging.service.yaml:61`). The project also holds its default instance `bustrack-be165-default-rtdb` in `us-central1`, which Eki does not use ([RTDB region decision](../design/RTDB_REGION_LATENCY_DECISION.md)). The deploy workflow (`.github/workflows/deploy.yml`) releases the RTDB rules through the deploy filter `database:rtdb`, and stops before any release when `.firebaserc` maps no instance to the target for the project (`scripts/verify-rtdb-deploy-target.mjs`). `firestore.rules` and `firestore.indexes.json` apply to the default Firestore database. The backend (`FIREBASE_DATABASE_URL`) and the web app (`NEXT_PUBLIC_FIREBASE_DATABASE_URL`) must name the same RTDB instance. `npm run verify:rtdb-instance` checks this and, when `RTDB_EXPECTED_REGION` is set, checks the instance region against it; the deploy jobs pass `--require-region`, which makes that variable mandatory (`scripts/rtdb-instance-config.mjs:35`). Store regions are listed in the [architecture description](../design/ARCHITECTURE.md#51-environments).
 
 ## 3. Realtime Database
 
@@ -175,7 +179,7 @@ Reroute polylines, written once per version so that the live node never carries 
 | Item | Value |
 |---|---|
 | Writer | Backend reroute and departure-route activation (`telemetryRouteService.ts:778`) |
-| Readers | Backend matcher; browser map when `routeSource` is `dynamic-reroute` (`frontend/src/lib/activeRouteGeometry.ts:73`) |
+| Readers | Backend matcher; passenger map when `routeSource` is `dynamic-reroute` (`frontend/src/hooks/useDynamicRouteGeometries.ts`, `frontend/src/lib/activeRouteGeometry.ts:73`). The admin Live Ops map draws no route lines and does not read this path |
 | Client rule | Read, signed in (`database.rules.json:13`) |
 | Retention | The leader's retention sweep deletes a version that is not the node's current `routeVersion` when it is older than 180 days and has been seen unreferenced for at least 24 h (`backend/src/services/rtdbRetention.ts:3`, `rtdbRetention.ts:108`). See [RTDB retention](../operations/RTDB_RETENTION.md). |
 
@@ -196,7 +200,7 @@ The public view (`liveBusProjection.ts:37`) contains only `busId`, `routeId`, `d
 | Field | Condition |
 |---|---|
 | `rawLocation` | Subset `{lat, lng, speed, heading, gpsHdop, motionState, seq, sampledAt}` |
-| `matchedLocation` | Subset without `speed` |
+| `matchedLocation` | Subset without `speed` and `uncertain` |
 | `lastCompletedSessionId`, `lastCompletedAt`, `lastCompletedRouteId` | All three valid |
 | `automaticTurnaround`, `previousSessionId` | Automatic return ride |
 | `atStopIndex` | `atStop.sessionId` equals `sessionId` |
@@ -206,7 +210,7 @@ A node with `retiredAssignmentRevision`, or with an invalid `busId` or `routeId`
 
 | Item | Value |
 |---|---|
-| Readers | Passenger map (one route's `buses`) and admin Live Ops (whole root) (`frontend/src/lib/createLiveBusStore.ts:182`) |
+| Readers | Passenger map (one route's `buses`), and admin Live Ops and fleet management (whole root) (`frontend/src/lib/liveBusStore.ts:17`, `frontend/src/lib/createLiveBusStore.ts:182`) |
 | Client rule | `buses` read, signed in; root read, current admin (`database.rules.json:17`) |
 | Retention | Follows `activeBuses`: an entry is removed when its source node is removed |
 
@@ -281,7 +285,7 @@ Fields: `id`, `name`, `authUid` and `assignedBusId` (string or null). The browse
 
 ### 4.5 `settings/global`
 
-Fields: `serviceStartTime` (at most 64), `noBusesMessage` (at most 200), `noBusesSubMessage` (at most 300), `announcementText` (at most 500), `announcementActive` (boolean), `updatedAt` (Timestamp) and `updatedBy` (UID) (`backend/src/routes/settings.ts:20`). Writer: admin settings endpoint. Client rule: read, signed in (`firestore.rules:293`). Browsers apply defaults for missing fields.
+Fields: `serviceStartTime` (at most 64), `noBusesMessage` (at most 200), `noBusesSubMessage` (at most 300), `announcementText` (at most 500), `announcementActive` (boolean), `updatedAt` (Timestamp) and `updatedBy` (UID) (`backend/src/routes/settings.ts:20`). Writer: `PATCH /api/v2/settings/global`, which the administrator **Settings** tab calls with only the changed fields, and the legacy `PUT /api/settings`. Both reject unknown keys and blank text other than `announcementText`, and merge the validated fields into the document (`settings.ts:34`). Client rule: read, signed in (`firestore.rules:293`). Browsers apply defaults for fields that are missing or of the wrong type (`frontend/src/hooks/useSettings.ts:27`).
 
 ### 4.6 `settings/passengerRoutes`
 
@@ -290,13 +294,13 @@ The routes that an administrator publishes in the passenger **Routes** tab, with
 | Field | Type | Meaning |
 |---|---|---|
 | `routes[]` | `{routeId, stopTimes}`, at most 50 | Approved routes in passenger display order; each `routeId` is a `routes/{routeId}` document ID and appears once |
-| `routes[].stopTimes` | map of stop ID to `"HH:mm"` | 24-hour time for each stop of the route (`^([01]\d\|2[0-3]):[0-5]\d$`), with keys in the route's stop order at save time |
+| `routes[].stopTimes` | map of stop ID to `"HH:mm"` | 24-hour time for each stop of the route (`^([01]\d\|2[0-3]):[0-5]\d$`). The backend writes the keys in the route's stop order; readers take the stop order from `routes/{routeId}`, not from the map |
 | `updatedAt` | Timestamp | Last save |
 | `updatedBy` | string | UID of the administrator who saved |
 
-Writer: only `PUT /api/v2/settings/passenger-routes` ([API reference](../../backend/API.md)). The backend reads every referenced route in one `getAll`, requires each route to exist and each `stopTimes` to hold exactly the route's current stop IDs with valid times, rebuilds the record from the validated values and writes it as a full replacement, never a merge (`backend/src/routes/settings.ts:177`, `settings.ts:221`). An empty `routes` array unpublishes every route. The 16 KiB request limit allows roughly 450 stop times in total with generated stop IDs.
+Writer: only `PUT /api/v2/settings/passenger-routes` ([API reference](../../backend/API.md)). The backend reads every referenced route in one `getAll`, requires each route to exist and each `stopTimes` to hold exactly the route's current stop IDs with valid times, rebuilds the record from the validated values and writes it as a full replacement, never a merge (`backend/src/routes/settings.ts:177`, `settings.ts:221`). An empty `routes` array unpublishes every route. The 16 KiB request limit allows roughly 450 stop times in total with generated stop IDs. The administrator **Settings** tab takes each stop time as typed text and converts entries such as `830`, `8.30` or `9:45 pm` to `HH:mm` before it saves; it does not save while any stop of a selected route has no valid time (`frontend/src/components/admin/PassengerRoutesSettings.tsx:49`, `PassengerRoutesSettings.tsx:215`).
 
-Readers: every signed-in browser, through a listener (`frontend/src/hooks/usePassengerRouteConfig.ts:47`). Client rule: read, signed in; every client write denied (`firestore.rules:293`).
+Readers: every signed-in browser, through a listener (`frontend/src/hooks/usePassengerRouteConfig.ts:47`). The passenger **Routes** tab shows each stored time in 12-hour form, for example `07:05` as `7:05 am` (`frontend/src/lib/passengerRouteSchedule.ts:96`). Client rule: read, signed in; every client write denied (`firestore.rules:293`).
 
 A later route edit or deletion does not update this document, so browsers treat it as untrusted input (`frontend/src/lib/passengerRouteSchedule.ts`). They drop malformed and duplicate entries, skip approved routes whose route document no longer exists, ignore times for deleted stops, and show "Time not set" for a stop without a valid time, for example a stop added after the last save. A route that is not in `routes[]` is never shown to passengers, and a missing document publishes nothing. The administrator settings tab removes stale entries on the next save. Retention: replaced by each save; the backend never deletes it.
 
@@ -323,13 +327,13 @@ The durable record of one ride.
 | `interruptionReason`, `interruptedBy`, `reconciledAt` | string, UID, Timestamp | `manual_end_early` or `abandoned_session_timeout` |
 | `failureReason` | string | `shift_conflict` |
 | `automaticTurnaround`, `previousSessionId`, `directionFirestoreSynced` | boolean, string, boolean | Automatic return ride |
-| `boardingCode`, `boardingCodeIssuedAt` | 8-character string, Timestamp | Issued by `POST /api/sessions/{sessionId}/boarding-code`. Boarding does not check it (`backend/src/routes/sessions.ts:168`) |
+| `boardingCode`, `boardingCodeIssuedAt` | 8-character string, Timestamp | Issued by the legacy boarding code endpoint, `POST /api/sessions/{sessionId}/boarding-code` or `POST /api/v2/ride-sessions/{sessionId}/boarding-code`, which the Eki web app does not call. Boarding does not check it (`backend/src/routes/sessions.ts:175`) |
 | `path` | legacy | Declared in the admin history type only; no code writes or reads it |
 
 | Item | Value |
 |---|---|
-| Writers | Ride start (`rideSessionStart.ts`), boarding (`sessions.ts:299`), trip-state engine progress and completion (`tripStateEngine.ts:659`, `tripStateEngine.ts:1132`), stop endpoint (`shifts.ts:356`), abandoned-ride reconciler |
-| Readers | Admin Ride History (`frontend/src/components/admin/RideHistoryPanel.tsx:202`, ordered by `armedAt` and by `startTime`), the assigned driver, feedback rules |
+| Writers | Ride start (`rideSessionStart.ts`), boarding (`sessions.ts:306`), trip-state engine progress and completion (`tripStateEngine.ts:748-757`, `tripStateEngine.ts:1152-1160`), stop endpoint (`shifts.ts:354`), abandoned-ride reconciler |
+| Readers | Admin Ride History (`frontend/src/components/admin/RideHistoryPanel.tsx:202`, ordered by `armedAt` and by `startTime`) and feedback rules. The client rule also admits the assigned current driver, but no browser screen reads the document as a driver |
 | Client rule | Read by a current admin or the assigned current driver; no writes (`firestore.rules:111`) |
 | Retention | Terminal sessions are deleted recursively 180 days after `endTime` (`RIDE_SESSION_RETENTION_DAYS`) and on admin history deletion (Section 7) |
 
@@ -337,8 +341,8 @@ The durable record of one ride.
 
 | Path | Fields | Writer | Client rule |
 |---|---|---|---|
-| `messages/{id}` | `text` (1 to 500), `from` (`driver`, `passenger`), `senderName`, `senderId`, `requestHash`, `moderated`, `moderationVersion`, `timestamp`. The ID is a hash of the UID and the client `requestId`, so a retry finds the same message | `POST /api/sessions/{sessionId}/messages` (`sessions.ts:466`) | Read by a session operator, or a manifest member with a profile (`firestore.rules:124`) |
-| `archivedMessages/{id}` | Copy of a cleared message | Admin message clear (`shifts.ts:437`) | Read by a session operator (`firestore.rules:135`) |
+| `messages/{id}` | `text` (1 to 500), `from` (`admin`, `driver`, `passenger`; `admin` only for a current admin), `senderName`, `senderId`, `requestHash`, `moderated`, `moderationVersion`, `timestamp`. The ID is a hash of the UID and the client `requestId`, so a retry finds the same message | `POST /api/sessions/{sessionId}/messages` (`sessions.ts:475`) | Read by a session operator, or a manifest member with a profile (`firestore.rules:124`) |
+| `archivedMessages/{id}` | Copy of a cleared message | Admin message clear (`shifts.ts:435`) | Read by a session operator (`firestore.rules:135`) |
 | `messageRateLimits/{uid}` | `userId`, `sentAt` (Timestamp array), `lastSentAt`. Limits: 60 per hour, 10 per minute, 3 s gap (`backend/src/services/chatRateLimit.ts:1`) | Message endpoint, in the same transaction as the message | Owner read, when also allowed to read the session (`firestore.rules:140`) |
 
 Browsers read the latest 200 messages (`frontend/src/components/shared/MessagingPanel.tsx:98`).
@@ -381,7 +385,7 @@ Clients cannot read or write any of these collections, by explicit rule or throu
 | Collection | Fields | Writer and purpose | Retention |
 |---|---|---|---|
 | `devices/{deviceId}` | `deviceId`, `busId`, `routeId`, `enabled`, `assignmentRevision`, `secretHash` (salt and scrypt key in hex), `credentialRotatedAt`, `updatedAt`, optional `disabledAt` and `pendingAssignmentRetirement` | Provisioning script and admin device endpoints (`backend/src/provisionDevice.ts:80`, `backend/src/routes/devices.ts:427`); one device per bus and route | Admin |
-| `active_rides/{busId}_{routeId}` | `sessionId`, `busId`, `routeId`, `driverId`, `direction`, `originStopId`, `destinationStopId`, `status: active`, `tripState`, `currentStopIndex`, `hasDepartedOrigin`, `terminalArrival`, `gnssGapSince`, `hasTelemetry`, `lastRouteVersion`, `delayMinutes`, `delayUpdatedAt`, `updatedAt`; direction and turnaround fields on automatic rides | Ride start, the leader's progress checkpoint (`tripStateEngine.ts:760`) and the delay endpoint. Recovery source after a restart; `currentStopIndex` never decreases | Deleted at completion, early end or reconciliation |
+| `active_rides/{busId}_{routeId}` | `sessionId`, `busId`, `routeId`, `driverId`, `direction`, `originStopId`, `destinationStopId`, `status: active`, `tripState`, `currentStopIndex`, `hasDepartedOrigin`, `terminalArrival`, `gnssGapSince`, `hasTelemetry`, `lastRouteVersion`, `delayMinutes`, `delayUpdatedAt`, `updatedAt`; direction and turnaround fields on automatic rides | Ride start, the leader's progress checkpoint (`tripStateEngine.ts:760`) and the delay endpoint. Recovery source after a restart; `currentStopIndex` never decreases. The leader skips the checkpoint when it replays an offline node whose fix differs from the server clock by more than 60 s, so `updatedAt` keeps the last real activity that the abandoned-ride reconciler reads (`tripStateEngine.ts:997`) | Deleted at completion, early end or reconciliation |
 | `_active_bus_locks/{busId}` | `busId`, `routeId`, `driverId`, `sessionId`, `direction`, optional `automaticTurnaround` and direction fields, `createdAt`, `updatedAt` | One non-terminal ride per bus; created in the ride-start transaction (`rideSessionStart.ts:420`) | Deleted with the ride's terminal state |
 | `_ride_session_creation_keys/{hash}` | `driverId`, `busId`, `routeId`, `sessionId`, `createdAt` | Idempotency binding of a ride start; the ID is the SHA-256 of the principal scope and the `Idempotency-Key` (`rideSessionStart.ts:138`) | Kept; survives session deletion |
 | `_userAuthorization/{uid}` | As RTDB Section 3.6 | `publishUserAuthorization`; read by rules (`firestore.rules:21`) | Kept |
@@ -397,7 +401,7 @@ Clients cannot read or write any of these collections, by explicit rule or throu
 | `_fleet_lock_recoveries/{id}` | Recovered owner, operation, executor, admin UID, `recoveredAt` | Audit of lock recovery | 90 days after `recoveredAt` |
 | `_device_diagnostics/{deviceId}` | Device, bus and route IDs, `firmwareVersion`, uptime, `freeHeapBytes`, `rssiDbm`, counters, `fault`, security state, device time, `receivedAt` | Latest diagnostics report, replaced on each report; read through `GET /api/devices/{deviceId}/diagnostics` | Replaced |
 | `_rtdb_retention_inventory/{hash}` | `path`, `fingerprint`, `firstSeenAt` | First-seen record for RTDB data without a usable time (`backend/src/services/firebaseRtdbRetention.ts:35`) | Removed with the RTDB entry or as an orphan |
-| `_health` | None | Read with `limit(1)` every 30 s by the health probe (`backend/src/server.ts:224`) | Not applicable |
+| `_health` | None | Read with `limit(1)` every 30 s by the health probe (`backend/src/server.ts:233`) | Not applicable |
 | `passenger_requests/{uid}` | `passengerId`, `busId`, `type`, `lat`, `lng`, `status`, `createdAt` | Legacy; nothing creates it. Admin `PATCH` and `DELETE /api/requests/{uid}` change or remove it (`backend/src/routes/requests.ts:33`), and passenger account deletion removes it (`privacyDeletionWorker.ts:66`) | Removed by those two paths |
 
 ## 6. Indexes

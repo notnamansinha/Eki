@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-API-003 | 2.0 | Current | 2026-10-30 |
+| EKI-API-003 | 2.2 | Current | 2026-11-08 |
 
 ## 1. Purpose
 
@@ -68,6 +68,8 @@ The events in Figure 1:
 | Lost race | Two starts for the same bus; the loser created its session but could not claim the live record | `failed`, `failureReason: "shift_conflict"`; its active bus lock is released |
 
 A session's direction never changes once resolved, and a session restored after a backend or device outage keeps its stored direction.
+
+The abandoned-ride reconciler takes the latest timestamp on the session, its `active_rides` record and its live record as the ride's last activity. When the trip state engine starts or takes over leadership, it reads every live record again. For an offline receiver whose last fix differs from the server clock by more than 60 s in either direction, the engine skips the progress checkpoint, so the replay does not count as activity and a silent ride still reaches the inactivity timeout ([`tripStateEngine.ts`](../../backend/src/services/tripStateEngine.ts)).
 
 ## 4. HTTP operations by state
 

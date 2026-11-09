@@ -4,6 +4,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, posix, resolve } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
+import MarkdownIt from 'markdown-it';
 
 // Enforces docs/DOCUMENTATION_STANDARD.md: control blocks, the document register,
 // writing rules for current documents, and every relative link and heading anchor.
@@ -26,7 +27,7 @@ const machineParsed = new Set([
   'docs/testing/WEBAPP_A_Z_AB_TESTING_PLAN.md',
   'docs/testing/WEBAPP_A_Z_AB_TESTING.md',
 ]);
-const agentInstructions = path => path === 'frontend/AGENTS.md' || path === 'frontend/CLAUDE.md' ||
+const agentInstructions = path => /^(?:docs\/)?frontend\/(?:AGENTS|CLAUDE)\.md$/.test(path) ||
   path === 'docs/testing/EKI_Antigravity_Webapp_Testing_Skill.md' || path.startsWith('docs/testing/skills/');
 const uncontrolled = path => mirrors.has(path) || machineParsed.has(path) || agentInstructions(path) ||
   path.startsWith('.github/');
@@ -87,10 +88,34 @@ function anchors(path) {
   return anchorCache.get(path);
 }
 
-function links(path) {
-  const text = proseOnly(read(path));
-  return [...text.matchAll(/!?\[(?:[^\]\n]|\][^(\n])*\]\(\s*<?([^)\s>]+)>?(?:\s+"[^"]*")?\s*\)/g)].map(match => match[1]);
+const markdown = new MarkdownIt();
+
+function links(text) {
+  return markdown.parse(text, {}).flatMap(token => (token.children ?? []).flatMap(child => {
+    if (child.type === 'link_open') return [child.attrGet('href')];
+    if (child.type === 'image') return [child.attrGet('src')];
+    return [];
+  }));
 }
+
+test('link discovery follows Markdown syntax and skips code examples', () => {
+  const example = [
+    '[reference][guide] and [parentheses](folder/a(b).md)',
+    '![image](<images/route map.png> "Route map")',
+    '',
+    '[guide]: <docs/route guide.md#setup>',
+    '',
+    '`[example](ignored.md)`',
+    '```md',
+    '[fenced example](ignored.md)',
+    '```',
+  ].join('\n');
+  assert.deepEqual(links(example), [
+    'docs/route%20guide.md#setup',
+    'folder/a(b).md',
+    'images/route%20map.png',
+  ]);
+});
 
 test('controlled documents carry a valid control block', () => {
   const problems = [];
@@ -161,11 +186,13 @@ test('current documents follow the writing rules', () => {
 
 test('relative links and anchors resolve', () => {
   const problems = [];
-  const checked = documents.filter(path => !mirrors.has(path) && !machineParsed.has(path) && !agentInstructions(path));
+  const checked = documents.filter(path => !machineParsed.has(path) && !agentInstructions(path));
   for (const path of checked) {
-    for (const target of links(path)) {
-      if (/^[a-z][a-z0-9+.-]*:/i.test(target)) continue;
-      const [file, anchor] = target.split('#');
+    for (const target of links(read(path))) {
+      if (/^(?:[a-z][a-z0-9+.-]*:|\/\/)/i.test(target)) continue;
+      const [location, fragment] = target.split('#', 2);
+      const [file] = location.split('?', 1);
+      const anchor = fragment && decodeURIComponent(fragment);
       const destination = file ? posix.normalize(posix.join(posix.dirname(path), decodeURIComponent(file))) : path;
       if (destination.startsWith('..') || !existsSync(resolve(root, destination))) {
         problems.push(`${path}: missing ${target}`);

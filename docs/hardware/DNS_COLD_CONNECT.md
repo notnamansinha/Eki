@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-HW-003 | 1.0 | Current | 2026-10-30 |
+| EKI-HW-003 | 1.1 | Current | 2026-11-07 |
 
 ## 1. Introduction
 
@@ -21,6 +21,7 @@ The pinned Arduino-ESP32 2.0.17 `WiFi.hostByName` waits up to 16 s for DNS owner
 3. A caller asking for the same hostname in the same network epoch joins the query in progress. A caller asking for a different hostname while the slot is busy is rejected.
 4. Each caller polls with `delay(1)` until the query's 1 s budget, measured on the monotonic clock from the query start, expires. Expiry releases the caller but keeps the slot until the underlying lookup finishes, so retries cannot pile up orphaned lookups. A late address is discarded; a later call can use the lwIP cache through a new ticket.
 5. A Wi-Fi disconnect or a new IP address starts a new network epoch. A lookup from an earlier epoch can never return an address into the new one.
+6. While the Arduino Wi-Fi status is not connected, the resolver refuses a new lookup without queuing it, and a waiting caller stops waiting.
 
 ### 3.2 Connection setup after DNS
 

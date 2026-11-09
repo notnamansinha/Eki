@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-OPS-022 | 1.0 | Current | 2026-10-30 |
+| EKI-OPS-022 | 1.1 | Current | 2026-11-07 |
 
 ## 1. Purpose
 
@@ -55,7 +55,7 @@ The current clients keep profiles and messages in Firestore. RTDB `users` and `m
 
 ### 5.1 Inventory with a dry run
 
-Run from `backend/` with credentials for the target project:
+Run from `backend/` with credentials for the target project. The command loads `backend/.env` without overriding variables already set in the environment. It reads `FIREBASE_DATABASE_URL` and `FIREBASE_SERVICE_ACCOUNT`, and uses Application Default Credentials when `FIREBASE_SERVICE_ACCOUNT` is not set ([`backend/src/lib/firebaseAdmin.ts`](../../backend/src/lib/firebaseAdmin.ts)). Set `FIREBASE_DATABASE_URL` to the instance the deployment uses: for staging, the `asia-southeast1` instance listed in the [staging runtime configuration](STAGING_RUNTIME_CONFIG.md#2-project-facts), not the project's default instance.
 
 ```powershell
 npm run retention:rtdb -- --dry-run
@@ -94,4 +94,4 @@ Expected result: a summary with `"dryRun": false`. `changedDuringDeletion` count
 
 No test covers the Firebase adapter's key paging or orphan cleanup.
 
-Dated evidence: a read-only inventory run on 2026-10-03 found eight legacy records, none eligible and none undated, and no geometry records. It changed no data.
+Dated evidence: a read-only inventory run on 2026-10-03 against the `us-central1` default instance found eight legacy records, none eligible and none undated, and no geometry records. It changed no data.

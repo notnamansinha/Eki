@@ -52,7 +52,7 @@
         ]
       },
       {
-        "source": "/{,admin,driver,feedback,passenger}",
+        "source": "/{,admin,feedback,install,passenger}",
         "headers": [
           {
             "key": "Cache-Control",

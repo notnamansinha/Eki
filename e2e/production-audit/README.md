@@ -2,11 +2,11 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-PKG-010 | 1.0 | Current | 2026-10-30 |
+| EKI-PKG-010 | 1.1 | Current | 2026-11-07 |
 
 ## 1. Purpose
 
-This fixture keeps regression tests for defects confirmed in the [production audit claim validation](../../docs/testing/PRODUCTION_AUDIT_VALIDATION_2026_10_20.md) and for hostile browser conditions. It renders the real admin dashboard, passenger workspace, map, carousel, route editor and history components against synthetic Auth, collection, RTDB, HTTP and Maps boundaries. It uses no Firebase service account, provider key, real route change or GNSS hardware. The fixture controls exist only in this test entry point; the product has no geofence or authorization bypass.
+This fixture keeps regression tests for defects confirmed in the [production audit claim validation](../../docs/testing/PRODUCTION_AUDIT_VALIDATION_2026_10_20.md) and for hostile browser conditions. It renders the real admin dashboard, passenger workspace, map, carousel, route editor and history components against synthetic Auth, collection, RTDB, HTTP and Maps boundaries. Profile, chat, the feedback modal and the boarding view are placeholders. The passenger workspace renders inside `.passenger-layout` with the passenger theme; the admin surfaces render outside the admin layout, so they use the dark default palette of `globals.css` rather than the admin theme of the deployed pages (`brand-theme.css` and `admin/theme.css`). It uses no Firebase service account, provider key, real route change or GNSS hardware. The fixture controls exist only in this test entry point; the product has no geofence or authorization bypass.
 
 ## 2. Run
 
@@ -26,10 +26,10 @@ The configuration starts the Vite fixture on `http://127.0.0.1:3123` and runs `e
 - A denied passenger detail subscription shows a live-data error distinct from a telemetry delay, and clears after a new delivery.
 - Long route and endpoint labels render in full and stay selectable; the tracking header keeps the full route name while waiting for data.
 - History shows recorded interruption reasons and labelled fallbacks for legacy records.
-- The empty-search notice contrast is measured from the rendered foreground and the composed ancestor backgrounds. The result applies to this dark fixture only.
+- The empty-search notice contrast in the route editor is measured from the rendered foreground and the composed ancestor backgrounds, and must be at least 4.5:1. The result applies to the dark palette of this fixture only (Section 1).
 - Map movement stays inspectable under four-times Chromium CPU throttling. This measures accessibility-tree serialisation and screenshot time, not Google Maps performance, battery use or display latency.
 
-`resilience.spec.ts` intercepts place search and route save and delete requests:
+`resilience.spec.ts` intercepts place search and route save and delete requests, and every test in it fails on an uncaught page error:
 
 - Place search: a 500 response, a non-JSON gateway error, a malformed success body, a stale slow response, offline search, rate limiting and hostile place names rendered as text.
 - Route save: a 500 response with a successful retry, a dropped save reconciled with the same `saveId`, and a double-activated Update that sends one request.

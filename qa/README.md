@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-TST-003 | 1.0 | Current | 2026-10-30 |
+| EKI-TST-003 | 1.1 | Current | 2026-11-07 |
 
 ## 1. Purpose
 
@@ -41,7 +41,7 @@ Figure 1. Data flow from requirement definitions and harness reports to the exec
 | Execution ledger | `scripts/qa/execution-report.mjs` | Validates the six family reports for one clean commit and derives a status per requirement |
 | Campaigns | `scripts/qa/campaign.mjs`, `campaign-report.mjs`, `weekly-report.mjs` | Nightly and weekly runs; see [scheduled reliability](SCHEDULED_RELIABILITY.md) |
 | Coverage budget | `scripts/qa/coverage-budget.mjs` | On pull requests, requires changed critical source to have a reviewed mapping and a changed test file |
-| Workflow policy | `scripts/qa/workflow-policy.mjs` | Checks that the nightly and weekly workflows keep read-only permissions, pinned actions, bounded timeouts and the resolve, suites, report job graph |
+| Workflow policy | `scripts/qa/workflow-policy.mjs` | Checks that the nightly and weekly workflows keep read-only permissions, pinned actions, bounded timeouts, a resolver that tests the head of `main`, and the resolve, suites, report job graph |
 
 ## 3. Evidence model
 

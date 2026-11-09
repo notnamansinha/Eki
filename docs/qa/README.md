@@ -2,17 +2,17 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-TST-003 | 1.0 | Current | 2026-10-30 |
+| EKI-TST-003 | 1.1 | Current | 2026-11-07 |
 
 ## 1. Purpose
 
-The QA programme measures how much of the [A to Z acceptance plan](../docs/testing/WEBAPP_A_Z_AB_TESTING_PLAN.md) has been observed on a given commit. It has three parts:
+The QA programme measures how much of the [A to Z acceptance plan](../testing/WEBAPP_A_Z_AB_TESTING_PLAN.md) has been observed on a given commit. It has three parts:
 
 1. A static acceptance catalog that imports every requirement and inventories the current source.
 2. Isolated harnesses that run selected tests and record exact assertion identities, the source commit and whether the working tree was dirty.
 3. An execution ledger that links those observations to requirement IDs through reviewed test maps.
 
-The programme never marks a requirement complete. It shows which parts of each requirement have been observed and at which level. The [test strategy](../docs/testing/TEST_STRATEGY.md) defines the levels L0 to L5 and lists every command; the [testing index](../docs/testing/README.md) lists dated results.
+The programme never marks a requirement complete. It shows which parts of each requirement have been observed and at which level. The [test strategy](../testing/TEST_STRATEGY.md) defines the levels L0 to L5 and lists every command; the [testing index](../testing/README.md) lists dated results.
 
 ## 2. Components
 
@@ -41,7 +41,7 @@ Figure 1. Data flow from requirement definitions and harness reports to the exec
 | Execution ledger | `scripts/qa/execution-report.mjs` | Validates the six family reports for one clean commit and derives a status per requirement |
 | Campaigns | `scripts/qa/campaign.mjs`, `campaign-report.mjs`, `weekly-report.mjs` | Nightly and weekly runs; see [scheduled reliability](SCHEDULED_RELIABILITY.md) |
 | Coverage budget | `scripts/qa/coverage-budget.mjs` | On pull requests, requires changed critical source to have a reviewed mapping and a changed test file |
-| Workflow policy | `scripts/qa/workflow-policy.mjs` | Checks that the nightly and weekly workflows keep read-only permissions, pinned actions, bounded timeouts and the resolve, suites, report job graph |
+| Workflow policy | `scripts/qa/workflow-policy.mjs` | Checks that the nightly and weekly workflows keep read-only permissions, pinned actions, bounded timeouts, a resolver that tests the head of `main`, and the resolve, suites, report job graph |
 
 ## 3. Evidence model
 
@@ -56,7 +56,7 @@ The catalog counts each set separately and never merges them:
 | Per-HTTP-operation matrix entries | 18 (H01 to H18) | Plan Section 4.2 |
 | Experiment protocols | 8 (AB01 to AB08) | Plan Section 11 |
 | GNSS generator profiles | 20 | Plan Section 6, reconciled with `docs/testing/simulations/generate-gnss.mjs` |
-| Simulation scenarios | 20 (SIM-01 to SIM-20) | [Test strategy](../docs/testing/TEST_STRATEGY.md), Section 7.1 |
+| Simulation scenarios | 20 (SIM-01 to SIM-20) | [Test strategy](../testing/TEST_STRATEGY.md), Section 7.1 |
 
 The catalog stops importing at the plan's first `## Appendix` heading, so historical appendix rows cannot redefine a current case.
 
