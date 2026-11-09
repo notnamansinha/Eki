@@ -1,95 +1,131 @@
-import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
-import { dirname, relative, resolve } from "node:path";
+import { existsSync } from "node:fs";
+import { dirname, relative, resolve, sep } from "node:path";
+import MarkdownIt from "markdown-it";
 import { describe, expect, it } from "vitest";
+import {
+  documentationSources,
+  expectedMirror,
+  mirrorContent,
+  mirrorPath,
+  normalizedFile,
+} from "../../scripts/sync-documentation-mirrors.mjs";
 
 const repositoryRoot = resolve(__dirname, "../..");
+const sources: string[] = documentationSources();
+const sourceSet = new Set(sources);
 
-function normalizedFile(path: string) {
-  return readFileSync(resolve(repositoryRoot, path), "utf8")
-    .replace(/\r\n/g, "\n")
-    .trimEnd();
+// Links are read with markdown-it, not with the sync script's own matcher, so a
+// rewrite rule that is wrong in the script cannot also be wrong in this check.
+const markdown = new MarkdownIt({ html: true });
+type Token = ReturnType<MarkdownIt["parse"]>[number];
+
+function linkTargets(content: string): string[] {
+  return markdown.parse(content, {}).flatMap((token: Token) =>
+    (token.children ?? []).flatMap((child: Token) => {
+      if (child.type === "link_open") return [child.attrGet("href") ?? ""];
+      if (child.type === "image") return [child.attrGet("src") ?? ""];
+      return [];
+    }),
+  );
 }
 
-function documentationSources() {
-  return execFileSync("git", ["ls-files"], {
-    cwd: repositoryRoot,
-    encoding: "utf8",
-  })
-    .split(/\r?\n/)
-    .filter(Boolean)
-    .filter((path) => !path.startsWith("docs/"))
-    .filter((path) => path.toLowerCase().endsWith(".md") || path.endsWith("/README"));
-}
-
-function mirrorPath(source: string) {
-  if (source.startsWith(".github/")) {
-    return `docs/github/${source.slice(".github/".length)}`;
+function filePart(target: string) {
+  const path = target.split(/[?#]/, 1)[0];
+  try {
+    return decodeURIComponent(path);
+  } catch {
+    return path;
   }
-  if (!source.includes("/")) return `docs/repository/${source}`;
-  return `docs/${source}`;
 }
 
-function expectedMirror(source: string) {
-  let content = normalizedFile(source);
-  if (source === "README.md") {
-    content = content
-      .replaceAll("](docs/", "](../")
-      .replaceAll("](backend/", "](../backend/")
-      .replaceAll("](frontend/", "](../frontend/")
-      .replaceAll("](LICENSE)", "](../../LICENSE)")
-      .replaceAll("](hardware/", "](../hardware/");
-  } else if (!source.includes("/")) {
-    content = content
-      .replaceAll("](docs/", "](../")
-      .replaceAll("](.github/", "](../../.github/");
-  } else if (source === "hardware/README.md") {
-    content = content
-      .replaceAll("](../docs/hardware/", "](")
-      .replaceAll("](../docs/operations/", "](../operations/")
-      .replaceAll("](../docs/", "](../")
-      .replaceAll("](../backend/", "](../../backend/")
-      .replaceAll("](../frontend/", "](../../frontend/");
-  } else if (/^(backend|deploy|e2e|frontend|hardware|qa)\//.test(source)) {
-    // The mirror sits one folder deeper, under docs/, so a link written as
-    // "../" repeated once per source folder level, then "docs/<path>", needs
-    // the same "../" run followed by "<path>". Dropping "docs/" from the
-    // "../docs/" suffix does that at any depth: "../../docs/x" becomes "../../x".
-    content = content.replaceAll("../docs/", "../");
-  }
-  if (source.startsWith("backend/")) {
-    content = content.replaceAll("](openapi.json)", "](../../backend/openapi.json)");
-  }
-  return content;
-}
+const isRelative = (target: string) =>
+  Boolean(filePart(target)) && !target.startsWith("/") && !/^[a-z][a-z0-9+.-]*:/i.test(target);
 
-const linkTargets = (content: string) =>
-  [...content.matchAll(/\]\(([^)\s]+)\)/g)].map((match) => match[1].split("#")[0]);
+const repositoryPath = (absolute: string) => relative(repositoryRoot, absolute).split(sep).join("/");
 
 describe("repository documentation mirrors", () => {
-  for (const source of documentationSources()) {
+  for (const source of sources) {
     const mirror = mirrorPath(source);
     it(`keeps ${mirror} synchronized with ${source}`, () => {
-      expect(normalizedFile(mirror)).toBe(expectedMirror(source));
+      expect(normalizedFile(mirror)).toBe(expectedMirror(source, sourceSet));
     });
   }
 
-  it("resolves every link into docs/ to the same file from the mirror", () => {
+  it("resolves every relative link in a mirror to the file the source links to, or to its mirror", () => {
     const broken: string[] = [];
-    for (const source of documentationSources()) {
+    for (const source of sources) {
       const mirror = mirrorPath(source);
       const sourceTargets = linkTargets(normalizedFile(source));
       const mirrorTargets = linkTargets(normalizedFile(mirror));
-      expect(mirrorTargets).toHaveLength(sourceTargets.length);
+      expect(mirrorTargets, mirror).toHaveLength(sourceTargets.length);
       sourceTargets.forEach((target, index) => {
-        if (!target || /^[a-z][a-z0-9+.-]*:/i.test(target)) return;
-        const fromSource = resolve(repositoryRoot, dirname(source), target);
-        if (!relative(resolve(repositoryRoot, "docs"), fromSource).match(/^[^.]/)) return;
+        if (!isRelative(target)) {
+          if (mirrorTargets[index] !== target) broken.push(`${mirror}: ${mirrorTargets[index]} (source ${target})`);
+          return;
+        }
+        const fromSource = resolve(repositoryRoot, dirname(source), filePart(target));
+        // A link that is broken in the source is reported by documentation-quality.test.mjs.
         if (!existsSync(fromSource)) return;
-        const fromMirror = resolve(repositoryRoot, dirname(mirror), mirrorTargets[index]);
-        if (fromMirror !== fromSource) broken.push(`${mirror}: ${mirrorTargets[index]} (source ${target})`);
+        const fromMirror = resolve(repositoryRoot, dirname(mirror), filePart(mirrorTargets[index]));
+        const linked = repositoryPath(fromSource);
+        const allowed = [fromSource];
+        if (sourceSet.has(linked)) allowed.push(resolve(repositoryRoot, mirrorPath(linked)));
+        if (!allowed.includes(fromMirror)) broken.push(`${mirror}: ${mirrorTargets[index]} (source ${target})`);
       });
     }
     expect(broken).toEqual([]);
+  });
+});
+
+describe("mirror link rewriting", () => {
+  const known = new Set(["hardware/keys/README.md", "backend/README.md", "deploy/vps/README.md", "SECURITY.md"]);
+  const mirrored = (source: string, content: string) => mirrorContent(source, content, known);
+
+  it("gives every root document links into any folder", () => {
+    expect(
+      mirrored(
+        "SECURITY.md",
+        "[keys](hardware/keys/README.md) [server](backend/src/server.ts) [docs](docs/GLOSSARY.md#a) [licence](LICENSE)",
+      ),
+    ).toBe(
+      "[keys](../hardware/keys/README.md) [server](../../backend/src/server.ts) [docs](../GLOSSARY.md#a) [licence](../../LICENSE)",
+    );
+  });
+
+  it("points links to files that have no mirror back at the source folder", () => {
+    expect(
+      mirrored(
+        "backend/README.md",
+        "[a](openapi.json) [b](./openapi.json#/paths/~1api~1v2~1routes) [c](Dockerfile) [d](.env.example) [e](src/)",
+      ),
+    ).toBe(
+      "[a](../../backend/openapi.json) [b](../../backend/openapi.json#/paths/~1api~1v2~1routes) " +
+        "[c](../../backend/Dockerfile) [d](../../backend/.env.example) [e](../../backend/src/)",
+    );
+  });
+
+  it("rewrites link destinations but never code", () => {
+    const source = [
+      "Read [the runbook](../../docs/operations/X.md#steps) and run `cp ../../docs/operations/x.md .`.",
+      "",
+      "```sh",
+      "cp ../../docs/operations/x.md .",
+      "cat [not](a/link.md)",
+      "```",
+      "",
+      "    [indented](../../docs/code.md)",
+      "",
+      "[ref]: <../../docs/route guide.md>",
+    ].join("\n");
+    expect(mirrored("deploy/vps/README.md", source)).toBe(
+      source
+        .replace("](../../docs/operations/X.md#steps)", "](../../operations/X.md#steps)")
+        .replace("[ref]: <../../docs/route guide.md>", "[ref]: <../../route guide.md>"),
+    );
+  });
+
+  it("leaves external, absolute and same-page links alone", () => {
+    const source = "[a](https://example.com/x.md) [b](#section) [c](/absolute) [d](mailto:a@b.c)";
+    expect(mirrored("backend/README.md", source)).toBe(source);
   });
 });

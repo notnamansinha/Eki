@@ -1,18 +1,24 @@
 import { execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { dirname, posix, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import MarkdownIt from "markdown-it";
 
-const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+// Generates docs/ mirrors of every tracked Markdown document outside docs/.
+// backend/src/docsMirror.test.ts imports these functions, so each rewrite rule
+// exists once and the test's independent link check is the real check on it.
+
+const scriptPath = fileURLToPath(import.meta.url);
+const repositoryRoot = resolve(dirname(scriptPath), "..");
 const outputEol = process.platform === "win32" ? "\r\n" : "\n";
 
-function normalizedFile(path) {
+export function normalizedFile(path) {
   return readFileSync(resolve(repositoryRoot, path), "utf8")
     .replace(/\r\n/g, "\n")
     .trimEnd();
 }
 
-function documentationSources() {
+export function documentationSources() {
   return execFileSync("git", ["ls-files"], {
     cwd: repositoryRoot,
     encoding: "utf8",
@@ -23,7 +29,7 @@ function documentationSources() {
     .filter((path) => path.toLowerCase().endsWith(".md") || path.endsWith("/README"));
 }
 
-function mirrorPath(source) {
+export function mirrorPath(source) {
   if (source.startsWith(".github/")) {
     return `docs/github/${source.slice(".github/".length)}`;
   }
@@ -31,43 +37,97 @@ function mirrorPath(source) {
   return `docs/${source}`;
 }
 
-function expectedMirror(source) {
-  let content = normalizedFile(source);
-  if (source === "README.md") {
-    content = content
-      .replaceAll("](docs/", "](../")
-      .replaceAll("](backend/", "](../backend/")
-      .replaceAll("](frontend/", "](../frontend/")
-      .replaceAll("](LICENSE)", "](../../LICENSE)")
-      .replaceAll("](hardware/", "](../hardware/");
-  } else if (!source.includes("/")) {
-    content = content
-      .replaceAll("](docs/", "](../")
-      .replaceAll("](.github/", "](../../.github/");
-  } else if (source === "hardware/README.md") {
-    content = content
-      .replaceAll("](../docs/hardware/", "](")
-      .replaceAll("](../docs/operations/", "](../operations/")
-      .replaceAll("](../docs/", "](../")
-      .replaceAll("](../backend/", "](../../backend/")
-      .replaceAll("](../frontend/", "](../../frontend/");
-  } else if (/^(backend|deploy|e2e|frontend|hardware|qa)\//.test(source)) {
-    // The mirror sits one folder deeper, under docs/, so a link written as
-    // "../" repeated once per source folder level, then "docs/<path>", needs
-    // the same "../" run followed by "<path>". Dropping "docs/" from the
-    // "../docs/" suffix does that at any depth: "../../docs/x" becomes "../../x".
-    // backend/src/docsMirror.test.ts checks that every such link resolves.
-    content = content.replaceAll("../docs/", "../");
+function safeDecode(value) {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
   }
-  if (source.startsWith("backend/")) {
-    content = content.replaceAll("](openapi.json)", "](../../backend/openapi.json)");
-  }
-  return content;
 }
 
-for (const source of documentationSources()) {
-  const target = resolve(repositoryRoot, mirrorPath(source));
-  mkdirSync(dirname(target), { recursive: true });
-  const content = expectedMirror(source).replaceAll("\n", outputEol);
-  writeFileSync(target, `${content}${outputEol}`, "utf8");
+/**
+ * Rewrites one link destination written in `source` so that it reaches the
+ * same place from `mirror`. A link to another mirrored document points at that
+ * document's mirror, so the docs/ tree stays self-contained; every other
+ * relative link points back at the file or folder the author linked.
+ */
+function rewriteDestination(destination, source, mirror, sources) {
+  if (!destination || destination.startsWith("#") || destination.startsWith("/")) return destination;
+  if (/^[a-z][a-z0-9+.-]*:/i.test(destination)) return destination;
+  const suffixAt = destination.search(/[?#]/);
+  const path = suffixAt === -1 ? destination : destination.slice(0, suffixAt);
+  const suffix = suffixAt === -1 ? "" : destination.slice(suffixAt);
+  if (!path) return destination;
+  const target = posix.normalize(posix.join(posix.dirname(source), path));
+  if (target === ".." || target.startsWith("../")) return destination;
+  const decoded = safeDecode(target);
+  const from = posix.dirname(mirror);
+  let rewritten = sources.has(decoded)
+    ? // mirrorPath only moves the folder, so the author's escaped file name is kept.
+      posix.join(posix.relative(from, posix.dirname(mirrorPath(decoded))), posix.basename(target))
+    : posix.relative(from, target) || ".";
+  if (path.endsWith("/") && !rewritten.endsWith("/")) rewritten += "/";
+  return `${rewritten}${suffix}`;
+}
+
+/** Handles the `<path with spaces>` destination form. */
+function rewriteWrapped(destination, ...context) {
+  if (destination.startsWith("<") && destination.endsWith(">")) {
+    return `<${rewriteDestination(destination.slice(1, -1), ...context)}>`;
+  }
+  return rewriteDestination(destination, ...context);
+}
+
+// Code spans are matched first so that link-like text inside them is left alone.
+// Inline destinations allow one level of balanced parentheses, as CommonMark does.
+const inlineSyntax =
+  /(`+)[^\n]*?\1|(\]\()(<[^>\n]*>|[^\s()<>]*(?:\([^\s()]*\)[^\s()<>]*)*)|^( {0,3}\[[^\]\n]+\]:[ \t]*)(<[^>\n]*>|\S+)/gm;
+
+const markdown = new MarkdownIt({ html: true });
+
+/** Lines that hold code or raw HTML, where text is never a Markdown link. */
+function literalLines(content) {
+  const lines = new Set();
+  for (const token of markdown.parse(content, {})) {
+    if (token.map && (token.type === "fence" || token.type === "code_block" || token.type === "html_block")) {
+      for (let line = token.map[0]; line < token.map[1]; line += 1) lines.add(line);
+    }
+  }
+  return lines;
+}
+
+/** The mirror text for `content`, which is the normalized text of `source`. */
+export function mirrorContent(source, content, sources = new Set(documentationSources())) {
+  const mirror = mirrorPath(source);
+  const literal = literalLines(content);
+  return content
+    .split("\n")
+    .map((line, index) =>
+      literal.has(index)
+        ? line
+        : line.replace(inlineSyntax, (match, ticks, open, inline, definition, reference) => {
+            if (ticks) return match;
+            if (open) return `${open}${rewriteWrapped(inline, source, mirror, sources)}`;
+            return `${definition}${rewriteWrapped(reference, source, mirror, sources)}`;
+          }),
+    )
+    .join("\n");
+}
+
+export function expectedMirror(source, sources = new Set(documentationSources())) {
+  return mirrorContent(source, normalizedFile(source), sources);
+}
+
+export function syncDocumentationMirrors() {
+  const sources = new Set(documentationSources());
+  for (const source of sources) {
+    const target = resolve(repositoryRoot, mirrorPath(source));
+    mkdirSync(dirname(target), { recursive: true });
+    const content = expectedMirror(source, sources).replaceAll("\n", outputEol);
+    writeFileSync(target, `${content}${outputEol}`, "utf8");
+  }
+}
+
+if (process.argv[1] && resolve(process.argv[1]) === scriptPath) {
+  syncDocumentationMirrors();
 }

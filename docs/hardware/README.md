@@ -15,7 +15,7 @@ This guide describes the tracker hardware, the firmware package in `hardware/`, 
 | Flash checkpoint after complete power loss | [Cold power recovery](COLD_POWER_RECOVERY.md) |
 | Header files and host tests | [Firmware headers](include/README.md), [firmware tests](test/README.md) |
 | Signing-key custody | [Fleet signing keys](keys/README.md) |
-| Device endpoints on the backend | [Backend API reference](../../backend/API.md) |
+| Device endpoints on the backend | [Backend API reference](../backend/API.md) |
 
 ```mermaid
 flowchart LR
