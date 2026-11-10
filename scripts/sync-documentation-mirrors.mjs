@@ -1,18 +1,26 @@
 import { execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { dirname, posix, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import MarkdownIt from "markdown-it";
 
-const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+// Generates docs/ mirrors of every tracked Markdown document outside docs/.
+// backend/src/docsMirror.test.ts imports these functions, so each rewrite rule
+// exists once and the test's independent link check is the real check on it.
+
+const scriptPath = fileURLToPath(import.meta.url);
+const repositoryRoot = resolve(dirname(scriptPath), "..");
 const outputEol = process.platform === "win32" ? "\r\n" : "\n";
 
-function normalizedFile(path) {
+/** The text of a repository file with LF line endings and no trailing whitespace. */
+export function normalizedFile(path) {
   return readFileSync(resolve(repositoryRoot, path), "utf8")
     .replace(/\r\n/g, "\n")
     .trimEnd();
 }
 
-function documentationSources() {
+/** Tracked Markdown documents outside docs/, which are the mirror sources. */
+export function documentationSources() {
   return execFileSync("git", ["ls-files"], {
     cwd: repositoryRoot,
     encoding: "utf8",
@@ -23,7 +31,8 @@ function documentationSources() {
     .filter((path) => path.toLowerCase().endsWith(".md") || path.endsWith("/README"));
 }
 
-function mirrorPath(source) {
+/** The docs/ path that mirrors the repository path `source`. */
+export function mirrorPath(source) {
   if (source.startsWith(".github/")) {
     return `docs/github/${source.slice(".github/".length)}`;
   }
@@ -31,43 +40,174 @@ function mirrorPath(source) {
   return `docs/${source}`;
 }
 
-function expectedMirror(source) {
-  let content = normalizedFile(source);
-  if (source === "README.md") {
-    content = content
-      .replaceAll("](docs/", "](../")
-      .replaceAll("](backend/", "](../backend/")
-      .replaceAll("](frontend/", "](../frontend/")
-      .replaceAll("](LICENSE)", "](../../LICENSE)")
-      .replaceAll("](hardware/", "](../hardware/");
-  } else if (!source.includes("/")) {
-    content = content
-      .replaceAll("](docs/", "](../")
-      .replaceAll("](.github/", "](../../.github/");
-  } else if (source === "hardware/README.md") {
-    content = content
-      .replaceAll("](../docs/hardware/", "](")
-      .replaceAll("](../docs/operations/", "](../operations/")
-      .replaceAll("](../docs/", "](../")
-      .replaceAll("](../backend/", "](../../backend/")
-      .replaceAll("](../frontend/", "](../../frontend/");
-  } else if (/^(backend|deploy|e2e|frontend|hardware|qa)\//.test(source)) {
-    // The mirror sits one folder deeper, under docs/, so a link written as
-    // "../" repeated once per source folder level, then "docs/<path>", needs
-    // the same "../" run followed by "<path>". Dropping "docs/" from the
-    // "../docs/" suffix does that at any depth: "../../docs/x" becomes "../../x".
-    // backend/src/docsMirror.test.ts checks that every such link resolves.
-    content = content.replaceAll("../docs/", "../");
+/** `value` with percent-encoding decoded, or unchanged if it is malformed. */
+function safeDecode(value) {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
   }
-  if (source.startsWith("backend/")) {
-    content = content.replaceAll("](openapi.json)", "](../../backend/openapi.json)");
-  }
-  return content;
 }
 
-for (const source of documentationSources()) {
-  const target = resolve(repositoryRoot, mirrorPath(source));
-  mkdirSync(dirname(target), { recursive: true });
-  const content = expectedMirror(source).replaceAll("\n", outputEol);
-  writeFileSync(target, `${content}${outputEol}`, "utf8");
+/**
+ * Rewrites one link destination written in `source` so that it reaches the
+ * same place from `mirror`. A link to another mirrored document points at that
+ * document's mirror, so the docs/ tree stays self-contained; every other
+ * relative link points back at the file or folder the author linked.
+ */
+function rewriteDestination(destination, source, mirror, sources) {
+  if (!destination || destination.startsWith("#") || destination.startsWith("/")) return destination;
+  if (/^[a-z][a-z0-9+.-]*:/i.test(destination)) return destination;
+  const suffixAt = destination.search(/[?#]/);
+  const path = suffixAt === -1 ? destination : destination.slice(0, suffixAt);
+  const suffix = suffixAt === -1 ? "" : destination.slice(suffixAt);
+  if (!path) return destination;
+  const target = posix.normalize(posix.join(posix.dirname(source), path));
+  if (target === ".." || target.startsWith("../")) return destination;
+  const decoded = safeDecode(target);
+  const from = posix.dirname(mirror);
+  let rewritten;
+  if (!sources.has(decoded)) {
+    rewritten = posix.relative(from, target) || ".";
+  } else if (decoded.split("/").length === target.split("/").length) {
+    // mirrorPath only changes the leading folder, so the author's percent-encoding is kept.
+    rewritten = posix.relative(from, mirrorPath(target));
+  } else {
+    // An encoded separator such as %2F: pick the mirror folder from the decoded path.
+    rewritten = posix.relative(from, mirrorPath(decoded)).split("/").map(encodeURIComponent).join("/");
+  }
+  if (path.endsWith("/") && !rewritten.endsWith("/")) rewritten += "/";
+  return `${rewritten}${suffix}`;
+}
+
+/** Handles the `<path with spaces>` destination form. */
+function rewriteWrapped(destination, ...context) {
+  if (destination.startsWith("<") && destination.endsWith(">")) {
+    return `<${rewriteDestination(destination.slice(1, -1), ...context)}>`;
+  }
+  return rewriteDestination(destination, ...context);
+}
+
+// A destination may start on the line after `](` or `]:`, behind blockquote markers.
+const destinationGap = String.raw`[ \t]*(?:\n[ \t>]*)?`;
+// One level of balanced parentheses is allowed, as CommonMark does.
+const destination = String.raw`<[^>\n]*>|[^\s()<>]*(?:\([^\s()]*\)[^\s()<>]*)*`;
+// One attribute of an inline HTML tag.
+const htmlAttribute = String.raw`\s+[A-Za-z_:][\w.:-]*(?:\s*=\s*(?:[^\s"'=<>\x60]+|'[^']*'|"[^"]*"))?`;
+// An optional link title, then the closing parenthesis. Both are kept as written.
+const linkTitle = String.raw`"(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*'|\((?:\\[\s\S]|[^()\\])*\)`;
+const linkEnd = String.raw`(?:(?:[ \t]+|[ \t]*\n[ \t>]*)(?:${linkTitle}))?[ \t]*(?:\n[ \t>]*)?\)`;
+
+// Matched from left to right, so whichever starts first wins, as in CommonMark:
+// an escaped character, a code span, an unmatched backtick run, an autolink, an
+// inline HTML tag or comment, a complete inline link destination, or a bracket.
+// Only a link destination is rewritten, and only after an unescaped `[`.
+// \x60 is a backtick.
+const inlineSyntax = new RegExp(
+  [
+    String.raw`\\[!-/:-@[-\x60{-~]`,
+    String.raw`(\x60+)(?!\x60)[\s\S]*?(?<!\x60)\1(?!\x60)`,
+    String.raw`\x60+`,
+    String.raw`<[A-Za-z][A-Za-z0-9+.-]{1,31}:[^\s<>]*>`,
+    String.raw`<[A-Za-z][A-Za-z0-9-]*(?:${htmlAttribute})*\s*\/?>|<\/[A-Za-z][A-Za-z0-9-]*\s*>|<!--[\s\S]*?-->`,
+    String.raw`(\]\(${destinationGap})(${destination})(${linkEnd})`,
+    String.raw`(\[|\])`,
+  ].join("|"),
+  "g",
+);
+
+// A reference definition may sit inside blockquotes or list items. Its label may
+// hold escaped brackets and span lines.
+const definitionSyntax = new RegExp(
+  String.raw`^((?:[ \t]*(?:>|[-+*][ \t]|\d{1,9}[.)][ \t]))*[ \t]*\[(?:\\[\s\S]|[^\\\[\]])+\]:${destinationGap})(<[^>\n]*>|\S+)`,
+  "gm",
+);
+
+/** Rewrites the destinations of the inline links in one run of Markdown text. */
+function rewriteInlineLinks(text, context) {
+  let openBrackets = 0;
+  return text.replace(inlineSyntax, (match, ticks, open, inline, end, bracket) => {
+    if (bracket === "[") openBrackets += 1;
+    if (bracket === "]" && openBrackets > 0) openBrackets -= 1;
+    if (!open || openBrackets === 0) return match;
+    openBrackets -= 1;
+    return `${open}${rewriteWrapped(inline, ...context)}${end}`;
+  });
+}
+
+const markdown = new MarkdownIt({ html: true });
+const containers = new Set(["blockquote_open", "bullet_list_open", "ordered_list_open", "list_item_open"]);
+const inlineBlocks = new Set(["paragraph_open", "heading_open", "tr_open"]);
+
+/**
+ * Splits `content` into runs of lines: Markdown text (a paragraph, heading or
+ * table row), reference definitions, or anything else, which is copied as is.
+ * markdown-it decides; it emits no block for a reference definition, so a
+ * non-blank line that no block covers holds one.
+ */
+function lineRuns(content) {
+  const lines = content.split("\n");
+  const covered = new Array(lines.length).fill(false);
+  const textEnd = new Map();
+  for (const token of markdown.parse(content, {})) {
+    if (!token.map || containers.has(token.type)) continue;
+    covered.fill(true, token.map[0], token.map[1]);
+    if (inlineBlocks.has(token.type)) textEnd.set(token.map[0], token.map[1]);
+  }
+  /** Whether `line` is part of a reference definition. */
+  const definition = (line) => line < lines.length && !covered[line] && !/^[ \t>]*$/.test(lines[line]);
+  const runs = [];
+  for (let start = 0; start < lines.length; ) {
+    let end = start + 1;
+    let kind = "other";
+    if (textEnd.has(start)) {
+      kind = "text";
+      end = textEnd.get(start);
+    } else if (definition(start)) {
+      kind = "definitions";
+      while (definition(end)) end += 1;
+    }
+    runs.push({ kind, text: lines.slice(start, end).join("\n") });
+    start = end;
+  }
+  return runs;
+}
+
+/** The mirror text for `content`, which is the normalized text of `source`. */
+export function mirrorContent(source, content, sources = new Set(documentationSources())) {
+  const context = [source, mirrorPath(source), sources];
+  return lineRuns(content)
+    .map(({ kind, text }) => {
+      if (kind === "text") {
+        return rewriteInlineLinks(text, context);
+      }
+      if (kind === "definitions") {
+        return text.replace(
+          definitionSyntax,
+          (match, label, reference) => `${label}${rewriteWrapped(reference, ...context)}`,
+        );
+      }
+      return text;
+    })
+    .join("\n");
+}
+
+/** The mirror text for the tracked document `source`. */
+export function expectedMirror(source, sources = new Set(documentationSources())) {
+  return mirrorContent(source, normalizedFile(source), sources);
+}
+
+/** Writes the mirror of every documentation source. */
+export function syncDocumentationMirrors() {
+  const sources = new Set(documentationSources());
+  for (const source of sources) {
+    const target = resolve(repositoryRoot, mirrorPath(source));
+    mkdirSync(dirname(target), { recursive: true });
+    const content = expectedMirror(source, sources).replaceAll("\n", outputEol);
+    writeFileSync(target, `${content}${outputEol}`, "utf8");
+  }
+}
+
+if (process.argv[1] && resolve(process.argv[1]) === scriptPath) {
+  syncDocumentationMirrors();
 }

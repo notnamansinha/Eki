@@ -6,7 +6,7 @@
 
 ## 1. Purpose
 
-This folder holds the firmware's configuration template and its header-only policies. PlatformIO puts this folder on the include path of every environment, and `src/CMakeLists.txt` adds it for the ESP-IDF builds (`esp32dev-journal` and `esp32dev-secure`), so both the board builds and the `native` test environment compile these headers. Policy headers include only the C++ standard library (and ArduinoJson for `json_payload.h`), so the host tests run the same code that the board runs. Behaviour is specified in the [hardware telemetry contract](../../hardware/HARDWARE_TELEMETRY.md); tests are described in the [firmware tests](../test/README.md) guide.
+This folder holds the firmware's configuration template and its header-only policies. PlatformIO puts this folder on the include path of every environment, and `src/CMakeLists.txt` adds it for the ESP-IDF builds (`esp32dev-journal` and `esp32dev-secure`), so both the board builds and the `native` test environment compile these headers. Policy headers include only the C++ standard library (and ArduinoJson for `json_payload.h`), so the host tests run the same code that the board runs. Behaviour is specified in the [hardware telemetry contract](../HARDWARE_TELEMETRY.md); tests are described in the [firmware tests](../test/README.md) guide.
 
 ## 2. Configuration
 
