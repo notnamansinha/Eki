@@ -13,7 +13,7 @@ This policy states which Eki code receives security fixes, how to report a vulne
 | Component | Supported | Notes |
 |---|---|---|
 | Web app, Firestore and RTDB rules, Hosting configuration | Head of `main` | Staging deploys them from each successful push build on `main`, and only commits that `main` contains. Production deploys only by a manual workflow run from `main`. See [CI/CD and releases](docs/operations/CI_CD_AND_RELEASES.md). |
-| Backend | Head of `main`, and the revision serving the staging Cloud Run service | The manual `deploy-backend-staging` job deploys the backend from `main`, so the serving revision can be older than the head of `main`. A fix reaches staging at the next backend deployment. The backup `Publish backend image` workflow tags each Docker Hub image with its commit SHA and moves `latest` only to the head of `main`; a VPS host receives a fix when it pulls a newer image ([VPS backup path](docs/deploy/vps/README.md)). |
+| Backend | Head of `main`, and the revision serving the staging Cloud Run service | The manual `deploy-backend-staging` job deploys the backend from `main`, so the serving revision can be older than the head of `main`. A fix reaches staging at the next backend deployment. The backup `Publish backend image` workflow tags each Docker Hub image with its commit SHA and moves `latest` only to the head of `main`; a VPS host receives a fix when it pulls a newer image ([VPS backup path](deploy/vps/README.md)). |
 | Tracker firmware | Signed builds of the `esp32dev-secure` PlatformIO environment | The `esp32dev`, `esp32dev-quiet` and `esp32dev-journal` environments are development builds without Secure Boot or flash encryption. |
 | Other branches, forks and earlier commits | Not supported | Reproduce a finding on `main` before reporting it. |
 
@@ -63,7 +63,7 @@ Out of scope:
 | Firebase Admin service-account JSON | Backend runtime environment (`FIREBASE_SERVICE_ACCOUNT`) or Application Default Credentials. On Cloud Run the backend uses the runtime service account and needs no key file. |
 | Device secret and Wi-Fi password | Ignored `hardware/include/secrets.h`, only inside the controlled signing environment |
 | Signed firmware image (`firmware-signed.bin`) | Contains the compiled `secrets.h` values. Publish it for OTA only on a backend that serves one device, at a URL protected like the device secret ([hardware security provisioning](docs/security/HARDWARE_SECURITY_PROVISIONING.md#6-signed-ota-release-and-rollback)) |
-| Secure Boot signing key | Offline signing environment ([key custody](docs/hardware/keys/README.md)) |
+| Secure Boot signing key | Offline signing environment ([key custody](hardware/keys/README.md)) |
 | Firebase deploy token | GitHub environment secret `FIREBASE_TOKEN` |
 | Server Google Maps key | Backend environment (`GOOGLE_MAPS_API_KEY`); on Cloud Run, Secret Manager secret `google-maps-server-key` |
 | Docker Hub publish token | GitHub repository secrets `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN`, referenced only by `.github/workflows/publish-backend-image.yml` |

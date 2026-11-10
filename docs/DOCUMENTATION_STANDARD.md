@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-GEN-003 | 1.2 | Current | 2026-11-08 |
+| EKI-GEN-003 | 1.3 | Current | 2026-11-09 |
 
 ## 1. Purpose
 
@@ -157,7 +157,7 @@ Markdown files outside `docs/` are mirrored into `docs/` so that the folder hold
 | `.github/<path>` | `docs/github/<path>` |
 | `<folder>/<path>`, for example `backend/API.md` or `deploy/vps/README.md` | `docs/<folder>/<path>` |
 
-Edit the source, never the mirror. Then run `npm run docs:sync`, which runs `scripts/sync-documentation-mirrors.mjs`. The script mirrors every tracked `.md` file and every file named `README` outside `docs/`. So that links resolve from the mirror, it rewrites relative links into `docs/` in root files and in files under `backend/`, `deploy/`, `e2e/`, `frontend/`, `hardware/` and `qa/`, and in the root `README.md` and `hardware/README.md` it also rewrites links to the code folders (and, in the root `README.md`, to `LICENSE`). It also rewrites root links to `.github/` and backend links to `openapi.json`. It copies other files unchanged. The test `backend/src/docsMirror.test.ts` fails if a mirror differs from its expected content.
+Edit the source, never the mirror. Then run `npm run docs:sync`, which runs `scripts/sync-documentation-mirrors.mjs`. The script mirrors every tracked `.md` file and every file named `README` outside `docs/`. So that links resolve from the mirror, one rule applies to every source: the script resolves each relative link from the source file and rewrites it from the mirror's folder. A link to another mirrored document points at that document's mirror; any other link, such as one into `docs/`, to a code file or folder, or to `LICENSE`, points at the file or folder the source links to. Query strings, fragments and the `<...>` form are kept. It rewrites only link destinations in Markdown text and reference definitions, never fenced or indented code, inline code or raw HTML, so commands that contain paths are copied unchanged. Write source links to the real file, never to a mirror. The test `backend/src/docsMirror.test.ts` imports the script's rewrite functions and fails if a mirror differs from the script's output, or if any relative link in a mirror, read with markdown-it, reaches neither the file the source links to nor that file's mirror.
 
 ## 8. Verification
 
@@ -169,6 +169,6 @@ npm run docs:check
 git diff --check
 ```
 
-`npm run docs:check` runs the documentation quality test (`scripts/documentation-quality.test.mjs`), then the documentation mirror test (`backend/src/docsMirror.test.ts`) and the configuration coverage test (`backend/src/envDocumentation.test.ts`). The quality test checks control blocks, unique document IDs, the document register, emojis, dashes, prohibited phrases and relative Markdown links and anchors in sources and mirrors, and that the only Markdown files at the repository root are `README.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md` and `SECURITY.md`. It skips the dash and phrase checks for Historical documents, and the link check for agent instruction files and the machine-parsed acceptance plan and ledger (Section 3.4). The configuration coverage test requires every variable in `backend/.env.example` to appear in the backend variables table of the [configuration reference](CONFIGURATION.md).
+`npm run docs:check` runs the documentation quality test (`scripts/documentation-quality.test.mjs`), then the documentation mirror test (`backend/src/docsMirror.test.ts`) and the configuration coverage test (`backend/src/envDocumentation.test.ts`). The quality test checks control blocks, unique document IDs, the document register, emojis, dashes, prohibited phrases and relative Markdown links and anchors in sources and mirrors (anchors come from the headings markdown-it renders, including setext headings, and from `<a id>` or `<a name>` tags in HTML; a link with a malformed percent escape is reported as malformed), and that the only Markdown files at the repository root are `README.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md` and `SECURITY.md`. It skips the dash and phrase checks for Historical documents, and the link check for agent instruction files and the machine-parsed acceptance plan and ledger (Section 3.4). The configuration coverage test requires every variable in `backend/.env.example` to appear in the backend variables table of the [configuration reference](CONFIGURATION.md).
 
 A reviewer shall also confirm, for each changed statement, that the code, configuration or recorded evidence supports it.

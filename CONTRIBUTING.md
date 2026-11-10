@@ -56,8 +56,8 @@ Run the checks for every kind of change your branch contains, from the repositor
 | Firestore or RTDB rules, or backend code that the emulator suites cover | `npm run test:rules` (needs Java 21) |
 | Admin, sign-in or feedback screens | `npm run test:e2e:admin`. Run `npx playwright install chromium` once first. For the Live Ops dashboard, route editor or ride history, also run `npx playwright test --config playwright.production-audit.config.ts`. |
 | Passenger screens | `npx playwright test --config playwright.passenger-layout.config.ts`, `npx playwright test --config playwright.passenger-progress.config.ts` and `npx playwright test --config playwright.production-audit.config.ts` |
-| Passenger or admin flows that use the backend or Firestore, such as boarding, chat, feedback or the admin panels | `npm run qa:browser` (needs Java 21 and a checkout without `.env`, `backend/.env` or `e2e/emulator/.env`; see [browser acceptance](docs/qa/BROWSER_ACCEPTANCE.md#2-prerequisites)) |
-| Protected HTTP routes or their authorization | `npm run qa:api` (needs Java 21 and a checkout without `.env`, `backend/.env` or `e2e/emulator/.env`; see [HTTP authorization](docs/qa/HTTP_AUTHORIZATION.md)) |
+| Passenger or admin flows that use the backend or Firestore, such as boarding, chat, feedback or the admin panels | `npm run qa:browser` (needs Java 21 and a checkout without `.env`, `backend/.env` or `e2e/emulator/.env`; see [browser acceptance](qa/BROWSER_ACCEPTANCE.md#2-prerequisites)) |
+| Protected HTTP routes or their authorization | `npm run qa:api` (needs Java 21 and a checkout without `.env`, `backend/.env` or `e2e/emulator/.env`; see [HTTP authorization](qa/HTTP_AUTHORIZATION.md)) |
 | A workflow in `.github/workflows/` or the staging manifest in `deploy/cloud-run/` | `node --test scripts/*.test.mjs` (part of `npm test`), which checks the workflow files and the manifest. For `deep-qa.yml` or `weekly-reliability.yml`, also run `npm run qa:check`. |
 | Critical source: rules, or `backend/src` and `frontend/src` files whose path contains auth, appcheck, boarding, telemetry, tripstate, workerfence, livebus, ride, session, privacy, retention or fleet (`scripts/qa/coverage-budget.mjs`) | Add or change a test and map it in the `qa/*-test-map.mjs` files, commit, then run `$env:EKI_QA_BASE_SHA = git merge-base origin/main HEAD` and `npm run qa:budget`. CI runs the same gate on pull requests. |
 | A test that a `qa/` map references is renamed or removed | `npm run qa:check` |
@@ -65,7 +65,7 @@ Run the checks for every kind of change your branch contains, from the repositor
 | Environment variable added, renamed or removed | Update the tracked template and the [configuration reference](docs/CONFIGURATION.md) in the same change, then run `npm run docs:check` |
 | Documentation | `npm run docs:sync`, `npm run docs:check` and `git diff --check` |
 
-A build regenerates the CSP hashes in `firebase.json`; commit changed hashes and do not edit them by hand. With a filled `frontend/.env.local`, the build also writes your backend origin and RTDB host into the policy: leave those local values out of the commit. The [test strategy](docs/testing/TEST_STRATEGY.md) explains what each suite proves, and the [QA guide](docs/qa/README.md) explains the acceptance maps.
+A build regenerates the CSP hashes in `firebase.json`; commit changed hashes and do not edit them by hand. With a filled `frontend/.env.local`, the build also writes your backend origin and RTDB host into the policy: leave those local values out of the commit. The [test strategy](docs/testing/TEST_STRATEGY.md) explains what each suite proves, and the [QA guide](qa/README.md) explains the acceptance maps.
 
 ## 5. Documentation
 
@@ -83,7 +83,7 @@ A build regenerates the CSP hashes in `firebase.json`; commit changed hashes and
 3. A successful build or native test is not physical acceptance. A claim about timing, power, GNSS, TLS or radio behaviour needs a recorded hardware run: commit, build environment, board, conditions, and redacted results. See [hardware telemetry](docs/hardware/HARDWARE_TELEMETRY.md).
 4. Produce signed fleet images and perform irreversible eFuse provisioning only through the witnessed [hardware security provisioning](docs/security/HARDWARE_SECURITY_PROVISIONING.md) procedure.
 
-The [hardware guide](docs/hardware/README.md) covers builds, flashing and post-flash checks.
+The [hardware guide](hardware/README.md) covers builds, flashing and post-flash checks.
 
 ## 7. Security and conduct
 
