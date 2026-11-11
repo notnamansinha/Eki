@@ -13,6 +13,7 @@ import { subscribeLiveBusesByRoute } from "@/lib/liveBusStore";
 import { passengerTripStates } from "@/lib/passengerLiveBus";
 import { passengerBusAvailabilities } from "@/lib/passengerBusAvailability";
 import HomePage from "@/app/page";
+import InstallClient from "@/app/install/InstallClient";
 import { approveVerification, publishPreview, publishAutomaticReturn, rejectVerification, rejectNetworkVerification, reverifyAccount, switchAccount, signOut, tokenWaiting, subscribeTokenWaiting, socketStats, subscribeSocketStats } from "./firebase";
 import { finishRestorationAsAdmin, finishRestorationAsPassenger, finishRestorationSignedOut, restorationPending, subscribeRestoration } from "./firebase";
 import "../../frontend/src/app/globals.css";
@@ -64,6 +65,8 @@ function RestorationControls() {
 function Fixture() {
   const waiting = useSyncExternalStore(subscribeTokenWaiting, tokenWaiting);
   const query = new URLSearchParams(location.search);
+  // `?install` mounts the public install page alone, as /install renders outside AuthProvider.
+  if (query.has("install")) return <InstallClient />;
   return <>
   <aside aria-label="Synthetic verification controls" style={{ position: "fixed", top: 0, zIndex: 2000, background: "white", color: "black", padding: 8 }}>
     <button disabled={!waiting} onClick={approveVerification}>Approve verification</button>{" "}

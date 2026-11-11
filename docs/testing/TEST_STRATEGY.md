@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-TST-002 | 3.1 | Current | 2026-11-07 |
+| EKI-TST-002 | 3.2 | Current | 2026-11-11 |
 
 ## 1. Purpose and scope
 
@@ -277,6 +277,8 @@ Use a dedicated test device and project. Do not expose production secrets in pac
 ### 7.4 Accessibility and user experience
 
 Test every route with the keyboard only: visible focus, tab order, listbox open, select and Escape, admin tabs, dialogs, focus containment and restoration, no focus behind a modal. Check screen-reader names and status announcements, 200 % zoom, 320 px width, high contrast, slow and offline networks, empty, error and loading states, and `prefers-reduced-motion`. Maps need an equivalent text status; colour must not be the only state cue.
+
+Eki ships English-only and left to right ([EKI-ADR-005](../design/LOCALE_SCOPE_DECISION.md), Proposed), so there is no right-to-left, translated-build or locale-formatting matrix to run. What is checked is reflow of other scripts at 320 x 640: `e2e/admin-access/non-latin-reflow.spec.ts` replaces the copy of the landing and install pages with Arabic, Hebrew, Hindi, Thai, Japanese, German and Turkish text, as a browser translation would, and gives the admin feedback list a name and comment in each; `e2e/passenger-layout/non-latin-reflow.spec.ts` names a route, its stops and the passenger in each script and checks Live routes, the destination list, the tracking header and Profile. Each test fails on sideways page scrolling, sample text outside the viewport or horizontally clipped sample text. The samples break at spaces or by the browser's own Thai and Japanese rules; long tokens with no break point are tracked in [issue #521](https://github.com/notnamansinha/Eki/issues/521). If the decision is reversed, run the full matrix of [issue #525](https://github.com/notnamansinha/Eki/issues/525).
 
 ### 7.5 Performance and load
 

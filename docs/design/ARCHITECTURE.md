@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-ARC-001 | 2.4 | Current | 2026-11-07 |
+| EKI-ARC-001 | 2.5 | Current | 2026-11-11 |
 
 ## 1. Introduction
 
@@ -308,6 +308,7 @@ Declared versions come from the `package.json` files, the GitHub workflows, `bac
 | Place RTDB in Singapore (`asia-southeast1`); staging moved on 2026-11-02 | Front-door probes favoured Singapore; the cutover gate's database and listener measurements were not run before the move | [EKI-ADR-002](RTDB_REGION_LATENCY_DECISION.md), Current |
 | Keep `activeBuses/{busId}_{routeId}` as the single atomic live record; browsers read a projection | No measurement shows single-node transaction contention | [EKI-ADR-003](TELEMETRY_STATE_PARTITION_DECISION.md), Accepted |
 | Reuse one Google map instance per page with `reuseMaps`; keep React keys and mount gates; keep the Google basemap for passengers for now | Each constructed map is a billed Dynamic Maps load; reuse removes the load on every route, direction, bus, tab and editor change without changing per-ride state | [EKI-ADR-004](GOOGLE_MAP_REUSE_DECISION.md), Accepted |
+| Ship the web client in English only, left to right, with no translation layer; show text that people enter in any script as typed | No user or owner has asked for another language; 320 px reflow of non-Latin and long-word text is tested instead | [EKI-ADR-005](LOCALE_SCOPE_DECISION.md), Proposed |
 | Trackers push HTTPS to the backend; no message broker; no Firebase credentials on devices | One observable trust boundary for a small fleet | [High-level design](HIGH_LEVEL_DESIGN.md#7-design-rationale) |
 | One lease-owned worker owns lifecycle and cleanup | Prevents duplicate stop progression and deletion across processes | [Worker leadership](../operations/WORKER_LEADERSHIP.md) |
 | Stored route geometry and browser-side ETA | No routing call per fix | [Tracking algorithms](TRACKING_ALGORITHMS.md) |
