@@ -37,6 +37,7 @@ import { drainDurableRideRecovery } from "./services/durableRideRecovery";
 import { drainAutomaticServiceAdmission } from "./services/automaticServiceAdmission";
 import { backgroundFailures } from "./lib/backgroundFailureTracker";
 import { createHealthState, probeRtdbConnection } from "./lib/healthState";
+import { readReleaseIdentity } from "./lib/releaseIdentity";
 import { createHttpMetricsMiddleware, registerOperationalMetrics } from "./lib/metrics";
 import { createBrowserAdmission, createBrowserIngressLimiter } from "./lib/browserAdmission";
 import { verifiedUserKeyGenerator } from "./lib/rateLimitIdentity";
@@ -252,6 +253,10 @@ app.get("/health", (_req, res) => {
   });
 });
 
+// The build and Cloud Run revision this process runs (issue #504), read once.
+// Admin-only: public /health and /live stay status-only.
+const releaseIdentity = readReleaseIdentity();
+
 // Detailed diagnostics are operationally sensitive and admin-only. This uses
 // the same cached probes as /health, so monitoring cannot amplify billable
 // Firebase reads.
@@ -302,6 +307,7 @@ app.get("/api/health", requireAdmin, (_req, res) => {
       sustainedSources: backgroundTasks.sustainedSources,
       sources: backgroundTasks.sources,
     },
+    release: releaseIdentity,
     checkedAt: state.checkedAt,
   });
 });

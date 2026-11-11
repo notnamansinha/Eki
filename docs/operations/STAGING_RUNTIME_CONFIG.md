@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-OPS-029 | 1.5 | Current | 2026-11-08 |
+| EKI-OPS-029 | 1.6 | Current | 2026-11-11 |
 
 ## 1. Purpose
 
@@ -59,6 +59,7 @@ Do not set `FIREBASE_SERVICE_ACCOUNT` or any `*_EMULATOR_HOST` variable in the c
 | `run.googleapis.com/ingress` | `all` | Browsers and trackers call the service URL directly. |
 | Revision `autoscaling.knative.dev/minScale` and `maxScale` | `0` and `1` | One instance at most, so `RATE_LIMIT_SHARD_FACTOR=1` holds. |
 | Service `run.googleapis.com/minScale` | The live value | The deploy job copies the current service-level minimum into the manifest, so a deploy does not override the value that Cloud Scheduler sets. |
+| Revision label `eki-source-sha` | The commit the image was built from | Lets the release evidence map the serving revision to its source ([CI, deployment and releases](CI_CD_AND_RELEASES.md#11-release-evidence)). The same commit is baked into the image as `EKI_SOURCE_SHA`. |
 | `run.googleapis.com/cpu-throttling` | `false` | The process runs worker and probe timers outside requests. |
 | `run.googleapis.com/startup-cpu-boost` | `true` | Shortens the cold start. |
 | `containerConcurrency` | `80` | Requests per instance. |

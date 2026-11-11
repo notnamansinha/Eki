@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-API-001 | 3.3 | Current | 2026-11-07 |
+| EKI-API-001 | 3.4 | Current | 2026-11-11 |
 
 ## 1. Introduction
 
@@ -213,7 +213,7 @@ Each operation lists its caller, request, success response and the statuses spec
 `GET /api/health`
 
 - Caller: administrator. Exempt from the per-account read budget.
-- Success: 200, or 503 when not ready, with `status`, `firestore` and `rtdb` (`connected` or `disconnected`), `telemetry`, `backgroundTasks` and `checkedAt`. `telemetry` holds process-local counters: accepted and rejected samples, credential cache hit rate, work queue states, latency summaries over the last 512 samples, rate-limit counters, route processing, API read caches and legacy-path traffic. `backgroundTasks` flags a source as `sustained` after 5 failures within 5 minutes and logs `[BackgroundFailures] SUSTAINED failure alert` once per episode. Counters reset when the process restarts. The schema is `AdminHealth` in [`openapi.json`](../../backend/openapi.json); queue fields are explained in [work admission](../operations/WORK_ADMISSION.md).
+- Success: 200, or 503 when not ready, with `status`, `firestore` and `rtdb` (`connected` or `disconnected`), `telemetry`, `backgroundTasks`, `release` and `checkedAt`. `release` names the build that answered: `sourceSha`, the commit baked into the image (`EKI_SOURCE_SHA`), and `service` and `revision`, the Cloud Run service and revision (`K_SERVICE`, `K_REVISION`); each is `null` when unknown, for example outside Cloud Run. Public `/health` and `/live` never carry it. `telemetry` holds process-local counters: accepted and rejected samples, credential cache hit rate, work queue states, latency summaries over the last 512 samples, rate-limit counters, route processing, API read caches and legacy-path traffic. `backgroundTasks` flags a source as `sustained` after 5 failures within 5 minutes and logs `[BackgroundFailures] SUSTAINED failure alert` once per episode. Counters reset when the process restarts. The schema is `AdminHealth` in [`openapi.json`](../../backend/openapi.json); queue fields are explained in [work admission](../operations/WORK_ADMISSION.md).
 
 ### 3.2 Device ingestion
 
