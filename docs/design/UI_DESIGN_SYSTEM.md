@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-UIX-001 | 3.1 | Current | 2026-11-09 |
+| EKI-UIX-001 | 3.1 | Current | 2026-11-11 |
 
 ## 1. Purpose
 
@@ -742,7 +742,7 @@ The root viewport sets `viewportFit: "cover"` and `themeColor: "#09090b"`. The P
 
 On Android, an installed app that does not draw behind the gesture bar gets a strip there painted with the manifest `theme_color` saved at install time, whatever page is open (it does not follow `viewport.themeColor`). The old orange `#FA5D29` showed as an orange band under the sign-in page. `theme_color` therefore matches the dark start page and `background_color`; on Passenger and Admin the strip reads as an ordinary dark navigation bar. An installed copy picks up the new colour when Chrome next updates the WebAPK, or on reinstall.
 
-`app/icon.png` (128 × 128) and `app/apple-icon.png` (180 × 180) supply the browser icon and the Apple touch icon through Next.js file conventions. The open-graph image is `/images/hero-background.webp`.
+`app/icon.png` (128 × 128) and `app/apple-icon.png` (180 × 180) supply the browser icon and the Apple touch icon through Next.js file conventions. The Open Graph and Twitter image is the 1200 × 630 JPEG `/images/social-card.jpg` (`summary_large_image`), built by `scripts/generate-social-card.mjs` from the landscape transit painting and the app icon. `publicPageSocialMetadata` in `lib/siteMetadata.ts` gives each public page its own `og:url` (`/` and `/install`) with the same image, width, height and alt text, because Next.js replaces a parent `openGraph` object instead of merging it.
 
 ### 9.2 Google Maps
 

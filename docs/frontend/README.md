@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-PKG-002 | 3.0 | Current | 2026-11-07 |
+| EKI-PKG-002 | 3.0 | Current | 2026-11-11 |
 
 ## 1. Purpose
 
@@ -105,7 +105,7 @@ After sign-in, `/` opens the workspace saved in `localStorage` key `eki:last-wor
 | `src/config/` | `maps.ts` (Maps key, Map ID, default centre, map options), `passenger.ts` (default service start time, feedback word limit of 200) and `university.ts` (University links, each shown only when its URL is set, and the optional Profile build label from `NEXT_PUBLIC_BUILD_VERSION` and `NEXT_PUBLIC_BUILD_DATE`). |
 | `src/test-support/` | `fakeGoogleMapsSdk.ts`, a test-only Google Maps SDK that counts map constructions for the map-load tests. |
 | `src/sw.js` | Service worker source. |
-| `public/` | Manifest icons, the Google mark `google-g.svg`, logo files and other images. `images/` holds the transit artwork WebP delivery sizes and the Open Graph image `hero-background.webp`. |
+| `public/` | Manifest icons, the Google mark `google-g.svg`, logo files and other images. `images/` holds the transit artwork WebP delivery sizes and the 1200x630 Open Graph/Twitter card `social-card.jpg` (`node scripts/generate-social-card.mjs`). |
 
 Imports use the alias `@/` for `src/` (`tsconfig.json`, `vitest.config.mts`).
 
