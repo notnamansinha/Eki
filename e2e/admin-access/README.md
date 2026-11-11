@@ -2,11 +2,11 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-PKG-007 | 2.1 | Current | 2026-11-07 |
+| EKI-PKG-007 | 2.2 | Current | 2026-11-11 |
 
 ## 1. Purpose
 
-This fixture renders the real `AuthProvider`, `RoleGuard`, landing page, admin collection hooks, `FeedbackPanel`, `DashboardPanel`, live fleet store and application CSS in Chromium, and serves the static files in `frontend/public`, such as the landing artwork. The Firebase SDK transport and HTTP responses are synthetic adapters, so the checks need no credentials, console settings or Firebase data. CI runs them in Production verification.
+This fixture renders the real `AuthProvider`, `RoleGuard`, landing page, install page, admin collection hooks, `FeedbackPanel`, `DashboardPanel`, live fleet store and application CSS in Chromium, and serves the static files in `frontend/public`, such as the landing artwork. The Firebase SDK transport and HTTP responses are synthetic adapters, so the checks need no credentials, console settings or Firebase data. CI runs them in Production verification.
 
 ## 2. Run
 
@@ -17,7 +17,7 @@ npx playwright install chromium
 npm run test:e2e:admin
 ```
 
-`npm run test:e2e:admin` uses `playwright.admin-access.config.ts`. It starts the Vite fixture in this folder on `http://127.0.0.1:3105` and runs `e2e/admin-access.spec.ts` and every `e2e/admin-access/*.spec.ts` (`resilience.spec.ts`, `cold-open.spec.ts` and `landing-layout.spec.ts`) in two projects: mobile (390 x 844) and desktop (1280 x 800). The default `playwright.config.ts` ignores these files.
+`npm run test:e2e:admin` uses `playwright.admin-access.config.ts`. It starts the Vite fixture in this folder on `http://127.0.0.1:3105` and runs `e2e/admin-access.spec.ts` and every `e2e/admin-access/*.spec.ts` (`resilience.spec.ts`, `cold-open.spec.ts`, `landing-layout.spec.ts` and `public-reflow.spec.ts`) in two projects: mobile (390 x 844) and desktop (1280 x 800). The default `playwright.config.ts` ignores these files.
 
 To run the same checks against another revision for an A/B baseline, set `EKI_ADMIN_ACCESS_SRC` to that checkout's `frontend/src`, with its `node_modules` reachable from it.
 
@@ -35,6 +35,7 @@ The fixture selects a scenario from the query string.
 | `?dashboard`, `?dashboard&fleet` | Live fleet details stay reachable below the service controls on a short screen; End ride early stays reachable by wheel scrolling among several expanded rides on desktop and is offered in the live details drawer (`/api/shifts/stop` is intercepted) |
 | `?traceExport`, `?telemetryTrace=1` | Passenger, driver and admin each download their own tab's opt-in telemetry trace without a protected health request; traces record the browser online and reduced-motion state |
 | `?restoreHang`, `?landing&restoreHang` | Cold open while a saved session is still restoring (`cold-open.spec.ts`, Section 3.1); the landing page fit (`landing-layout.spec.ts`, Section 3.2) |
+| `?install` | The install page inside the root layout body flex column; public page reflow (`public-reflow.spec.ts`, Section 3.3) |
 
 `resilience.spec.ts` races feedback reads and status writes against sign-out and account switches: a late result never reaches the next account, a dropped read recovers through Retry, and rapid offline and online flapping settles on one ready fleet.
 
@@ -51,6 +52,10 @@ The fixture selects a scenario from the query string.
 ### 3.2 Landing layout
 
 `landing-layout.spec.ts` opens `?landing&restoreHang` with a fixed virtual clock and waits for the transit artwork and the Google mark on **Continue with Google** to decode. At 1280 x 585, 1280 x 720, 1920 x 878 and 390 x 844 it checks that the heading, the introduction, the enabled **Continue with Google** button and the footer lie inside the viewport without scrolling or horizontal overflow, that no other element covers the centre of the button, and that the landing page renders no university logo image. The 1280 x 585 viewport is about what Chrome leaves on a 1920 x 1080 Windows display at 150 % scaling; a separate test runs it with a device scale factor of 1.5 and checks that the button and footer stay fully visible and the page does not scroll.
+
+### 3.3 Public page reflow
+
+`public-reflow.spec.ts` covers issue #521. At 320 x 800 and 360 x 800 it opens `?install` with desktop, Android, iPhone Safari and iPhone Chrome user agents (one per install branch) and `?landing&restoreHang`, removes the fixture controls, appends the 80-character token `Donaudampfschifffahrtselektrizitätenhauptbetriebswerkbauunterbeamtengesellschaft` to every heading, button, link, label, list item and paragraph that holds a single text node, and requires `scrollWidth - clientWidth` of the document to be 0 or less. Before the injection the install heading must still fit on one line. The `overflow-wrap: anywhere` rule on `.transit-landing` and `.public-page-shell` in `frontend/src/app/globals.css` provides the wrapping.
 
 ## 4. Boundaries
 
