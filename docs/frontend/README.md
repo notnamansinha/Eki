@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-PKG-002 | 3.0 | Current | 2026-11-07 |
+| EKI-PKG-002 | 3.0 | Current | 2026-11-11 |
 
 ## 1. Purpose
 
@@ -153,7 +153,7 @@ The [HTTP contract](../api/HTTP_CONTRACT.md) and the [API reference](../backend/
 
 ## 8. Authentication flow
 
-1. The root layout mounts `AuthProvider` (`hooks/useAuth.ts`). It imports the sign-in code (Firebase Auth) after first paint, one attempt at a time. A failed download is retried after 2, 5, 10, 20 and then every 30 s, or at once when the browser goes `online`; meanwhile the page shows "Sign-in could not load. Check your connection; retrying automatically." A Firebase Auth setup error such as `auth/invalid-api-key` is not retried and asks for a reload.
+1. The root layout mounts `AuthProvider` (`hooks/useAuth.ts`). It imports the sign-in code (Firebase Auth) one attempt at a time, and when depends on the page (`lib/authLoadPolicy.ts`). On `/passenger`, `/admin` and `/feedback` it loads after first paint. On the landing page it also loads after first paint when the browser probably holds an account (a `firebase:authUser:` record, an `eki:role:` hint or `eki:last-workspace` in local storage, unreadable storage, or a Google redirect in progress), so a signed-in visitor is still sent to their workspace. A signed-out landing page shows **Continue with Google** at once and loads the code on the visitor's first pointer, touch, key, focus or wheel input, or on the tap itself. `/install` and the 404 page never load it. This keeps Firebase out of the public pages' hydration (#522); the slow-restoration notice starts only once loading starts. A failed download is retried after 2, 5, 10, 20 and then every 30 s, or at once when the browser goes `online`; meanwhile the page shows "Sign-in could not load. Check your connection; retrying automatically." A Firebase Auth setup error such as `auth/invalid-api-key` is not retried and asks for a reload.
 2. `lib/firebaseAuth.ts` initialises Auth with persistence in this order: local storage, IndexedDB, session storage. On `<project>.web.app` or `<project>.firebaseapp.com`, the auth domain is the current host (`lib/firebaseAuthDomain.ts`); on other hosts it is `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN`. It installs Firebase's popup and redirect resolver at startup only on popup platforms or while the tab returns from a Google redirect, because with the resolver installed Firebase loads Google's sign-in frame before it reports the first auth state. Redirect sign-in passes the resolver per call.
 3. Google is the only provider. Sign-in uses a popup, or a full-page redirect when the auth domain equals the page host and the device is a phone or tablet or the app runs standalone (`lib/googleSignInFlow.ts`). When the popup takes longer than 8 s or fails with an error that permits it, the page offers **Continue with full-page Google sign-in**.
 4. **Continue with Google** becomes usable as soon as the sign-in code loads, while Firebase may still be restoring a saved session. Only while a Google redirect is pending (the app's `eki:google-redirect-pending` marker or Firebase's `firebase:pendingRedirect:<apiKey>:[DEFAULT]` flag in session storage) does the button read "Preparing sign-in…" until the redirect result settles. On a phone, a tap during restoration waits for the restored state. On every platform, a tap while a restored account is being verified finishes that verification instead of opening Google again. A redirect that fails before leaving the page clears both pending flags.

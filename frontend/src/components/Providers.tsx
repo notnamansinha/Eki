@@ -11,7 +11,9 @@ import TelemetryTraceControls from "@/components/TelemetryTraceControls";
  * route-planner). This keeps the Maps JS SDK out of the root bundle and
  * off the landing page, reducing TTI for unauthenticated visitors.
  *
- * Authentication initializes lazily inside useAuth after first paint.
+ * Authentication loads lazily inside useAuth: right away on the workspaces,
+ * on first interaction on the signed-out landing page, and only on demand on
+ * other public pages (see lib/authLoadPolicy.ts).
  */
 export default function Providers({ children }: { children: React.ReactNode }) {
   return <AuthProvider>{children}<TelemetryTraceControls /></AuthProvider>;
