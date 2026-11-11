@@ -2,6 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const fixture = vi.hoisted(() => ({ runTransaction: vi.fn(), exit: vi.fn() }));
 vi.mock("dotenv/config", () => ({}));
+// Loading the real Firestore SDK costs ~1 s on the first dynamic import; the CLI only needs these sentinels.
+vi.mock("firebase-admin/firestore", () => ({
+  FieldValue: { delete: () => "<delete>", serverTimestamp: () => "<serverTimestamp>" },
+}));
 vi.mock("./lib/firebaseAdmin", () => ({
   db: { collection: () => ({ doc: (id: string) => ({ id }) }), runTransaction: fixture.runTransaction },
 }));

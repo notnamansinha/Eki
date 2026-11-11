@@ -5,9 +5,10 @@ import userEvent from "@testing-library/user-event";
 import RideHistoryPanel from "./RideHistoryPanel";
 const state = vi.hoisted(() => ({ sessions: [{ id: "qa-session", busId: "qa-bus", driverId: "qa-driver", routeId: "qa-route", status: "completed", interruptionReason: undefined as string | undefined, armedAt: 1_750_000_000_000, startTime: 1_750_000_001_000, endTime: 1_750_000_600_000, passengers: [] as {userId: string; userName: string; boardingStopId: string; alightingStopId: string | null; joinedAt: number}[], stopsReached: [] }], error: null as string | null, pendingLimit: null as number | null, retry: vi.fn() }));
 vi.mock("@/hooks/useCollection", () => ({ useCollection: (path: string, options: { maxResults: number }) => ({ data: path.endsWith("/archivedMessages") ? [{ id: "archived", senderName: "QA Passenger", text: "Chat retained after live clear", timestamp: 1_750_000_009_000 }] : path.endsWith("/messages") ? [{ id: "kept-message", senderName: "QA Passenger", text: "Stored ride chat", timestamp: 1_750_000_010_000 }] : options.maxResults === state.pendingLimit ? [] : state.sessions.slice(0, options.maxResults), loading: !path.includes("/") && options.maxResults === state.pendingLimit, error: state.error, retry: state.retry }) }));
-vi.mock("@/hooks/useBuses", () => ({ useBuses: () => ({ buses: [{ id: "qa-bus", name: "QA Bus" }], loading: false }) }));
-vi.mock("@/hooks/useDrivers", () => ({ useDrivers: () => ({ drivers: [{ id: "qa-driver", name: "QA Driver" }], loading: false }) }));
-vi.mock("@/hooks/useRoutes", () => ({ useRoutes: () => ({ routes: [{ id: "qa-route", name: "QA route", stops: [{ id: "origin", name: "Origin" }, { id: "destination", name: "Destination" }] }], loading: false }) }));
+// Stable data arrays, as useCollection keeps between snapshots, so unchanged rides are not re-rendered on every parent render.
+vi.mock("@/hooks/useBuses", () => { const result = { buses: [{ id: "qa-bus", name: "QA Bus" }], loading: false }; return { useBuses: () => result }; });
+vi.mock("@/hooks/useDrivers", () => { const result = { drivers: [{ id: "qa-driver", name: "QA Driver" }], loading: false }; return { useDrivers: () => result }; });
+vi.mock("@/hooks/useRoutes", () => { const result = { routes: [{ id: "qa-route", name: "QA route", stops: [{ id: "origin", name: "Origin" }, { id: "destination", name: "Destination" }] }], loading: false }; return { useRoutes: () => result }; });
 vi.mock("@/lib/firebaseAuth", () => ({ auth: { currentUser: { getIdToken: async () => "test-token" } } }));
 beforeEach(() => { state.pendingLimit = null; state.sessions[0].status = "completed"; state.sessions[0].interruptionReason = undefined; state.sessions[0].passengers = []; state.error = null; state.retry.mockClear(); vi.stubEnv("NEXT_PUBLIC_BACKEND_URL", "https://qa.ngrok-free.dev"); });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
@@ -66,11 +67,41 @@ describe("ride-history controls", () => {
       const view = render(<RideHistoryPanel />);
       fireEvent.click(screen.getByText("Load older rides"));
       expect(view.container.querySelectorAll('button[aria-expanded="false"]')).toHaveLength(100);
-      expect(screen.getByRole("status").textContent).toBe("Loading older rides…");
+      // A selector instead of getByRole: an accessibility-tree scan of a hundred rows is slow under suite load.
+      const statuses = view.container.querySelectorAll('[role="status"]');
+      expect(statuses).toHaveLength(1);
+      expect(statuses[0].textContent).toBe("Loading older rides…");
       state.pendingLimit = null; view.rerender(<RideHistoryPanel />);
       expect(view.container.querySelectorAll('button[aria-expanded="false"]')).toHaveLength(101);
       expect(screen.queryByText("Loading older rides…")).toBeNull();
     } finally { state.sessions = original; }
+  });
+  it("formats only newly loaded rides while an older page loads and settles", () => {
+    const original = state.sessions;
+    const RealDateTimeFormat = Intl.DateTimeFormat;
+    // `format` is a prototype getter, so each read is one formatted value.
+    const formatDescriptor = Object.getOwnPropertyDescriptor(RealDateTimeFormat.prototype, "format")!;
+    try {
+      state.sessions = Array.from({ length: 101 }, (_, i) => ({ ...original[0], id: `ride-${i}` }));
+      state.pendingLimit = 200;
+      const view = render(<RideHistoryPanel />);
+      let constructed = 0, formatted = 0;
+      Intl.DateTimeFormat = new Proxy(RealDateTimeFormat, {
+        construct(target, args: ConstructorParameters<typeof Intl.DateTimeFormat>) { constructed += 1; return new target(...args); },
+        apply(target, _thisArg, args: Parameters<typeof Intl.DateTimeFormat>) { constructed += 1; return target(...args); },
+      });
+      Object.defineProperty(RealDateTimeFormat.prototype, "format", { ...formatDescriptor, get() { formatted += 1; return formatDescriptor.get!.call(this); } });
+      fireEvent.click(screen.getByText("Load older rides"));
+      state.pendingLimit = null; view.rerender(<RideHistoryPanel />);
+      expect(view.container.querySelectorAll('button[aria-expanded="false"]')).toHaveLength(101);
+      expect(constructed).toBe(0);
+      // Only the newly loaded completed ride formats its date, start and end times.
+      expect(formatted).toBeLessThanOrEqual(3);
+    } finally {
+      state.sessions = original;
+      Intl.DateTimeFormat = RealDateTimeFormat;
+      Object.defineProperty(RealDateTimeFormat.prototype, "format", formatDescriptor);
+    }
   });
   it("does not resurface the pre-page snapshot when the larger page later reloads", async () => {
     const original = state.sessions;

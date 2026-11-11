@@ -26,7 +26,8 @@ import { apiRequest, acknowledgedField } from "@/lib/apiClient";
 import { errorMessage } from "@/lib/errors";
 import ConfirmModal from "@/components/ui/ConfirmModal";
 import { Bus, Loader2, MapPin, Trash2, User, Users, AlertCircle } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
+import { memo, useCallback, useMemo, useRef, useState, type RefObject } from "react";
+import type { RouteData } from "@/hooks/useRoutes";
 import {
   normalizeRideDirection,
   persistedDirectionLabelState,
@@ -68,6 +69,9 @@ interface ConnectionEvent { type: string; observedAt: TimestampValue; location?:
 
 const SERVICE_TIME_ZONE =
   process.env.NEXT_PUBLIC_SERVICE_TIME_ZONE || "Asia/Kolkata";
+
+// Shared fallback so rides on an unknown route keep stable memoized props.
+const NO_ROUTE_STOPS: RouteData["stops"] = [];
 
 const STATUS_CONFIG: Record<
   RideSession["status"],
@@ -125,28 +129,33 @@ function stopLogTime(stop: RideStopRecord): string {
     : `Not observed ${formatServiceTime(stop.timestamp)}`;
 }
 
+// Built once on first use: constructing a formatter per row cell dominated
+// re-rendering a hundred-ride page.
+let serviceDateFormat: Intl.DateTimeFormat | undefined;
+let serviceTimeFormat: Intl.DateTimeFormat | undefined;
+
 function formatServiceDate(value: TimestampValue): string {
   const date = timestampDate(value);
-  return date
-    ? new Intl.DateTimeFormat(undefined, {
-        day: "numeric",
-        month: "short",
-        year: "numeric",
-        timeZone: SERVICE_TIME_ZONE,
-      }).format(date)
-    : "Date not recorded";
+  if (!date) return "Date not recorded";
+  serviceDateFormat ??= new Intl.DateTimeFormat(undefined, {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: SERVICE_TIME_ZONE,
+  });
+  return serviceDateFormat.format(date);
 }
 
 function formatServiceTime(value: TimestampValue): string {
   const date = timestampDate(value);
-  return date
-    ? new Intl.DateTimeFormat(undefined, {
-        hour: "2-digit",
-        minute: "2-digit",
-        second: "2-digit",
-        timeZone: SERVICE_TIME_ZONE,
-      }).format(date)
-    : "Not recorded";
+  if (!date) return "Not recorded";
+  serviceTimeFormat ??= new Intl.DateTimeFormat(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    timeZone: SERVICE_TIME_ZONE,
+  });
+  return serviceTimeFormat.format(date);
 }
 
 async function deleteRideHistoryRequest(sessionId: string): Promise<void> {
@@ -264,14 +273,18 @@ export default function RideHistoryPanel() {
     [drivers],
   );
 
-  const updateDeleteState = (sessionId: string, action: RideHistoryDeletionAction) => {
+  const updateDeleteState = useCallback((sessionId: string, action: RideHistoryDeletionAction) => {
     setDeleteStates((current) => ({
       ...current,
       [sessionId]: rideHistoryDeletionTransition(current[sessionId] ?? "idle", action),
     }));
-  };
+  }, []);
 
-  const openDeleteConfirmation = (sessionId: string) => {
+  const toggleExpanded = useCallback((sessionId: string) => {
+    setExpandedId((current) => (current === sessionId ? null : sessionId));
+  }, []);
+
+  const openDeleteConfirmation = useCallback((sessionId: string) => {
     setDeleteNotice(null);
     updateDeleteState(sessionId, "open");
     setDeleteErrors((current) => {
@@ -279,18 +292,18 @@ export default function RideHistoryPanel() {
       delete next[sessionId];
       return next;
     });
-  };
+  }, [updateDeleteState]);
 
-  const cancelDeleteConfirmation = (sessionId: string) => {
+  const cancelDeleteConfirmation = useCallback((sessionId: string) => {
     updateDeleteState(sessionId, "cancel");
     setDeleteErrors((current) => {
       const next = { ...current };
       delete next[sessionId];
       return next;
     });
-  };
+  }, [updateDeleteState]);
 
-  const handleDeleteHistory = async (sessionId: string) => {
+  const handleDeleteHistory = useCallback(async (sessionId: string) => {
     if (deletionInFlight.current.has(sessionId)) return;
     deletionInFlight.current.add(sessionId);
     updateDeleteState(sessionId, "confirm");
@@ -313,7 +326,7 @@ export default function RideHistoryPanel() {
     } finally {
       deletionInFlight.current.delete(sessionId);
     }
-  };
+  }, [updateDeleteState]);
 
   if ((sessionsLoading && !loadingOlderRides) || busesLoading || routesLoading || driversLoading) {
     return (
@@ -356,220 +369,24 @@ export default function RideHistoryPanel() {
           No rides recorded yet.
         </div>
       ) : (
-        shownSessions.map((session) => {
-          const passengers = passengerRecords(session.passengers);
-          const stopsReached = stopRecords(session.stopsReached);
-          const status = STATUS_CONFIG[session.status] ?? STATUS_CONFIG.failed;
-          const startValue = session.startTime ?? session.armedAt;
-          const deleteState = deleteStates[session.id] ?? "idle";
-
-          return (
-            <div
-              key={session.id}
-              className="overflow-hidden rounded-xl border border-ui-line bg-brand-surface transition-all"
-            >
-              <button
-                type="button"
-                className="flex w-full cursor-pointer flex-col justify-between gap-4 p-4 text-left hover:bg-ui-soft sm:flex-row sm:items-center"
-                onClick={() => setExpandedId(expandedId === session.id ? null : session.id)}
-                aria-expanded={expandedId === session.id}
-                aria-controls={`ride-history-details-${session.id}`}
-              >
-                <div className="min-w-0 space-y-2">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className={`rounded px-2 py-0.5 text-xs font-bold uppercase ${status.className}`}>
-                      {status.label}
-                    </span>
-                    <span className="text-sm font-semibold text-ui-ink tabular-nums">
-                      {formatServiceDate(startValue)}
-                    </span>
-                  </div>
-                  <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-ui-muted tabular-nums">
-                    <span><span className="text-ui-quiet">Started</span> {formatServiceTime(startValue)}</span>
-                    {session.status !== "active" && session.status !== "armed" && session.status !== "pending" && (
-                      <span>
-                        <span className="text-ui-quiet">
-                          {session.status === "interrupted" ? "Last recorded" : "Ended"}
-                        </span>{" "}
-                        {formatServiceTime(session.endTime)}
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-ui-muted">
-                    <span className="flex items-center gap-1">
-                      <MapPin className="size-3" />
-                      Route: {routeNames.get(session.routeId) || "Unavailable route"}
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <MapPin className="size-3" />
-                      Direction: {persistedDirectionLabelState(
-                        normalizeRideDirection(session.direction),
-                        routeStops.get(session.routeId) ?? [],
-                        session.originStopId,
-                        session.destinationStopId,
-                      )}
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <Bus className="size-3" />
-                      Bus: {busNames.get(session.busId) || "Unavailable bus"}
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <User className="size-3" />
-                      Driver: {driverNames.get(session.driverId) || "Unavailable driver"}
-                    </span>
-                  </div>
-                  {session.status === "interrupted" && (
-                    <div className="space-y-1 text-pretty text-xs text-ui-warning">
-                      <p>The ride ended before the final stop was recorded.</p>
-                      <p>{interruptionMessage(session.interruptionReason)}</p>
-                    </div>
-                  )}
-                </div>
-
-                <div className="flex items-center gap-4">
-                  <div className="flex items-center gap-1.5 rounded-lg border border-ui-line bg-brand-dark/50 px-3 py-1.5">
-                    <Users className="size-4 text-brand-accent" />
-                    <span className="text-sm font-bold text-ui-ink tabular-nums">{passengers.length}</span>
-                  </div>
-                </div>
-              </button>
-
-              {expandedId === session.id && (
-                <div id={`ride-history-details-${session.id}`} className="border-t border-ui-line bg-ui-soft px-4 pt-4 pb-4">
-                  <div className="mb-4 space-y-1 text-xs text-ui-muted">
-                    <p>Service armed: {formatServiceTime(session.armedAt)}</p>
-                    <p>Journey started: {formatServiceTime(session.startTime)}</p>
-                    {isRecordObject<{ sampledAt?: TimestampValue }>(session.firstKnownLocation) && <p>First received GNSS: {formatCoordinates(session.firstKnownLocation)} · {formatServiceTime(session.firstKnownLocation.sampledAt)}</p>}
-                    {isRecordObject<{ sampledAt?: TimestampValue }>(session.lastKnownLocation) && <p>Last received GNSS: {formatCoordinates(session.lastKnownLocation)} · {formatServiceTime(session.lastKnownLocation.sampledAt)}</p>}
-                    {Object.entries(isRecordObject<Record<string, unknown>>(session.connectionEvents) ? session.connectionEvents : {})
-                      .filter((entry): entry is [string, ConnectionEvent] => isRecordObject(entry[1]))
-                      .map(([id, event]) => <p key={id}>
-                      Signal lost: {formatServiceTime(event.observedAt)}{event.location ? ` · ${formatCoordinates(event.location)}` : ""}
-                    </p>)}
-                  </div>
-                  <h4 className="mb-3 text-xs font-semibold uppercase text-ui-muted">
-                    Passenger Manifest
-                  </h4>
-                  {passengers.length === 0 ? (
-                    <p className="text-pretty text-xs italic text-ui-quiet">No passengers boarded.</p>
-                  ) : (
-                    <div className="space-y-2">
-                      {passengers.map((passenger, index) => {
-                        const boardingStopName = resolveArrivalStopName(
-                          passenger.boardingStopId,
-                          stopsReached,
-                          routeStops.get(session.routeId) ?? [],
-                        );
-                        const arrivalStopName = resolveArrivalStopName(
-                          passenger.alightingStopId,
-                          stopsReached,
-                          routeStops.get(session.routeId) ?? [],
-                        );
-                        const reachedAt = destinationReachedAt(
-                          passenger.alightingStopId,
-                          passenger.joinedAt,
-                          stopsReached,
-                        );
-                        return (
-                          <div
-                            key={`${passenger.userId}-${index}`}
-                            className="flex flex-col gap-2 rounded border border-ui-line bg-ui-soft px-3 py-2 text-sm sm:flex-row sm:items-center sm:justify-between"
-                          >
-                            <span className="truncate font-medium text-ui-ink">
-                              {displayText(passenger.userName, "Unknown passenger")}
-                            </span>
-                            <div className="flex flex-col text-xs text-ui-muted tabular-nums sm:items-end">
-                              <span>
-                                <span className="text-ui-quiet">Boarding stop:</span>{" "}
-                                {boardingStopName === ARRIVAL_STOP_UNAVAILABLE ? "Unavailable" : boardingStopName}
-                              </span>
-                              {arrivalStopName === ARRIVAL_STOP_UNAVAILABLE ? (
-                                <span>{ARRIVAL_STOP_UNAVAILABLE}</span>
-                              ) : (
-                                <span>
-                                  <span className="text-ui-quiet">Arrival stop:</span>{" "}
-                                  {arrivalStopName}
-                                </span>
-                              )}
-                              <span><span className="text-ui-quiet">Recorded</span> {formatServiceTime(passenger.joinedAt)}</span>
-                              {reachedAt === null ? (
-                                <span>Destination time not recorded</span>
-                              ) : (
-                                <span>
-                                  <span className="text-ui-quiet">Destination reached</span>{" "}
-                                  {formatServiceTime(reachedAt)}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        );
-        })}
-                    </div>
-                  )}
-
-                  {stopsReached.length > 0 && (
-                    <div className="mt-4 border-t border-ui-line pt-4">
-                      <h4 className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase text-ui-muted">
-                        <MapPin className="size-3" />
-                        Route Log
-                      </h4>
-                      <div className="relative space-y-3 before:absolute before:inset-0 before:ml-[39px] before:h-full before:w-0.5 before:-translate-x-px before:bg-ui-hover md:before:mx-auto md:before:translate-x-0">
-                        {stopsReached.map((stop) => (
-                          <div
-                            key={`${stop.stopIndex}-${stop.stopId}`}
-                            className="group relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse"
-                          >
-                            <div className="z-10 ml-7 flex size-6 shrink-0 items-center justify-center rounded-full border border-ui-control bg-brand-dark text-brand-accent shadow md:order-1 md:ml-0 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2">
-                              <div className={`size-2 rounded-full ${isObservedArrival(stop) ? "bg-brand-accent" : "bg-ui-hover"}`} />
-                            </div>
-                            <div className="w-[calc(100%-4rem)] rounded border border-ui-line bg-ui-soft p-3 md:w-[calc(50%-2.5rem)]">
-                              <div className="mb-1 flex items-center justify-between gap-2">
-                                <span className="truncate text-sm font-bold text-ui-ink">
-                                  {displayText(stop.stopName, "Unnamed stop")}
-                                </span>
-                                <span className={`shrink-0 text-xs tabular-nums ${isObservedArrival(stop) ? "text-brand-accent" : "text-ui-muted"}`}>
-                                  {stopLogTime(stop)}
-                                </span>
-                              </div>
-                              <p className="text-xs text-ui-muted tabular-nums">Stop {stop.stopIndex + 1}</p>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  <RideHistoryMessages key={session.id} sessionId={session.id} />
-                  {canDeleteRideHistory(session.status) && (
-                    <div className="mt-4 border-t border-ui-danger/20 pt-4">
-                        <button
-                          type="button"
-                          disabled={deleteState !== "idle"}
-                          onClick={() => openDeleteConfirmation(session.id)}
-                          className="flex min-h-10 items-center justify-center gap-2 rounded-lg border border-ui-danger/30 bg-ui-danger/10 px-3 py-2 text-xs font-semibold text-ui-danger hover:bg-ui-danger/20"
-                        >
-                          <Trash2 className="size-4" aria-hidden="true" />
-                          Delete ride history
-                        </button>
-                      {deleteState !== "idle" && (
-                        <ConfirmModal
-                          isOpen
-                          title="Permanently delete ride history?"
-                          description={[RIDE_HISTORY_DELETE_WARNING, deleteErrors[session.id]].filter(Boolean).join(" ")}
-                          confirmText="Permanently delete"
-                          variant="danger"
-                          loading={deleteState === "deleting"}
-                          returnFocusRef={historyHeadingRef}
-                          onCancel={() => cancelDeleteConfirmation(session.id)}
-                          onConfirm={() => handleDeleteHistory(session.id)}
-                        />
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          );
-        })
+        shownSessions.map((session) => (
+          <RideHistoryRow
+            key={session.id}
+            session={session}
+            routeName={routeNames.get(session.routeId)}
+            busName={busNames.get(session.busId)}
+            driverName={driverNames.get(session.driverId)}
+            routeStops={routeStops.get(session.routeId) ?? NO_ROUTE_STOPS}
+            expanded={expandedId === session.id}
+            deleteState={deleteStates[session.id] ?? "idle"}
+            deleteError={deleteErrors[session.id]}
+            returnFocusRef={historyHeadingRef}
+            onToggle={toggleExpanded}
+            onOpenDelete={openDeleteConfirmation}
+            onCancelDelete={cancelDeleteConfirmation}
+            onConfirmDelete={handleDeleteHistory}
+          />
+        ))
       )}
       {loadingOlderRides ? <p role="status" className="min-h-10 text-sm text-ui-muted">Loading older rides…</p>
         : (armedSessions.length === historyLimit || startedSessions.length === historyLimit) && <button
@@ -582,3 +399,248 @@ export default function RideHistoryPanel() {
     </div>
   );
 }
+
+interface RideHistoryRowProps {
+  session: RideSession;
+  routeName: string | undefined;
+  busName: string | undefined;
+  driverName: string | undefined;
+  routeStops: RouteData["stops"];
+  expanded: boolean;
+  deleteState: RideHistoryDeletionState;
+  deleteError: string | undefined;
+  returnFocusRef: RefObject<HTMLHeadingElement | null>;
+  onToggle: (sessionId: string) => void;
+  onOpenDelete: (sessionId: string) => void;
+  onCancelDelete: (sessionId: string) => void;
+  onConfirmDelete: (sessionId: string) => void;
+}
+
+/** Memoized so loading or settling another history page does not re-render every unchanged ride. */
+const RideHistoryRow = memo(function RideHistoryRow({
+  session,
+  routeName,
+  busName,
+  driverName,
+  routeStops,
+  expanded,
+  deleteState,
+  deleteError,
+  returnFocusRef,
+  onToggle,
+  onOpenDelete,
+  onCancelDelete,
+  onConfirmDelete,
+}: RideHistoryRowProps) {
+  const passengers = passengerRecords(session.passengers);
+  const stopsReached = stopRecords(session.stopsReached);
+  const status = STATUS_CONFIG[session.status] ?? STATUS_CONFIG.failed;
+  const startValue = session.startTime ?? session.armedAt;
+
+  return (
+    <div
+      key={session.id}
+      className="overflow-hidden rounded-xl border border-ui-line bg-brand-surface transition-all"
+    >
+      <button
+        type="button"
+        className="flex w-full cursor-pointer flex-col justify-between gap-4 p-4 text-left hover:bg-ui-soft sm:flex-row sm:items-center"
+        onClick={() => onToggle(session.id)}
+        aria-expanded={expanded}
+        aria-controls={`ride-history-details-${session.id}`}
+      >
+        <div className="min-w-0 space-y-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className={`rounded px-2 py-0.5 text-xs font-bold uppercase ${status.className}`}>
+              {status.label}
+            </span>
+            <span className="text-sm font-semibold text-ui-ink tabular-nums">
+              {formatServiceDate(startValue)}
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-ui-muted tabular-nums">
+            <span><span className="text-ui-quiet">Started</span> {formatServiceTime(startValue)}</span>
+            {session.status !== "active" && session.status !== "armed" && session.status !== "pending" && (
+              <span>
+                <span className="text-ui-quiet">
+                  {session.status === "interrupted" ? "Last recorded" : "Ended"}
+                </span>{" "}
+                {formatServiceTime(session.endTime)}
+              </span>
+            )}
+          </div>
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-ui-muted">
+            <span className="flex items-center gap-1">
+              <MapPin className="size-3" />
+              Route: {routeName || "Unavailable route"}
+            </span>
+            <span className="flex items-center gap-1">
+              <MapPin className="size-3" />
+              Direction: {persistedDirectionLabelState(
+                normalizeRideDirection(session.direction),
+                routeStops,
+                session.originStopId,
+                session.destinationStopId,
+              )}
+            </span>
+            <span className="flex items-center gap-1">
+              <Bus className="size-3" />
+              Bus: {busName || "Unavailable bus"}
+            </span>
+            <span className="flex items-center gap-1">
+              <User className="size-3" />
+              Driver: {driverName || "Unavailable driver"}
+            </span>
+          </div>
+          {session.status === "interrupted" && (
+            <div className="space-y-1 text-pretty text-xs text-ui-warning">
+              <p>The ride ended before the final stop was recorded.</p>
+              <p>{interruptionMessage(session.interruptionReason)}</p>
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-1.5 rounded-lg border border-ui-line bg-brand-dark/50 px-3 py-1.5">
+            <Users className="size-4 text-brand-accent" />
+            <span className="text-sm font-bold text-ui-ink tabular-nums">{passengers.length}</span>
+          </div>
+        </div>
+      </button>
+
+      {expanded && (
+        <div id={`ride-history-details-${session.id}`} className="border-t border-ui-line bg-ui-soft px-4 pt-4 pb-4">
+          <div className="mb-4 space-y-1 text-xs text-ui-muted">
+            <p>Service armed: {formatServiceTime(session.armedAt)}</p>
+            <p>Journey started: {formatServiceTime(session.startTime)}</p>
+            {isRecordObject<{ sampledAt?: TimestampValue }>(session.firstKnownLocation) && <p>First received GNSS: {formatCoordinates(session.firstKnownLocation)} · {formatServiceTime(session.firstKnownLocation.sampledAt)}</p>}
+            {isRecordObject<{ sampledAt?: TimestampValue }>(session.lastKnownLocation) && <p>Last received GNSS: {formatCoordinates(session.lastKnownLocation)} · {formatServiceTime(session.lastKnownLocation.sampledAt)}</p>}
+            {Object.entries(isRecordObject<Record<string, unknown>>(session.connectionEvents) ? session.connectionEvents : {})
+              .filter((entry): entry is [string, ConnectionEvent] => isRecordObject(entry[1]))
+              .map(([id, event]) => <p key={id}>
+              Signal lost: {formatServiceTime(event.observedAt)}{event.location ? ` · ${formatCoordinates(event.location)}` : ""}
+            </p>)}
+          </div>
+          <h4 className="mb-3 text-xs font-semibold uppercase text-ui-muted">
+            Passenger Manifest
+          </h4>
+          {passengers.length === 0 ? (
+            <p className="text-pretty text-xs italic text-ui-quiet">No passengers boarded.</p>
+          ) : (
+            <div className="space-y-2">
+              {passengers.map((passenger, index) => {
+                const boardingStopName = resolveArrivalStopName(
+                  passenger.boardingStopId,
+                  stopsReached,
+                  routeStops,
+                );
+                const arrivalStopName = resolveArrivalStopName(
+                  passenger.alightingStopId,
+                  stopsReached,
+                  routeStops,
+                );
+                const reachedAt = destinationReachedAt(
+                  passenger.alightingStopId,
+                  passenger.joinedAt,
+                  stopsReached,
+                );
+                return (
+                  <div
+                    key={`${passenger.userId}-${index}`}
+                    className="flex flex-col gap-2 rounded border border-ui-line bg-ui-soft px-3 py-2 text-sm sm:flex-row sm:items-center sm:justify-between"
+                  >
+                    <span className="truncate font-medium text-ui-ink">
+                      {displayText(passenger.userName, "Unknown passenger")}
+                    </span>
+                    <div className="flex flex-col text-xs text-ui-muted tabular-nums sm:items-end">
+                      <span>
+                        <span className="text-ui-quiet">Boarding stop:</span>{" "}
+                        {boardingStopName === ARRIVAL_STOP_UNAVAILABLE ? "Unavailable" : boardingStopName}
+                      </span>
+                      {arrivalStopName === ARRIVAL_STOP_UNAVAILABLE ? (
+                        <span>{ARRIVAL_STOP_UNAVAILABLE}</span>
+                      ) : (
+                        <span>
+                          <span className="text-ui-quiet">Arrival stop:</span>{" "}
+                          {arrivalStopName}
+                        </span>
+                      )}
+                      <span><span className="text-ui-quiet">Recorded</span> {formatServiceTime(passenger.joinedAt)}</span>
+                      {reachedAt === null ? (
+                        <span>Destination time not recorded</span>
+                      ) : (
+                        <span>
+                          <span className="text-ui-quiet">Destination reached</span>{" "}
+                          {formatServiceTime(reachedAt)}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+})}
+            </div>
+          )}
+
+          {stopsReached.length > 0 && (
+            <div className="mt-4 border-t border-ui-line pt-4">
+              <h4 className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase text-ui-muted">
+                <MapPin className="size-3" />
+                Route Log
+              </h4>
+              <div className="relative space-y-3 before:absolute before:inset-0 before:ml-[39px] before:h-full before:w-0.5 before:-translate-x-px before:bg-ui-hover md:before:mx-auto md:before:translate-x-0">
+                {stopsReached.map((stop) => (
+                  <div
+                    key={`${stop.stopIndex}-${stop.stopId}`}
+                    className="group relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse"
+                  >
+                    <div className="z-10 ml-7 flex size-6 shrink-0 items-center justify-center rounded-full border border-ui-control bg-brand-dark text-brand-accent shadow md:order-1 md:ml-0 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2">
+                      <div className={`size-2 rounded-full ${isObservedArrival(stop) ? "bg-brand-accent" : "bg-ui-hover"}`} />
+                    </div>
+                    <div className="w-[calc(100%-4rem)] rounded border border-ui-line bg-ui-soft p-3 md:w-[calc(50%-2.5rem)]">
+                      <div className="mb-1 flex items-center justify-between gap-2">
+                        <span className="truncate text-sm font-bold text-ui-ink">
+                          {displayText(stop.stopName, "Unnamed stop")}
+                        </span>
+                        <span className={`shrink-0 text-xs tabular-nums ${isObservedArrival(stop) ? "text-brand-accent" : "text-ui-muted"}`}>
+                          {stopLogTime(stop)}
+                        </span>
+                      </div>
+                      <p className="text-xs text-ui-muted tabular-nums">Stop {stop.stopIndex + 1}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          <RideHistoryMessages key={session.id} sessionId={session.id} />
+          {canDeleteRideHistory(session.status) && (
+            <div className="mt-4 border-t border-ui-danger/20 pt-4">
+                <button
+                  type="button"
+                  disabled={deleteState !== "idle"}
+                  onClick={() => onOpenDelete(session.id)}
+                  className="flex min-h-10 items-center justify-center gap-2 rounded-lg border border-ui-danger/30 bg-ui-danger/10 px-3 py-2 text-xs font-semibold text-ui-danger hover:bg-ui-danger/20"
+                >
+                  <Trash2 className="size-4" aria-hidden="true" />
+                  Delete ride history
+                </button>
+              {deleteState !== "idle" && (
+                <ConfirmModal
+                  isOpen
+                  title="Permanently delete ride history?"
+                  description={[RIDE_HISTORY_DELETE_WARNING, deleteError].filter(Boolean).join(" ")}
+                  confirmText="Permanently delete"
+                  variant="danger"
+                  loading={deleteState === "deleting"}
+                  returnFocusRef={returnFocusRef}
+                  onCancel={() => onCancelDelete(session.id)}
+                  onConfirm={() => onConfirmDelete(session.id)}
+                />
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+});
