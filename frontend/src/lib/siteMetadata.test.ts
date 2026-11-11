@@ -24,6 +24,13 @@ describe("canonical public origin", () => {
     expect(robots().sitemap).toBe("https://bus.example.edu/sitemap.xml");
     expect(sitemap()[0].url).toBe("https://bus.example.edu/");
   });
+  it("lists the landing page and the public install guide in the sitemap", () => {
+    vi.stubEnv("NEXT_PUBLIC_SITE_URL", "https://bus.example.edu");
+    vi.stubEnv("NEXT_PUBLIC_SITE_INDEXING", "true");
+    expect(sitemap().map(entry => entry.url)).toEqual(["https://bus.example.edu/", "https://bus.example.edu/install"]);
+    expect(robots().rules).toMatchObject({ allow: "/" });
+    expect(JSON.stringify(robots().rules)).not.toContain("/install");
+  });
   it("excludes staging builds from indexing and sitemap discovery", () => {
     vi.stubEnv("NEXT_PUBLIC_SITE_INDEXING", "false");
     expect(robots()).toEqual({ rules: { userAgent: "*", disallow: "/" } });

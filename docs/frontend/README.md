@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-PKG-002 | 3.0 | Current | 2026-11-07 |
+| EKI-PKG-002 | 3.0 | Current | 2026-11-11 |
 
 ## 1. Purpose
 
@@ -74,13 +74,13 @@ Test suites and their viewports are described in the [test strategy](../testing/
 
 | Route | Source | Access | Content |
 |---|---|---|---|
-| `/` | `src/app/page.tsx` | Public | Landing page and Google sign-in. A signed-in user is redirected to a workspace. |
+| `/` | `src/app/page.tsx` | Public | Landing page and Google sign-in. The footer links to `/install` (**Install the app**, `src/components/shared/InstallGuideLink.tsx`). A signed-in user is redirected to a workspace. |
 | `/passenger` | `src/app/passenger/` | `RoleGuard` roles `passenger`, `driver`, `admin` | Passenger workspace with the bottom tabs Live (live routes and tracking), Routes (published route schedules) and Profile. |
 | `/admin` | `src/app/admin/` | `RoleGuard` role `admin` | Administrator workspace with the tabs Live Ops, Routes, Fleet & People, History, Feedback and Settings. |
 | `/feedback` | `src/app/feedback/` | `RoleGuard` role `admin` | Standalone feedback console. The admin Feedback tab renders the same `FeedbackPanel`. |
 | `/install` | `src/app/install/` | Public | Home-screen install guide. `lib/installPlatform.ts` classifies the device. Android shows **Install Eki** once the browser fires `beforeinstallprompt`, otherwise the Chrome menu steps. iOS Safari shows the Share and **Add to Home Screen** steps. Other iOS browsers and in-app views show **Copy link** with advice to open the page in Safari. A desktop browser is asked to open the link on a phone, and a standalone window reports that Eki is installed. |
 | `/manifest.webmanifest` | `src/app/manifest.ts` | Public | PWA manifest. |
-| `/robots.txt`, `/sitemap.xml` | `src/app/robots.ts`, `src/app/sitemap.ts` | Public | When `NEXT_PUBLIC_SITE_INDEXING` is not `false`, robots disallows `/admin`, `/passenger`, `/feedback` and `/api/`, and the sitemap lists `/`. Otherwise robots disallows everything. |
+| `/robots.txt`, `/sitemap.xml` | `src/app/robots.ts`, `src/app/sitemap.ts` | Public | When `NEXT_PUBLIC_SITE_INDEXING` is not `false`, robots disallows `/admin`, `/passenger`, `/feedback` and `/api/`, and the sitemap lists `/` and `/install`. Otherwise robots disallows everything. |
 
 There is no driver route. A user with the `driver` role opens `/passenger`. The protected layouts also set `robots: { index: false, follow: false }`.
 
@@ -97,7 +97,7 @@ After sign-in, `/` opens the workspace saved in `localStorage` key `eki:last-wor
 | `src/components/admin/` | Live Ops dashboard, route editor, fleet and personnel, ride history, feedback console, settings with the passenger route schedule editor (`PassengerRoutesSettings`), and `AdminPanelErrorBoundary`. |
 | `src/components/passenger/` | `PassengerWorkspace`, boarding card, account tab, route schedule tab (`RoutesTab`), route timeline, layout constants (`passengerFrame.ts`) and loading shell. `ui/` holds `BottomSheet`, `RouteCarousel` and `PassengerDate` (today's date above the Live Routes title). |
 | `src/components/maps/` | Passenger map, road polylines (`DirectionsRoute`), bus glyph, traffic layer. |
-| `src/components/shared/` | Components used by both roles: `RoleGuard`, chat (`MessagingPanel`), `FeedbackModal`, workspace links, prefetch and loading, and `TransitArtwork` (the background paintings of the landing page and the passenger workspace). |
+| `src/components/shared/` | Components used by both roles: `RoleGuard`, chat (`MessagingPanel`), `FeedbackModal`, workspace links, prefetch and loading, `TransitArtwork` (the background paintings of the landing page and the passenger workspace) and `InstallGuideLink` (the landing footer link to `/install`). |
 | `src/components/ui/` | `ConfirmModal`, `AlertModal`, `InAppSelect` (listbox) and `CustomSelect` (native select). |
 | `src/components/*.tsx` | `Providers`, `MapProviders`, `ServiceWorkerRegistrar`, `TelemetryTraceControls`. |
 | `src/hooks/` | Auth, Firestore collections, settings, passenger route schedules, live route catalog, RTDB reconnect, live-health clock, marker smoothing, dialog focus. |
