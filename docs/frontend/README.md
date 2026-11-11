@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-PKG-002 | 3.0 | Current | 2026-11-07 |
+| EKI-PKG-002 | 3.0 | Current | 2026-11-11 |
 
 ## 1. Purpose
 
@@ -209,7 +209,7 @@ For work on this package:
 
 With `EKI_STRICT_PRODUCTION_BUILD=true`, which `npm run build:production` sets, `next.config.ts` fails if any required `NEXT_PUBLIC_*` value is missing, or if `NEXT_PUBLIC_FIREBASE_DATABASE_URL` or `NEXT_PUBLIC_BACKEND_URL` is not a non-local HTTPS URL.
 
-Firebase Hosting serves `frontend/out` with `cleanUrls: true`. The header rule for `/`, `/admin`, `/feedback`, `/install` and `/passenger` sends `Cache-Control: no-cache, no-store, must-revalidate`. It lists every top-level page folder in `src/app`, and `backend/src/securityConfig.test.ts` fails when a new page is not added to it. `/_next/static/**` is sent as immutable for one year, and images for 30 days with one day of stale-while-revalidate. `/sw.js` is never cached and carries `Service-Worker-Allowed: /`. The release procedure is in [CI/CD and releases](../operations/CI_CD_AND_RELEASES.md).
+Firebase Hosting serves `frontend/out` with `cleanUrls: true`. The header rule for `/`, `/admin`, `/feedback`, `/install` and `/passenger` sends `Cache-Control: no-cache, no-store, must-revalidate`. It lists every top-level page folder in `src/app`, and `backend/src/securityConfig.test.ts` fails when a new page is not added to it. `/_next/static/**` is sent as immutable for one year, and images for 30 days with one day of stale-while-revalidate. `/sw.js` is never cached and carries `Service-Worker-Allowed: /`. A path with no file gets `404.html` (exported from `src/app/not-found.tsx`, with a link back to `/`) and HTTP 404. Hosting matches header rules for that page against `404.html`, so the `/404.html` rule sends it with the same `no-cache, no-store, must-revalidate`; without it Hosting adds its default one-hour `max-age=3600`, and a URL that becomes valid after a release could keep showing the 404 for an hour. `scripts/hosting-not-found.test.mjs` checks this. The release procedure is in [CI/CD and releases](../operations/CI_CD_AND_RELEASES.md).
 
 ## 12. Next.js 16 specifics
 
