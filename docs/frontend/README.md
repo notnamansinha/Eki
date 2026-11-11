@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-PKG-002 | 3.0 | Current | 2026-11-07 |
+| EKI-PKG-002 | 3.1 | Current | 2026-11-11 |
 
 ## 1. Purpose
 
@@ -78,7 +78,7 @@ Test suites and their viewports are described in the [test strategy](../testing/
 | `/passenger` | `src/app/passenger/` | `RoleGuard` roles `passenger`, `driver`, `admin` | Passenger workspace with the bottom tabs Live (live routes and tracking), Routes (published route schedules) and Profile. |
 | `/admin` | `src/app/admin/` | `RoleGuard` role `admin` | Administrator workspace with the tabs Live Ops, Routes, Fleet & People, History, Feedback and Settings. |
 | `/feedback` | `src/app/feedback/` | `RoleGuard` role `admin` | Standalone feedback console. The admin Feedback tab renders the same `FeedbackPanel`. |
-| `/install` | `src/app/install/` | Public | Home-screen install guide. `lib/installPlatform.ts` classifies the device. Android shows **Install Eki** once the browser fires `beforeinstallprompt`, otherwise the Chrome menu steps. iOS Safari shows the Share and **Add to Home Screen** steps. Other iOS browsers and in-app views show **Copy link** with advice to open the page in Safari. A desktop browser is asked to open the link on a phone, and a standalone window reports that Eki is installed. |
+| `/install` | `src/app/install/` | Public | Home-screen install guide. `lib/installPlatform.ts` classifies the device. Android shows **Install Eki** once the browser fires `beforeinstallprompt`, otherwise the Chrome menu steps. iOS Safari shows the Share and **Add to Home Screen** steps. Other iOS browsers and in-app views show **Copy link** with advice to open the page in Safari. A desktop browser is asked to open the link on a phone, and a standalone window reports that Eki is installed. With JavaScript turned off, a `<noscript>` section lists the manual steps for every platform (the landing page likewise explains that Eki needs JavaScript). |
 | `/manifest.webmanifest` | `src/app/manifest.ts` | Public | PWA manifest. |
 | `/robots.txt`, `/sitemap.xml` | `src/app/robots.ts`, `src/app/sitemap.ts` | Public | When `NEXT_PUBLIC_SITE_INDEXING` is not `false`, robots disallows `/admin`, `/passenger`, `/feedback` and `/api/`, and the sitemap lists `/`. Otherwise robots disallows everything. |
 

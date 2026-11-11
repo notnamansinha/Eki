@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-ARC-003 | 3.2 | Current | 2026-11-07 |
+| EKI-ARC-003 | 3.3 | Current | 2026-11-11 |
 
 ## 1. Introduction
 
@@ -269,11 +269,11 @@ The frontend is a Next.js App Router project built as a static export.
 | Module | Responsibility | Collaborators |
 |---|---|---|
 | `layout.tsx`, `globals.css`, `brand-theme.css` | Root metadata, the Roboto and Playfair Display font variables (self-hosted at build time by `next/font`), service worker registration, providers; design tokens and responsive layout. `globals.css` imports `brand-theme.css`, the palette, font and gradient tokens shared by Passenger and Admin, scoped to `:root:has(.passenger-layout, .admin-layout)` | `components/Providers.tsx`, `ServiceWorkerRegistrar.tsx` |
-| `page.tsx` | Public landing page over the shared `TransitArtwork`, Google sign-in and routing to a workspace. The sign-in button reads "Preparing sign-in…" until sign-in is usable; a slow restoration shows "Still checking your sign-in" with **Reload** instead of an access error | `hooks/useAuth.ts`, `lib/googleSignInFlow.ts`, `components/shared/TransitArtwork.tsx` |
+| `page.tsx` | Public landing page over the shared `TransitArtwork`, Google sign-in and routing to a workspace. The sign-in button reads "Preparing sign-in…" until sign-in is usable; a slow restoration shows "Still checking your sign-in" with **Reload** instead of an access error. Without JavaScript a `<noscript>` note replaces the button, which `@media (scripting: none)` hides | `hooks/useAuth.ts`, `lib/googleSignInFlow.ts`, `components/shared/TransitArtwork.tsx` |
 | `passenger/` (`layout.tsx`, `loading.tsx`, `page.tsx`, `theme.css`) | Passenger workspace behind `RoleGuard` for passenger, driver and admin roles, layered over `PassengerLoadingShell`; `theme.css` holds the passenger surface rules | `components/passenger/PassengerWorkspace.tsx`, `components/passenger/PassengerLoadingShell.tsx` |
 | `admin/` (`layout.tsx`, `loading.tsx`, `page.tsx`, `theme.css`) | Admin shell with tabs: operations (Live Ops), routes, fleet, history, feedback, settings; a tab switch asks first when the open panel has unsaved changes; `RoleGuard` for admin. `theme.css` holds the admin surface rules, including the dark tone of the Live Ops panel and of the tab bar while Live Ops is open | `components/admin/*`, `lib/unsavedChanges.ts` |
 | `feedback/` (`layout.tsx`, `page.tsx`) | Stand-alone admin feedback review | `components/admin/FeedbackPanel.tsx` |
-| `install/` (`page.tsx`, `InstallClient.tsx`) | `/install`: steps for adding Eki to the home screen, chosen by platform (installed, iOS Safari, another iOS browser with a **Copy link** button, Android with the browser install prompt when offered, desktop) | `lib/installPlatform.ts` |
+| `install/` (`page.tsx`, `InstallClient.tsx`) | `/install`: steps for adding Eki to the home screen, chosen by platform (installed, iOS Safari, another iOS browser with a **Copy link** button, Android with the browser install prompt when offered, desktop); without JavaScript a `<noscript>` section lists the manual steps for every platform | `lib/installPlatform.ts` |
 | `manifest.ts`, `robots.ts`, `sitemap.ts`, `icon.png`, `apple-icon.png` | Web app manifest and indexing metadata | `lib/siteMetadata.ts` |
 
 `RoleGuard` controls presentation only; the security boundary is the Firebase rules and the backend.
