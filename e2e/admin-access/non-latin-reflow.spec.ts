@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { horizontalReflow, nonLatinSamples, reflowViewport, translateAuthoredCopy } from "../fixtures/nonLatinText";
+import { clippingAncestorControl, horizontalReflow, nonLatinSamples, reflowViewport, translateAuthoredCopy } from "../fixtures/nonLatinText";
 
 // Eki ships English-only (EKI-ADR-005). These cases check that the public pages and
 // the admin feedback list still reflow at 320 px when they carry non-Latin or
@@ -10,6 +10,17 @@ test.beforeEach(async ({ page }, info) => {
   test.skip(info.project.name !== "mobile", "320 px reflow runs once");
   await page.setViewportSize(reflowViewport);
 });
+
+for (const clip of ["hidden", "clip"] as const) {
+  test(`reflow check reports text clipped by an overflow: ${clip} ancestor`, async ({ page }) => {
+    const text = nonLatinSamples[0].heading;
+    await page.setContent(clippingAncestorControl(text, clip));
+    const result = await horizontalReflow(page, [text]);
+    expect(result.matched).toBe(1);
+    expect(result.pageOverflow).toBeLessThanOrEqual(0);
+    expect(result.offenders).toEqual([expect.stringContaining("clipped by div")]);
+  });
+}
 
 for (const sample of nonLatinSamples) {
   test(`landing page reflows translated ${sample.script} copy at 320 px`, async ({ page }) => {

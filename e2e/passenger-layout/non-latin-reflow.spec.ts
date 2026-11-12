@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { horizontalReflow, nonLatinSamples, reflowViewport } from "../fixtures/nonLatinText";
+import { clippingAncestorControl, horizontalReflow, nonLatinSamples, reflowViewport } from "../fixtures/nonLatinText";
 import { raiseLiveRoutes, trackRoute } from "./liveRoutes";
 
 // Eki ships English-only (EKI-ADR-005), but route and stop names are typed by
@@ -18,6 +18,17 @@ async function expectReflow(page: Page, view: string, texts: string[], minimum: 
   expect(result.matched, view).toBeGreaterThanOrEqual(minimum);
   expect(result.offenders, view).toEqual([]);
   expect(result.pageOverflow, view).toBeLessThanOrEqual(0);
+}
+
+for (const clip of ["hidden", "clip"] as const) {
+  test(`reflow check reports a name clipped by an overflow: ${clip} ancestor`, async ({ page }) => {
+    const text = nonLatinSamples[0].name;
+    await page.setContent(clippingAncestorControl(text, clip));
+    const result = await horizontalReflow(page, [text]);
+    expect(result.matched).toBe(1);
+    expect(result.pageOverflow).toBeLessThanOrEqual(0);
+    expect(result.offenders).toEqual([expect.stringContaining("clipped by div")]);
+  });
 }
 
 for (const sample of nonLatinSamples) {

@@ -76,17 +76,22 @@ export async function translateAuthoredCopy(page: Page, root: string, sample: No
 /**
  * Horizontal reflow at the current viewport: the page must not scroll sideways, and
  * every visible element whose own text contains one of `texts` must lie inside the
- * viewport and must not clip its text horizontally. A single line deliberately cut
- * with an ellipsis (`text-overflow: ellipsis`) counts as fitting. Elements in inert
- * or hidden views, and visually hidden text, are skipped; they are off screen by design.
+ * viewport and must not clip its text horizontally, either itself or through an
+ * ancestor that clips its overflow (`overflow-x` other than `visible`, or paint
+ * containment). A single line deliberately cut with an ellipsis
+ * (`text-overflow: ellipsis`) counts as fitting, as long as the cut line itself is
+ * not clipped further by an ancestor. Elements in inert or hidden views, and visually
+ * hidden text, are skipped; they are off screen by design.
  */
 export async function horizontalReflow(page: Page, texts: string[]) {
   return page.evaluate(needles => {
     const width = document.documentElement.clientWidth;
     const offenders: string[] = [];
     let matched = 0;
+    const describe = (element: Element) => `${element.tagName.toLowerCase()}.${element.className}`;
     for (const element of document.querySelectorAll<HTMLElement>("body *")) {
-      const own = [...element.childNodes].filter(node => node.nodeType === Node.TEXT_NODE).map(node => node.nodeValue).join("");
+      const ownNodes = [...element.childNodes].filter(node => node.nodeType === Node.TEXT_NODE);
+      const own = ownNodes.map(node => node.nodeValue).join("");
       if (!needles.some(text => own.includes(text))) continue;
       if (element.closest("[inert], [aria-hidden='true']") || !element.checkVisibility({ visibilityProperty: true, opacityProperty: true })) continue;
       const rect = element.getBoundingClientRect();
@@ -94,11 +99,51 @@ export async function horizontalReflow(page: Page, texts: string[]) {
       if (rect.width <= 1 && rect.height <= 1) continue;
       matched += 1;
       const style = getComputedStyle(element);
-      const clipped = element.scrollWidth > element.clientWidth + 1 && style.display !== "inline" && style.textOverflow !== "ellipsis";
+      const ellipsis = style.textOverflow === "ellipsis";
+      const clipped = element.scrollWidth > element.clientWidth + 1 && style.display !== "inline" && !ellipsis;
       if (rect.left < -1 || rect.right > width + 1 || clipped) {
-        offenders.push(`${element.tagName.toLowerCase()}.${element.className} left ${Math.round(rect.left)} right ${Math.round(rect.right)} scroll ${element.scrollWidth}/${element.clientWidth}`);
+        offenders.push(`${describe(element)} left ${Math.round(rect.left)} right ${Math.round(rect.right)} scroll ${element.scrollWidth}/${element.clientWidth}`);
+        continue;
+      }
+      // The laid-out text, not the element box: a wide block can hold short text. An
+      // ellipsis line's text runs past its box by design, so its box stands in for it.
+      let left = rect.left, right = rect.right;
+      if (!ellipsis) {
+        const range = document.createRange();
+        left = Infinity; right = -Infinity;
+        for (const node of ownNodes) {
+          range.selectNodeContents(node);
+          for (const box of range.getClientRects()) {
+            if (box.width === 0) continue;
+            left = Math.min(left, box.left); right = Math.max(right, box.right);
+          }
+        }
+        if (left === Infinity) continue;
+      }
+      // An ancestor that clips cuts the text off without changing the element's own
+      // scrollWidth or clientWidth, so compare the text with each clip box.
+      for (let ancestor = element.parentElement; ancestor && ancestor !== document.documentElement; ancestor = ancestor.parentElement) {
+        const ancestorStyle = getComputedStyle(ancestor);
+        if (ancestorStyle.display === "inline" || ancestorStyle.display === "contents") continue;
+        const clips = ancestorStyle.overflowX !== "visible" || /paint|strict|content/.test(ancestorStyle.contain);
+        if (!clips) continue;
+        const box = ancestor.getBoundingClientRect();
+        const clipLeft = box.left + ancestor.clientLeft, clipRight = clipLeft + ancestor.clientWidth;
+        if (left < clipLeft - 1 || right > clipRight + 1) {
+          offenders.push(`${describe(element)} text ${Math.round(left)}-${Math.round(right)} clipped by ${describe(ancestor)} ${Math.round(clipLeft)}-${Math.round(clipRight)}`);
+          break;
+        }
       }
     }
     return { pageOverflow: document.documentElement.scrollWidth - width, matched, offenders };
   }, texts);
+}
+
+/**
+ * Negative control for `horizontalReflow`: a 200 px paragraph inside a 100 px
+ * ancestor that clips. The paragraph fits the viewport and its own box, so only the
+ * ancestor check reports it. `clip` stands for `overflow: hidden` or `overflow: clip`.
+ */
+export function clippingAncestorControl(text: string, clip: "hidden" | "clip") {
+  return `<!doctype html><html lang="en"><body style="margin:0"><div style="width:100px;overflow:${clip}"><p style="width:200px;margin:0">${text}</p></div></body></html>`;
 }
