@@ -69,7 +69,7 @@ The register lists every controlled document by its source path. A mirror carrie
 
 | ID | Document | Version | Status | Last updated |
 |---|---|---|---|---|
-| EKI-ARC-001 | [Eki Architecture](design/ARCHITECTURE.md) | 2.4 | Current | 2026-11-07 |
+| EKI-ARC-001 | [Eki Architecture](design/ARCHITECTURE.md) | 2.5 | Current | 2026-11-11 |
 | EKI-ARC-002 | [Eki High-Level Design](design/HIGH_LEVEL_DESIGN.md) | 3.1 | Current | 2026-11-07 |
 | EKI-ARC-003 | [Low-Level Design](design/LOW_LEVEL_DESIGN.md) | 3.2 | Current | 2026-11-07 |
 | EKI-ARC-004 | [Tracking Algorithms](design/TRACKING_ALGORITHMS.md) | 1.4 | Current | 2026-11-07 |
@@ -82,12 +82,13 @@ The register lists every controlled document by its source path. A mirror carrie
 | EKI-ADR-002 | [RTDB Region Latency Decision](design/RTDB_REGION_LATENCY_DECISION.md) | 2.1 | Current | 2026-11-07 |
 | EKI-ADR-003 | [Telemetry State Partition Decision](design/TELEMETRY_STATE_PARTITION_DECISION.md) | 1.0 | Current | 2026-10-30 |
 | EKI-ADR-004 | [Google Map Reuse Decision](design/GOOGLE_MAP_REUSE_DECISION.md) | 1.1 | Current | 2026-11-07 |
+| EKI-ADR-005 | [Locale Scope Decision](design/LOCALE_SCOPE_DECISION.md) | 1.0 | Proposed | 2026-11-11 |
 
 ### 4.5 User interface (UIX)
 
 | ID | Document | Version | Status | Last updated |
 |---|---|---|---|---|
-| EKI-UIX-001 | [Eki UI Design System](design/UI_DESIGN_SYSTEM.md) | 3.1 | Current | 2026-11-09 |
+| EKI-UIX-001 | [Eki UI Design System](design/UI_DESIGN_SYSTEM.md) | 3.2 | Current | 2026-11-11 |
 | EKI-UIX-002 | [Transit Artwork Delivery](context-docs/TRANSIT_ARTWORK.md) | 2.1 | Current | 2026-11-08 |
 
 ### 4.6 Interfaces (API)
@@ -177,8 +178,8 @@ The register lists every controlled document by its source path. A mirror carrie
 | EKI-PKG-004 | [Firmware Headers](../hardware/include/README.md) | 1.1 | Current | 2026-11-07 |
 | EKI-PKG-005 | [Firmware Tests](../hardware/test/README.md) | 1.1 | Current | 2026-11-07 |
 | EKI-PKG-006 | [Fleet Signing Keys](../hardware/keys/README.md) | 1.0 | Current | 2026-10-30 |
-| EKI-PKG-007 | [Admin Access Browser Checks](../e2e/admin-access/README.md) | 2.1 | Current | 2026-11-07 |
-| EKI-PKG-008 | [Passenger UI Fixture](../e2e/fixtures/README.md) | 2.2 | Current | 2026-11-07 |
+| EKI-PKG-007 | [Admin Access Browser Checks](../e2e/admin-access/README.md) | 2.2 | Current | 2026-11-11 |
+| EKI-PKG-008 | [Passenger UI Fixture](../e2e/fixtures/README.md) | 2.3 | Current | 2026-11-11 |
 | EKI-PKG-009 | [Moving-Marker Simulation](../e2e/motion/README.md) | 1.0 | Current | 2026-10-30 |
 | EKI-PKG-010 | [Production Audit Browser Fixture](../e2e/production-audit/README.md) | 1.1 | Current | 2026-11-07 |
 | EKI-PKG-011 | [Live Google Maps Check](../e2e/routing/live-maps/README.md) | 1.2 | Current | 2026-11-03 |
@@ -189,7 +190,7 @@ The register lists every controlled document by its source path. A mirror carrie
 | ID | Document | Version | Status | Last updated |
 |---|---|---|---|---|
 | EKI-TST-001 | [Eki Testing and Evidence Index](testing/README.md) | 1.2 | Current | 2026-11-07 |
-| EKI-TST-002 | [Eki Test Strategy](testing/TEST_STRATEGY.md) | 3.1 | Current | 2026-11-07 |
+| EKI-TST-002 | [Eki Test Strategy](testing/TEST_STRATEGY.md) | 3.2 | Current | 2026-11-11 |
 | EKI-TST-003 | [Eki QA Programme](../qa/README.md) | 1.1 | Current | 2026-11-07 |
 | EKI-TST-004 | [Disposable Browser Acceptance](../qa/BROWSER_ACCEPTANCE.md) | 1.1 | Current | 2026-11-07 |
 | EKI-TST-005 | [Disposable Emulator Acceptance](../qa/EMULATOR_ACCEPTANCE.md) | 1.1 | Current | 2026-11-07 |
