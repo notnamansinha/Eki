@@ -140,6 +140,11 @@ body {
   position: fixed;
 }
 
+/* White landing copy must stay readable over the brightest part of either painting. */
+.transit-landing > .transit-artwork .transit-artwork-shade {
+  background: rgb(0 0 0 / 58%);
+}
+
 @media (orientation: portrait) {
   .transit-landing .transit-artwork img {
     transform: scale(1.3);
