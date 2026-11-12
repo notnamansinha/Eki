@@ -48,6 +48,10 @@ let origin = "";
 beforeAll(async () => {
   process.env.PORT = "0";
   process.env.CORS_ORIGIN = "https://eki.example";
+  // What the backend deploy job bakes in and what Cloud Run sets (issue #504).
+  process.env.EKI_SOURCE_SHA = "f925ebd723949c3470cf2bf0eb9581638148ad6d";
+  process.env.K_SERVICE = "eki-backend-staging";
+  process.env.K_REVISION = "eki-backend-staging-00010-abc";
   const listen = vi.spyOn(http.Server.prototype, "listen");
   vi.spyOn(console, "log").mockImplementation(() => undefined);
   await import("./server");
@@ -173,5 +177,16 @@ describe("HTTP edge as wired by server.ts", () => {
     expect(await admin.json()).toMatchObject({ status: "degraded", telemetry: { transport: "https" } });
     const publicHealth = await request("GET", "/health");
     expect(await publicHealth.json()).toEqual({ status: "degraded" });
+  });
+
+  it("names the serving build and revision on the admin health only", async () => {
+    const admin = await request("GET", "/api/health", { Authorization: "Bearer admin" });
+    expect((await admin.json()).release).toEqual({
+      sourceSha: "f925ebd723949c3470cf2bf0eb9581638148ad6d",
+      service: "eki-backend-staging",
+      revision: "eki-backend-staging-00010-abc",
+    });
+    expect(await (await request("GET", "/health")).json()).toEqual({ status: "degraded" });
+    expect(await (await request("GET", "/live")).json()).toEqual({ status: "alive" });
   });
 });

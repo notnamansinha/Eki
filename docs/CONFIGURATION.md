@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-GEN-005 | 1.6 | Current | 2026-11-07 |
+| EKI-GEN-005 | 1.7 | Current | 2026-11-11 |
 
 ## 1. Purpose
 
@@ -39,6 +39,8 @@ The template is a production template. Copied unchanged, it sets `NODE_ENV=produ
 | `CORS_ORIGIN` | In production | Empty | Comma-separated exact browser origins, without paths. Outside production `http://localhost:3000` is always added. Never use `*`. | `server.ts` |
 | `TRUST_PROXY` | No | One hop in production, none elsewhere | Which reverse proxy may supply `X-Forwarded-For` for pre-authentication IP rate limits: `false`, `loopback`, or a hop count from `0` to `10`. Any other value, including `true`, refuses startup. Use `loopback` behind a local ngrok agent so tunnelled clients do not share one bucket. | `lib/trustProxy.ts` |
 | `LOG_LEVEL` | No | `info` | Structured log threshold: `debug`, `info`, `warn` or `error`. | `lib/logger.ts` |
+| `EKI_SOURCE_SHA` | No | Unset (empty in an image built without it) | The full 40-character commit SHA the image was built from. The staging deploy job bakes it in with `docker build --build-arg EKI_SOURCE_SHA=<commit>`; do not set it by hand. Reported only on the administrator-only `GET /api/health` as `release.sourceSha`; any other value reads as `null`. | `lib/releaseIdentity.ts` |
+| `K_SERVICE`, `K_REVISION` | No | Unset | Set by Cloud Run to the service and revision names; never set them yourself. Reported only on `GET /api/health` as `release.service` and `release.revision`, `null` elsewhere. | `lib/releaseIdentity.ts` |
 
 ### 3.2 Firebase and Google Maps
 
