@@ -70,6 +70,10 @@ interface ConnectionEvent { type: string; observedAt: TimestampValue; location?:
 const SERVICE_TIME_ZONE =
   process.env.NEXT_PUBLIC_SERVICE_TIME_ZONE || "Asia/Kolkata";
 
+// Rides fetched per page. Mounting a page is the panel's dominant render cost,
+// so tests pass a smaller `pageSize` to exercise paging without a hundred rows.
+const RIDE_HISTORY_PAGE_SIZE = 100;
+
 // Shared fallback so rides on an unknown route keep stable memoized props.
 const NO_ROUTE_STOPS: RouteData["stops"] = [];
 
@@ -201,8 +205,8 @@ function RideHistoryMessages({ sessionId }: { sessionId: string }) {
   </section>;
 }
 
-export default function RideHistoryPanel() {
-  const [historyLimit, setHistoryLimit] = useState(100);
+export default function RideHistoryPanel({ pageSize = RIDE_HISTORY_PAGE_SIZE }: { pageSize?: number }) {
+  const [historyLimit, setHistoryLimit] = useState(pageSize);
   const {
     data: armedSessions,
     loading: armedSessionsLoading,
@@ -392,7 +396,7 @@ export default function RideHistoryPanel() {
         : (armedSessions.length === historyLimit || startedSessions.length === historyLimit) && <button
         type="button" className="min-h-10 text-sm text-sky-300" onClick={() => {
           setRidesBeforeOlderPage(sessions);
-          setHistoryLimit(limit => limit + 100);
+          setHistoryLimit(limit => limit + pageSize);
         }}>
         Load older rides
       </button>}

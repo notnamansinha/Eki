@@ -3,14 +3,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import RideHistoryPanel from "./RideHistoryPanel";
-const state = vi.hoisted(() => ({ sessions: [{ id: "qa-session", busId: "qa-bus", driverId: "qa-driver", routeId: "qa-route", status: "completed", interruptionReason: undefined as string | undefined, armedAt: 1_750_000_000_000, startTime: 1_750_000_001_000, endTime: 1_750_000_600_000, passengers: [] as {userId: string; userName: string; boardingStopId: string; alightingStopId: string | null; joinedAt: number}[], stopsReached: [] }], error: null as string | null, pendingLimit: null as number | null, retry: vi.fn() }));
-vi.mock("@/hooks/useCollection", () => ({ useCollection: (path: string, options: { maxResults: number }) => ({ data: path.endsWith("/archivedMessages") ? [{ id: "archived", senderName: "QA Passenger", text: "Chat retained after live clear", timestamp: 1_750_000_009_000 }] : path.endsWith("/messages") ? [{ id: "kept-message", senderName: "QA Passenger", text: "Stored ride chat", timestamp: 1_750_000_010_000 }] : options.maxResults === state.pendingLimit ? [] : state.sessions.slice(0, options.maxResults), loading: !path.includes("/") && options.maxResults === state.pendingLimit, error: state.error, retry: state.retry }) }));
+const state = vi.hoisted(() => ({ sessions: [{ id: "qa-session", busId: "qa-bus", driverId: "qa-driver", routeId: "qa-route", status: "completed", interruptionReason: undefined as string | undefined, armedAt: 1_750_000_000_000, startTime: 1_750_000_001_000, endTime: 1_750_000_600_000, passengers: [] as {userId: string; userName: string; boardingStopId: string; alightingStopId: string | null; joinedAt: number}[], stopsReached: [] }], error: null as string | null, pendingLimit: null as number | null, rideLimits: [] as number[], retry: vi.fn() }));
+vi.mock("@/hooks/useCollection", () => ({ useCollection: (path: string, options: { maxResults: number }) => { if (path === "ride_sessions") state.rideLimits.push(options.maxResults); return { data: path.endsWith("/archivedMessages") ? [{ id: "archived", senderName: "QA Passenger", text: "Chat retained after live clear", timestamp: 1_750_000_009_000 }] : path.endsWith("/messages") ? [{ id: "kept-message", senderName: "QA Passenger", text: "Stored ride chat", timestamp: 1_750_000_010_000 }] : options.maxResults === state.pendingLimit ? [] : state.sessions.slice(0, options.maxResults), loading: !path.includes("/") && options.maxResults === state.pendingLimit, error: state.error, retry: state.retry }; } }));
 // Stable data arrays, as useCollection keeps between snapshots, so unchanged rides are not re-rendered on every parent render.
 vi.mock("@/hooks/useBuses", () => { const result = { buses: [{ id: "qa-bus", name: "QA Bus" }], loading: false }; return { useBuses: () => result }; });
 vi.mock("@/hooks/useDrivers", () => { const result = { drivers: [{ id: "qa-driver", name: "QA Driver" }], loading: false }; return { useDrivers: () => result }; });
 vi.mock("@/hooks/useRoutes", () => { const result = { routes: [{ id: "qa-route", name: "QA route", stops: [{ id: "origin", name: "Origin" }, { id: "destination", name: "Destination" }] }], loading: false }; return { useRoutes: () => result }; });
 vi.mock("@/lib/firebaseAuth", () => ({ auth: { currentUser: { getIdToken: async () => "test-token" } } }));
-beforeEach(() => { state.pendingLimit = null; state.sessions[0].status = "completed"; state.sessions[0].interruptionReason = undefined; state.sessions[0].passengers = []; state.error = null; state.retry.mockClear(); vi.stubEnv("NEXT_PUBLIC_BACKEND_URL", "https://qa.ngrok-free.dev"); });
+beforeEach(() => { state.pendingLimit = null; state.rideLimits = []; state.sessions[0].status = "completed"; state.sessions[0].interruptionReason = undefined; state.sessions[0].passengers = []; state.error = null; state.retry.mockClear(); vi.stubEnv("NEXT_PUBLIC_BACKEND_URL", "https://qa.ngrok-free.dev"); });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 async function openConfirmation() {
   const user = userEvent.setup(); render(<RideHistoryPanel />);
@@ -46,33 +46,40 @@ describe("ride-history controls", () => {
     expect(screen.getByText(message!)).toBeTruthy();
     expect(screen.queryByText(/GPS timeout|phone death|GNSS_TIMEOUT_15M/)).toBeNull();
   });
-  it("loads older rides beyond the initial hundred without deleting retained history", async () => {
+  // Paging is exercised with three rides per page: mounting the real hundred-ride
+  // page took most of each test's time and timed out at 5 s on a loaded machine.
+  const PAGE = 3;
+  const onePageAndOneMore = () => Array.from({ length: PAGE + 1 }, (_, i) => ({ ...state.sessions[0], id: `ride-${i}` }));
+  const collapsedRows = (container: HTMLElement) => container.querySelectorAll('button[aria-expanded="false"]');
+  it("asks for a hundred rides per page unless a page size is given", () => {
+    render(<RideHistoryPanel />);
+    expect(new Set(state.rideLimits)).toEqual(new Set([100]));
+  });
+  it("loads older rides beyond the first page without deleting retained history", async () => {
     const original = state.sessions;
     try {
-      state.sessions = Array.from({ length: 101 }, (_, i) => ({ ...original[0], id: `ride-${i}` }));
-      const { container } = render(<RideHistoryPanel />);
-      // This case measures pagination, not pointer/focus behavior. Avoid three
-      // accessibility scans of a hundred rows under the parallel suite's load.
-      expect(container.querySelectorAll('button[aria-expanded="false"]')).toHaveLength(100);
+      state.sessions = onePageAndOneMore();
+      const { container } = render(<RideHistoryPanel pageSize={PAGE} />);
+      expect(collapsedRows(container)).toHaveLength(PAGE);
       fireEvent.click(screen.getByText("Load older rides"));
-      expect(container.querySelectorAll('button[aria-expanded="false"]')).toHaveLength(101);
+      expect(state.rideLimits.at(-1)).toBe(PAGE * 2);
+      expect(collapsedRows(container)).toHaveLength(PAGE + 1);
       expect(screen.queryByText("Load older rides")).toBeNull();
     } finally { state.sessions = original; }
   });
   it("keeps loaded rides on screen while an older page loads", async () => {
     const original = state.sessions;
     try {
-      state.sessions = Array.from({ length: 101 }, (_, i) => ({ ...original[0], id: `ride-${i}` }));
-      state.pendingLimit = 200;
-      const view = render(<RideHistoryPanel />);
+      state.sessions = onePageAndOneMore();
+      state.pendingLimit = PAGE * 2;
+      const view = render(<RideHistoryPanel pageSize={PAGE} />);
       fireEvent.click(screen.getByText("Load older rides"));
-      expect(view.container.querySelectorAll('button[aria-expanded="false"]')).toHaveLength(100);
-      // A selector instead of getByRole: an accessibility-tree scan of a hundred rows is slow under suite load.
+      expect(collapsedRows(view.container)).toHaveLength(PAGE);
       const statuses = view.container.querySelectorAll('[role="status"]');
       expect(statuses).toHaveLength(1);
       expect(statuses[0].textContent).toBe("Loading older rides…");
-      state.pendingLimit = null; view.rerender(<RideHistoryPanel />);
-      expect(view.container.querySelectorAll('button[aria-expanded="false"]')).toHaveLength(101);
+      state.pendingLimit = null; view.rerender(<RideHistoryPanel pageSize={PAGE} />);
+      expect(collapsedRows(view.container)).toHaveLength(PAGE + 1);
       expect(screen.queryByText("Loading older rides…")).toBeNull();
     } finally { state.sessions = original; }
   });
@@ -82,9 +89,9 @@ describe("ride-history controls", () => {
     // `format` is a prototype getter, so each read is one formatted value.
     const formatDescriptor = Object.getOwnPropertyDescriptor(RealDateTimeFormat.prototype, "format")!;
     try {
-      state.sessions = Array.from({ length: 101 }, (_, i) => ({ ...original[0], id: `ride-${i}` }));
-      state.pendingLimit = 200;
-      const view = render(<RideHistoryPanel />);
+      state.sessions = onePageAndOneMore();
+      state.pendingLimit = PAGE * 2;
+      const view = render(<RideHistoryPanel pageSize={PAGE} />);
       let constructed = 0, formatted = 0;
       Intl.DateTimeFormat = new Proxy(RealDateTimeFormat, {
         construct(target, args: ConstructorParameters<typeof Intl.DateTimeFormat>) { constructed += 1; return new target(...args); },
@@ -92,11 +99,11 @@ describe("ride-history controls", () => {
       });
       Object.defineProperty(RealDateTimeFormat.prototype, "format", { ...formatDescriptor, get() { formatted += 1; return formatDescriptor.get!.call(this); } });
       fireEvent.click(screen.getByText("Load older rides"));
-      state.pendingLimit = null; view.rerender(<RideHistoryPanel />);
-      expect(view.container.querySelectorAll('button[aria-expanded="false"]')).toHaveLength(101);
+      state.pendingLimit = null; view.rerender(<RideHistoryPanel pageSize={PAGE} />);
+      expect(collapsedRows(view.container)).toHaveLength(PAGE + 1);
       expect(constructed).toBe(0);
       // Only the newly loaded completed ride formats its date, start and end times.
-      expect(formatted).toBeLessThanOrEqual(3);
+      expect(formatted).toBe(3);
     } finally {
       state.sessions = original;
       Intl.DateTimeFormat = RealDateTimeFormat;
@@ -106,14 +113,14 @@ describe("ride-history controls", () => {
   it("does not resurface the pre-page snapshot when the larger page later reloads", async () => {
     const original = state.sessions;
     try {
-      state.sessions = Array.from({ length: 101 }, (_, i) => ({ ...original[0], id: `ride-${i}` }));
-      state.pendingLimit = 200;
-      const view = render(<RideHistoryPanel />);
+      state.sessions = onePageAndOneMore();
+      state.pendingLimit = PAGE * 2;
+      const view = render(<RideHistoryPanel pageSize={PAGE} />);
       fireEvent.click(screen.getByText("Load older rides"));
-      state.pendingLimit = null; view.rerender(<RideHistoryPanel />);
-      state.pendingLimit = 200; view.rerender(<RideHistoryPanel />);
+      state.pendingLimit = null; view.rerender(<RideHistoryPanel pageSize={PAGE} />);
+      state.pendingLimit = PAGE * 2; view.rerender(<RideHistoryPanel pageSize={PAGE} />);
       expect(screen.queryByText("Loading older rides…")).toBeNull();
-      expect(view.container.querySelectorAll('button[aria-expanded="false"]')).toHaveLength(0);
+      expect(collapsedRows(view.container)).toHaveLength(0);
     } finally { state.sessions = original; }
   });
   it("shows both persisted stop choices without inventing arrival time", async () => {
