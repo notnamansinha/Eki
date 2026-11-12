@@ -38,9 +38,9 @@ async function post(headers: Record<string, string>, body: string | Buffer) {
 describe("request body parser errors", () => {
   it("keeps the documented 413 and 400 responses", async () => {
     expect(await post({ "content-type": "application/json" }, `{"a":"${"x".repeat(600)}"}`))
-      .toEqual({ status: 413, body: { error: "Request body is too large." } });
+      .toEqual({ status: 413, body: { error: "Request body is too large.", code: "REQUEST_TOO_LARGE" } });
     expect(await post({ "content-type": "application/json" }, "{not json"))
-      .toEqual({ status: 400, body: { error: "Invalid JSON body." } });
+      .toEqual({ status: 400, body: { error: "Invalid JSON body.", code: "INVALID_JSON_BODY" } });
   });
 
   it("rejects undecodable bodies as client errors instead of internal failures", async () => {
@@ -49,13 +49,13 @@ describe("request body parser errors", () => {
       { "content-type": "application/json", "content-encoding": "x-unknown" },
       { "content-type": "application/json; charset=x-unknown" },
     ]) {
-      expect(await post(headers, "{}")).toEqual({ status: 415, body: { error: "Unsupported request body encoding." } });
+      expect(await post(headers, "{}")).toEqual({ status: 415, body: { error: "Unsupported request body encoding.", code: "UNSUPPORTED_ENCODING" } });
     }
     for (const headers of [
       { "content-type": "application/json", "content-encoding": "gzip" },
       { "content-type": "application/json", "content-encoding": "deflate" },
     ]) {
-      expect(await post(headers, "{}")).toEqual({ status: 400, body: { error: "Invalid request." } });
+      expect(await post(headers, "{}")).toEqual({ status: 400, body: { error: "Invalid request.", code: "INVALID_REQUEST" } });
     }
     expect(unhandled).toBe(before);
   });

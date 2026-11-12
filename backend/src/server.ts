@@ -37,6 +37,7 @@ import { drainDurableRideRecovery } from "./services/durableRideRecovery";
 import { drainAutomaticServiceAdmission } from "./services/automaticServiceAdmission";
 import { backgroundFailures } from "./lib/backgroundFailureTracker";
 import { createHealthState, probeRtdbConnection } from "./lib/healthState";
+import { readReleaseIdentity } from "./lib/releaseIdentity";
 import { createHttpMetricsMiddleware, registerOperationalMetrics } from "./lib/metrics";
 import { createBrowserAdmission, createBrowserIngressLimiter } from "./lib/browserAdmission";
 import { verifiedUserKeyGenerator } from "./lib/rateLimitIdentity";
@@ -45,7 +46,7 @@ import { readTrustProxySetting } from "./lib/trustProxy";
 import { assertBooleanEnvConfiguration } from "./lib/booleanEnv";
 import { createRouteSaveBodyParser } from "./lib/routeSaveBody";
 import { requireAdmin } from "./middleware/requireAdmin";
-import { clientRequestErrorHandler, notFoundHandler, unhandledRequestErrorHandler } from "./lib/requestErrors";
+import { clientRequestErrorHandler, notFoundHandler, REQUEST_ERROR_CODES, unhandledRequestErrorHandler } from "./lib/requestErrors";
 import { assertRetentionConfiguration } from "./services/retentionSweeper";
 import { startWorkerCoordinator } from "./services/workerCoordinator";
 import { getTripStateQueueStatus } from "./services/tripStateEngine";
@@ -144,7 +145,7 @@ app.use(cors({ origin: CORS_ORIGINS, credentials: false, exposedHeaders: ["Locat
 app.use(createBrowserIngressLimiter(RATE_LIMIT_SHARD_FACTOR));
 app.use((req, res, next) => {
   if (req.method === "TRACE" || req.method === "CONNECT") {
-    res.status(405).json({ error: "Method not allowed." });
+    res.status(405).json({ error: "Method not allowed.", code: REQUEST_ERROR_CODES.methodNotAllowed });
     return;
   }
   next();
@@ -252,6 +253,10 @@ app.get("/health", (_req, res) => {
   });
 });
 
+// The build and Cloud Run revision this process runs (issue #504), read once.
+// Admin-only: public /health and /live stay status-only.
+const releaseIdentity = readReleaseIdentity();
+
 // Detailed diagnostics are operationally sensitive and admin-only. This uses
 // the same cached probes as /health, so monitoring cannot amplify billable
 // Firebase reads.
@@ -302,6 +307,7 @@ app.get("/api/health", requireAdmin, (_req, res) => {
       sustainedSources: backgroundTasks.sustainedSources,
       sources: backgroundTasks.sources,
     },
+    release: releaseIdentity,
     checkedAt: state.checkedAt,
   });
 });
