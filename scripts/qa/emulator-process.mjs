@@ -35,6 +35,21 @@ export function resolveJavaHome(env, { run = spawnSync, exists = existsSync } = 
   return hasJava(home) ? home : null;
 }
 
+/**
+ * Finds npm's npx CLI entry on Windows so the runner can spawn it with node and
+ * keep the quoted `node "<script>"` emulators:exec argument as one argv element.
+ * The npm running this script (`npm_execpath`, e.g. a global npm 12) wins, then
+ * the npm bundled next to node.exe. Returns null when neither exists: going
+ * through `npx.cmd` in a shell instead splits that argument and firebase-tools
+ * fails with "Too many arguments" (issue #500), so the caller stops instead.
+ */
+export function resolveWindowsNpxCli({ execPath = process.execPath, npmExecPath = process.env.npm_execpath, exists = existsSync } = {}) {
+  const candidates = [];
+  if (npmExecPath && /npm-cli\.js$/i.test(npmExecPath)) candidates.push(path.win32.join(path.win32.dirname(npmExecPath), 'npx-cli.js'));
+  candidates.push(path.win32.join(path.win32.dirname(execPath), 'node_modules', 'npm', 'bin', 'npx-cli.js'));
+  return candidates.find((candidate) => exists(candidate)) ?? null;
+}
+
 /** Returns a copy of env with `<javaHome>\bin` first on PATH, preserving the existing key's casing (Path vs PATH). */
 export function withJdkFirstOnPath(env, javaHome) {
   if (!javaHome) return { ...env };

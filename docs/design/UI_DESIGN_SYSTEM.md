@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-UIX-001 | 3.1 | Current | 2026-11-09 |
+| EKI-UIX-001 | 3.3 | Current | 2026-11-12 |
 
 ## 1. Purpose
 
@@ -541,7 +541,8 @@ Playwright viewports (`playwright*.config.ts` and `e2e/`):
 | 320 × 568 | Passenger video audit, Routes tab navigation fit |
 | 375 × 812 | Routes tab navigation fit |
 | 568 × 320, 844 × 390 | Passenger video audit short screens (touch, and 844 × 390 also with a mouse); 844 × 390 also in the artwork rotation check |
-| 320 × 640, 1024 × 600 | Production audit resilience |
+| 320 × 640 | Production audit resilience; non-Latin reflow in the admin access (`mobile` project) and passenger layout (`narrow` project, touch) suites |
+| 1024 × 600 | Production audit resilience |
 | 360 × 800 | Default suite, passenger layout (`narrow`), production audit, live-maps in-app |
 | 390 × 844 | Admin access, landing layout, emulator, passenger layout (`mobile`), passenger progress, production audit, artwork rotation at 3x density |
 | 440 × 956 | Passenger layout (`reported-phone`) |
@@ -578,7 +579,7 @@ A signed-in user leaves `/` for the saved workspace or the default for the role.
 
 ### 7.2 Landing page
 
-`app/page.tsx` and the persistent passenger shell share `components/shared/TransitArtwork.tsx`: a responsive WebP picture of the two tree-view paintings in `docs/design/transit-artwork/` (841x1870 portrait and 1672x941 landscape), with a full-size landscape WebP fallback. The landing adds a 40 % black shade and a centred 1.3x scale on portrait viewports; the passenger shell uses the gradient shade in Section 3.8. PNG masters are archived in `docs/design/transit-artwork/`, outside the deployed app. Viewport orientation selects the composition; `object-fit: cover` fills other ratios with proportional cropping and no empty borders or stretching. The landing has no AU logo or logo header and keeps the default palette and system font. Headline, description and spacing respond to both viewport width and height so the sign-in button and footer fit at 1280x585 CSS pixels, including a desktop scaled to 150 % at 100 % browser zoom. Safe-area insets protect the content and footer. The fixed background fills the screen while the document can grow for enlarged text or additional auth notices. Asset provenance and regeneration are in [Transit artwork delivery](../context-docs/TRANSIT_ARTWORK.md). The white **Continue with Google** button carries the Google mark (`frontend/public/google-g.svg`); until sign-in is usable it shows a spinner and "Preparing sign-in…", and "Opening Google…" while sign-in starts. A Campus Operations link sits below it. The full-page sign-in link ("Continue with full-page Google sign-in"), a sign-in error (`role="alert"`) and a status line with **Reload** appear below the button when relevant: "Sign-in is still loading." after 10 s without sign-in, or "Still checking your sign-in. The connection looks slow; this continues on its own." when restoring a saved session takes more than 8 s. A signed-in user sees a spinner with "Finishing your sign-in…" or "Opening your workspace…". An access error replaces the page with **Try again**, **Sign out** and **Reload**.
+`app/page.tsx` and the persistent passenger shell share `components/shared/TransitArtwork.tsx`: a responsive WebP picture of the two tree-view paintings in `docs/design/transit-artwork/` (841x1870 portrait and 1672x941 landscape), with a full-size landscape WebP fallback. The landing adds a 40 % black shade and a centred 1.3x scale on portrait viewports; the passenger shell uses the gradient shade in Section 3.8. PNG masters are archived in `docs/design/transit-artwork/`, outside the deployed app. Viewport orientation selects the composition; `object-fit: cover` fills other ratios with proportional cropping and no empty borders or stretching. The landing has no AU logo or logo header and keeps the default palette and system font. Headline, description and spacing respond to both viewport width and height so the sign-in button and footer fit at 1280x585 CSS pixels, including a desktop scaled to 150 % at 100 % browser zoom. Safe-area insets protect the content and footer. The fixed background fills the screen while the document can grow for enlarged text or additional auth notices. Asset provenance and regeneration are in [Transit artwork delivery](../context-docs/TRANSIT_ARTWORK.md). The white **Continue with Google** button carries the Google mark (`frontend/public/google-g.svg`); until sign-in is usable it shows a spinner and "Preparing sign-in…", and "Opening Google…" while sign-in starts. A Campus Operations link sits below it. The footer carries an underlined **Install the app** link to the `/install` guide (`components/shared/InstallGuideLink.tsx`, at least 24 px tall) between the copyright and location lines. The full-page sign-in link ("Continue with full-page Google sign-in"), a sign-in error (`role="alert"`) and a status line with **Reload** appear below the button when relevant: "Sign-in is still loading." after 10 s without sign-in, or "Still checking your sign-in. The connection looks slow; this continues on its own." when restoring a saved session takes more than 8 s. A signed-in user sees a spinner with "Finishing your sign-in…" or "Opening your workspace…". An access error replaces the page with **Try again**, **Sign out** and **Reload**.
 
 ### 7.3 Passenger workspace
 
@@ -663,6 +664,7 @@ Paths are relative to `frontend/src/components/`.
 | `AlertModal` | `ui/AlertModal.tsx` | One-button dialog with error, warning and info variants. |
 | `InAppSelect` | `ui/InAppSelect.tsx` | Combobox and listbox with a detail column (ETA) and a completed state for stops behind the bus. |
 | `CustomSelect` | `ui/CustomSelect.tsx` | Styled native `<select>` for admin fleet and feedback filters. |
+| `InstallGuideLink` | `shared/InstallGuideLink.tsx` | Landing footer link (**Install the app**) to the public `/install` guide. |
 | `RoleGuard` | `shared/RoleGuard.tsx` | Loading, slow sign-in ("Still signing you in", with **Reload**), access-error and unauthorized screens; redirects signed-out users to `/`. |
 | `TransitArtwork` | `shared/TransitArtwork.tsx` | Portrait and landscape WebP artwork with its shade, shared by the landing page and the passenger loading shell ([Transit artwork delivery](../context-docs/TRANSIT_ARTWORK.md)). |
 | `WorkspaceLink` | `shared/WorkspaceLink.tsx` | Link between workspaces with an **Opening…** state. |
@@ -775,7 +777,7 @@ On Android, an installed app that does not draw behind the gesture bar gets a st
 | Forced colours | Under `forced-colors: active` the Routes headers, which lose their AU Red band, regain a `CanvasText` bottom edge. |
 | Touch targets | The convention is 44 px (`size-11`, `h-11`, `min-h-11`, and `min-height: 44px` on `.pp-btn-*` and admin fields): passenger back button, map stop buttons, select controls, dialog close buttons, navigation buttons; Profile rows are at least 56 px. `e2e/admin-responsive.spec.ts` asserts at least 44 × 44 px for the route editor's move and remove stop buttons, and `e2e/passenger-layout/routes-schedule.spec.ts` asserts at least 44 px high navigation buttons at 320 px and 375 px widths. |
 | Reduced motion | Section 8.3. |
-| Language and indexing | `<html lang="en">`; protected routes are `noindex`. |
+| Language and indexing | `<html lang="en">`, left to right, English copy only; text that people enter in other scripts is shown as typed and must reflow at 320 px ([EKI-ADR-005](LOCALE_SCOPE_DECISION.md), Proposed). Protected routes are `noindex`. |
 
 ### 10.2 Known gaps
 

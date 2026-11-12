@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-API-001 | 3.3 | Current | 2026-11-07 |
+| EKI-API-001 | 3.4 | Current | 2026-11-11 |
 
 ## 1. Introduction
 
@@ -127,7 +127,7 @@ Responses are JSON. Errors are an object with a required `error` message and opt
 | Field | Meaning |
 |---|---|
 | `error` | Human-readable message. It never contains stack traces, credentials or upstream response bodies. |
-| `code` | Stable machine code, on route, Places, durable operation and administrator authorization errors |
+| `code` | Stable machine code, on route, Places, durable operation and administrator authorization errors, and on every generic edge error in the table below |
 | `phase` | Stage that failed: `authentication`, `validation`, `routing`, `persistence` or `places` |
 | `retryAfterMs` | Delay before retrying, in milliseconds |
 | `outcomeUnknown` | `true` when the change may or may not have been committed |
@@ -136,20 +136,20 @@ Responses are JSON. Errors are an object with a required `error` message and opt
 
 Statuses that any operation can return:
 
-| Status | Cause | Message |
-|---|---|---|
-| 400 | Malformed JSON | `Invalid JSON body.` |
-| 400 | Corrupt compressed body or undecodable path parameter | `Invalid request.` |
-| 401, 403, 503 | Authentication (Section 2.3) | |
-| 404 | No operation matches the path and method; the path is not echoed | `Not found.` |
-| 405 | `TRACE` or `CONNECT` | `Method not allowed.` |
-| 413 | Body over the size limit | `Request body is too large.` |
-| 415 | Unsupported body charset or `Content-Encoding` | `Unsupported request body encoding.` |
-| 429 | Rate limit (Section 4.2) | Limiter message |
-| 500 | Unexpected failure | `Internal server error.` or a fixed handler message |
-| 503 | Bounded queue full, read deadline passed or dependency unavailable | Handler message, usually with `Retry-After: 1` |
+| Status | Cause | Message | `code` |
+|---|---|---|---|
+| 400 | Malformed JSON | `Invalid JSON body.` | `INVALID_JSON_BODY` |
+| 400 | Corrupt compressed body or undecodable path parameter | `Invalid request.` | `INVALID_REQUEST` |
+| 401, 403, 503 | Authentication (Section 2.3) | | |
+| 404 | No operation matches the path and method; the path is not echoed | `Not found.` | `NOT_FOUND` |
+| 405 | `TRACE` or `CONNECT` | `Method not allowed.` | `METHOD_NOT_ALLOWED` |
+| 413 | Body over the size limit | `Request body is too large.` | `REQUEST_TOO_LARGE` |
+| 415 | Unsupported body charset or `Content-Encoding` | `Unsupported request body encoding.` | `UNSUPPORTED_ENCODING` |
+| 429 | Rate limit (Section 4.2) | Limiter message | |
+| 500 | Unexpected failure | `Internal server error.` or a fixed handler message | `INTERNAL_ERROR` from the last-resort handler |
+| 503 | Bounded queue full, read deadline passed or dependency unavailable | Handler message, usually with `Retry-After: 1` | |
 
-These are not repeated under each operation. Operations list their own statuses only.
+These are not repeated under each operation. Operations list their own statuses only. The generic edge errors carry exactly `error` and `code`, so they satisfy both the `Error` schema and the stricter `OperationError` schema that durable-operation routes document for 400, 404 and 409 (`backend/src/lib/requestErrors.ts`). Errors that an operation raises itself after parsing, such as telemetry's `Invalid telemetry payload.`, keep the bodies documented under that operation.
 
 Headers:
 
@@ -213,7 +213,7 @@ Each operation lists its caller, request, success response and the statuses spec
 `GET /api/health`
 
 - Caller: administrator. Exempt from the per-account read budget.
-- Success: 200, or 503 when not ready, with `status`, `firestore` and `rtdb` (`connected` or `disconnected`), `telemetry`, `backgroundTasks` and `checkedAt`. `telemetry` holds process-local counters: accepted and rejected samples, credential cache hit rate, work queue states, latency summaries over the last 512 samples, rate-limit counters, route processing, API read caches and legacy-path traffic. `backgroundTasks` flags a source as `sustained` after 5 failures within 5 minutes and logs `[BackgroundFailures] SUSTAINED failure alert` once per episode. Counters reset when the process restarts. The schema is `AdminHealth` in [`openapi.json`](openapi.json); queue fields are explained in [work admission](../docs/operations/WORK_ADMISSION.md).
+- Success: 200, or 503 when not ready, with `status`, `firestore` and `rtdb` (`connected` or `disconnected`), `telemetry`, `backgroundTasks`, `release` and `checkedAt`. `release` names the build that answered: `sourceSha`, the commit baked into the image (`EKI_SOURCE_SHA`), and `service` and `revision`, the Cloud Run service and revision (`K_SERVICE`, `K_REVISION`); each is `null` when unknown, for example outside Cloud Run. Public `/health` and `/live` never carry it. `telemetry` holds process-local counters: accepted and rejected samples, credential cache hit rate, work queue states, latency summaries over the last 512 samples, rate-limit counters, route processing, API read caches and legacy-path traffic. `backgroundTasks` flags a source as `sustained` after 5 failures within 5 minutes and logs `[BackgroundFailures] SUSTAINED failure alert` once per episode. Counters reset when the process restarts. The schema is `AdminHealth` in [`openapi.json`](openapi.json); queue fields are explained in [work admission](../docs/operations/WORK_ADMISSION.md).
 
 ### 3.2 Device ingestion
 

@@ -13,5 +13,11 @@ export default function sitemap(): MetadataRoute.Sitemap {
       changeFrequency: 'weekly',
       priority: 1,
     },
+    {
+      // The public home-screen install guide, linked from the landing footer.
+      url: `${baseUrl}/install`,
+      changeFrequency: 'monthly',
+      priority: 0.5,
+    },
   ];
 }
