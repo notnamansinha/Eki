@@ -995,6 +995,20 @@ describe("production security configuration", () => {
     expect([...covered].sort()).toEqual([...pages].sort());
   });
 
+  it("redirects trailing-slash page URLs to the slashless exported pages", () => {
+    const firebase = JSON.parse(workspaceFile("firebase.json"));
+    const nextConfig = workspaceFile("frontend/next.config.ts");
+
+    // The static export writes each page as `<page>.html` (no `trailingSlash`
+    // in next.config.ts), so with cleanUrls alone Hosting answers `/install/`
+    // with 404. `trailingSlash: false` makes Hosting 301 `/install/?a=b` to
+    // `/install?a=b` when `install.html` exists; missing paths still 404 and
+    // `/` is never redirected.
+    expect(firebase.hosting.cleanUrls).toBe(true);
+    expect(firebase.hosting.trailingSlash).toBe(false);
+    expect(nextConfig).not.toMatch(/\btrailingSlash\s*:/);
+  });
+
   it("ships every Firestore index manifest referenced by Firebase", () => {
     const firebase = JSON.parse(workspaceFile("firebase.json"));
     const indexPath = firebase.firestore.indexes as string;
