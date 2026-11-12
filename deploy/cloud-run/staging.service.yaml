@@ -10,6 +10,9 @@
 #                            passes the /health gate
 #   SERVICE_MIN_SCALE        the live service-level minimum instances, so a
 #                            deploy keeps the value Cloud Scheduler last set
+#   SOURCE_SHA               the commit the image was built from; the revision
+#                            label lets release evidence map the serving
+#                            revision back to its source (issue #504)
 #
 # Values and their reasons: docs/operations/STAGING_RUNTIME_CONFIG.md.
 # Never put a secret value in this file; secrets come from Secret Manager.
@@ -28,6 +31,8 @@ metadata:
 spec:
   template:
     metadata:
+      labels:
+        eki-source-sha: "${SOURCE_SHA}"
       annotations:
         # Revision-level minimum stays 0. Two Cloud Scheduler jobs set the
         # service-level minimum instances to 1 from 06:00 to 22:00 IST so the

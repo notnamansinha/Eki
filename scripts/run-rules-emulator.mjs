@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { spawn, execFileSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -9,6 +9,7 @@ import {
   killProcessTree,
   reapOrphanedEmulators,
   resolveJavaHome,
+  resolveWindowsNpxCli,
   withJdkFirstOnPath,
 } from "./qa/emulator-process.mjs";
 
@@ -88,20 +89,14 @@ function spawnNpx() {
 
   // Windows: node + npm's npx CLI keeps every argument (including the quoted
   // emulators:exec script) intact — no .cmd shim, no cmd.exe quote parsing.
-  const npxCli = path.join(
-    path.dirname(process.execPath),
-    "node_modules",
-    "npm",
-    "bin",
-    "npx-cli.js",
-  );
-  if (existsSync(npxCli)) {
-    return spawn(process.execPath, [npxCli, ...emulatorArgs], opts);
+  // There is no `npx.cmd` shell fallback: cmd.exe always splits that argument
+  // and firebase-tools then fails with "Too many arguments" (issue #500).
+  const npxCli = resolveWindowsNpxCli();
+  if (!npxCli) {
+    console.error("Cannot find npm's npx-cli.js (checked npm_execpath and next to node.exe). Run this through npm, e.g. `npm run test:rules` or `npm run qa:browser`.");
+    process.exit(1);
   }
-
-  // Fallback: .cmd shim through a shell (spaces in the script arg may be
-  // mangled; prefer the node entry above).
-  return spawn("npx.cmd", emulatorArgs, { ...opts, shell: true });
+  return spawn(process.execPath, [npxCli, ...emulatorArgs], opts);
 }
 
 const child = spawnNpx();

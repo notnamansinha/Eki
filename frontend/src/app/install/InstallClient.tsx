@@ -70,7 +70,7 @@ export default function InstallClient() {
     "w-full rounded-xl bg-[#b3262a] px-4 py-3 text-base font-semibold text-white disabled:opacity-60";
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center gap-6 px-4 py-10">
+    <main className="public-page-shell mx-auto flex min-h-screen max-w-md flex-col justify-center gap-6 px-4 py-10">
       <h1 className="text-3xl font-bold">Install Eki</h1>
       <p className="text-[var(--text-secondary)]">
         Add Eki to your home screen to open it like an app.

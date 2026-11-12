@@ -11631,6 +11631,54 @@
             ],
             "additionalProperties": false
           },
+          "release": {
+            "type": "object",
+            "description": "The build that answered. Null when unknown, for example outside Cloud Run or in an image built without EKI_SOURCE_SHA. Never exposed on public /health or /live.",
+            "properties": {
+              "sourceSha": {
+                "description": "Commit the image was built from (EKI_SOURCE_SHA).",
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{40}$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "service": {
+                "description": "Cloud Run service (K_SERVICE).",
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "pattern": "^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "revision": {
+                "description": "Cloud Run revision (K_REVISION).",
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "pattern": "^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "sourceSha",
+              "service",
+              "revision"
+            ],
+            "additionalProperties": false
+          },
           "checkedAt": {
             "anyOf": [
               {
@@ -11649,6 +11697,7 @@
           "rtdb",
           "telemetry",
           "backgroundTasks",
+          "release",
           "checkedAt"
         ],
         "additionalProperties": false

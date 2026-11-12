@@ -39,6 +39,11 @@ USER nodejs
 
 EXPOSE 8080
 
+# The commit this image was built from, reported by the admin-only /api/health
+# (issue #504). Declared last so a new commit does not invalidate earlier layers.
+ARG EKI_SOURCE_SHA=""
+ENV EKI_SOURCE_SHA=${EKI_SOURCE_SHA}
+
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
   CMD wget -qO- http://127.0.0.1:8080/live || exit 1
 

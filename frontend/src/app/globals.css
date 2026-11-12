@@ -1504,3 +1504,15 @@ html:has(.passenger-layout) body {
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 1.5rem;
 }
+
+/* Public page shells (sign-in landing, /install), issue #521. Their copy is
+   authored, but a long unbroken token (a URL, a compound word, a future
+   translation) must wrap rather than widen the page past a 320-360px phone.
+   `anywhere`, unlike `break-word`, also lowers the min-content width, so the
+   install page's centred column shrinks to the viewport instead of growing to
+   fit the word. Ordinary words still break only at spaces, and rules set on an
+   element itself (such as the landing heading's `break-word`) still apply. */
+.transit-landing,
+.public-page-shell {
+  overflow-wrap: anywhere;
+}
