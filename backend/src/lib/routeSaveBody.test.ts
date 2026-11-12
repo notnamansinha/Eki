@@ -80,7 +80,7 @@ describe("route-save JSON body limit", () => {
   it("still rejects bodies above the route-save limit", async () => {
     const body = JSON.stringify({ ...maximumRouteSave(), padding: "p".repeat(ROUTE_SAVE_BODY_LIMIT_BYTES) });
     expect(await send("PUT", "/api/routes/route-1", body))
-      .toEqual({ status: 413, body: { error: "Request body is too large." } });
+      .toEqual({ status: 413, body: { error: "Request body is too large.", code: "REQUEST_TOO_LARGE" } });
   });
 
   it("keeps the general 16 KiB cap for every other route operation", async () => {

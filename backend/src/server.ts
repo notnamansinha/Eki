@@ -46,7 +46,7 @@ import { readTrustProxySetting } from "./lib/trustProxy";
 import { assertBooleanEnvConfiguration } from "./lib/booleanEnv";
 import { createRouteSaveBodyParser } from "./lib/routeSaveBody";
 import { requireAdmin } from "./middleware/requireAdmin";
-import { clientRequestErrorHandler, notFoundHandler, unhandledRequestErrorHandler } from "./lib/requestErrors";
+import { clientRequestErrorHandler, notFoundHandler, REQUEST_ERROR_CODES, unhandledRequestErrorHandler } from "./lib/requestErrors";
 import { assertRetentionConfiguration } from "./services/retentionSweeper";
 import { startWorkerCoordinator } from "./services/workerCoordinator";
 import { getTripStateQueueStatus } from "./services/tripStateEngine";
@@ -145,7 +145,7 @@ app.use(cors({ origin: CORS_ORIGINS, credentials: false, exposedHeaders: ["Locat
 app.use(createBrowserIngressLimiter(RATE_LIMIT_SHARD_FACTOR));
 app.use((req, res, next) => {
   if (req.method === "TRACE" || req.method === "CONNECT") {
-    res.status(405).json({ error: "Method not allowed." });
+    res.status(405).json({ error: "Method not allowed.", code: REQUEST_ERROR_CODES.methodNotAllowed });
     return;
   }
   next();

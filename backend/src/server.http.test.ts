@@ -1,6 +1,8 @@
 import http, { type Server } from "node:http";
 import type { AddressInfo } from "node:net";
+import { Ajv2020 } from "ajv/dist/2020";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import openApi from "../openapi.json";
 
 // Boots the real server.ts middleware stack with Firebase, workers and token
 // verification replaced, so the HTTP edge (CORS, auth, parsers, fallbacks) is
@@ -91,7 +93,30 @@ describe("HTTP edge as wired by server.ts", () => {
     const response = await request(method, path, headers);
     expect(response.status).toBe(404);
     expect(response.headers.get("content-type")).toMatch(/^application\/json/);
-    expect(await response.json()).toEqual({ error: "Not found." });
+    expect(await response.json()).toEqual({ error: "Not found.", code: "NOT_FOUND" });
+  });
+
+  // Issue #517: these operations document their 400 as OperationError, which
+  // requires `code` and forbids extra properties. The shared body parser must
+  // answer malformed JSON with that envelope, not a bare `{ error }`.
+  it.each([
+    "/api/v2/route-geometry-previews",
+    "/api/v2/route-geometry-previews/{operationId}/recovery",
+    "/api/v2/fleet-reconciliation-jobs",
+    "/api/v2/fleet-reconciliation-jobs/{operationId}/recovery",
+    "/api/v2/fleet-reconciliation-jobs/lock/recovery",
+  ])("answers malformed JSON on POST %s with the documented 400 schema", async path => {
+    const target = path.replace("{operationId}", "op-1");
+    const response = await request("POST", target, { "Content-Type": "application/json" }, "x");
+    expect(response.status).toBe(400);
+    const body: unknown = await response.json();
+    expect(body).toEqual({ error: "Invalid JSON body.", code: "INVALID_JSON_BODY" });
+    const documented = (openApi.paths as Record<string, { post: { responses: Record<string, {
+      content: { "application/json": { schema: object } };
+    }> } }>)[path].post.responses["400"].content["application/json"].schema;
+    const validate = new Ajv2020({ strict: false, validateFormats: false })
+      .compile({ ...documented, components: openApi.components });
+    expect(validate(body), JSON.stringify(validate.errors)).toBe(true);
   });
 
   it("reflects only an exact configured origin", async () => {
@@ -141,7 +166,9 @@ describe("HTTP edge as wired by server.ts", () => {
   });
 
   it("keeps TRACE rejected and operational health admin-only", async () => {
-    expect((await request("TRACE", "/live")).status).toBe(405);
+    const trace = await request("TRACE", "/live");
+    expect(trace.status).toBe(405);
+    expect(await trace.json()).toEqual({ error: "Method not allowed.", code: "METHOD_NOT_ALLOWED" });
     expect((await request("GET", "/api/health")).status).toBe(401);
     expect((await request("GET", "/api/health", { Authorization: "Bearer expired" })).status).toBe(401);
     expect((await request("GET", "/api/health", { Authorization: "Bearer passenger" })).status).toBe(403);
