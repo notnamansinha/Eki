@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-UIX-001 | 3.1 | Current | 2026-11-11 |
+| EKI-UIX-001 | 3.3 | Current | 2026-11-12 |
 
 ## 1. Purpose
 
@@ -541,7 +541,8 @@ Playwright viewports (`playwright*.config.ts` and `e2e/`):
 | 320 × 568 | Passenger video audit, Routes tab navigation fit |
 | 375 × 812 | Routes tab navigation fit |
 | 568 × 320, 844 × 390 | Passenger video audit short screens (touch, and 844 × 390 also with a mouse); 844 × 390 also in the artwork rotation check |
-| 320 × 640, 1024 × 600 | Production audit resilience |
+| 320 × 640 | Production audit resilience; non-Latin reflow in the admin access (`mobile` project) and passenger layout (`narrow` project, touch) suites |
+| 1024 × 600 | Production audit resilience |
 | 360 × 800 | Default suite, passenger layout (`narrow`), production audit, live-maps in-app |
 | 390 × 844 | Admin access, landing layout, emulator, passenger layout (`mobile`), passenger progress, production audit, artwork rotation at 3x density |
 | 440 × 956 | Passenger layout (`reported-phone`) |
@@ -776,7 +777,7 @@ On Android, an installed app that does not draw behind the gesture bar gets a st
 | Forced colours | Under `forced-colors: active` the Routes headers, which lose their AU Red band, regain a `CanvasText` bottom edge. |
 | Touch targets | The convention is 44 px (`size-11`, `h-11`, `min-h-11`, and `min-height: 44px` on `.pp-btn-*` and admin fields): passenger back button, map stop buttons, select controls, dialog close buttons, navigation buttons; Profile rows are at least 56 px. `e2e/admin-responsive.spec.ts` asserts at least 44 × 44 px for the route editor's move and remove stop buttons, and `e2e/passenger-layout/routes-schedule.spec.ts` asserts at least 44 px high navigation buttons at 320 px and 375 px widths. |
 | Reduced motion | Section 8.3. |
-| Language and indexing | `<html lang="en">`; protected routes are `noindex`. |
+| Language and indexing | `<html lang="en">`, left to right, English copy only; text that people enter in other scripts is shown as typed and must reflow at 320 px ([EKI-ADR-005](LOCALE_SCOPE_DECISION.md), Proposed). Protected routes are `noindex`. |
 
 ### 10.2 Known gaps
 

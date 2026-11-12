@@ -96,6 +96,18 @@ describe("route save client", () => {
     expect(request.mock.calls.slice(1).every(([path]) => path.endsWith("/save-operations/save-1"))).toBe(true);
   });
 
+  it.each([
+    new ApiError("Internal server error.", "INTERNAL_ERROR", 500),
+    new ApiError("Bad gateway (HTTP 502)", "HTTP_ERROR", 502),
+  ])("keeps polling after a generic transient status-read failure %s", async error => {
+    const request = vi.fn()
+      .mockResolvedValueOnce({ status: "processing", saveId: "save-1", retryAfterMs: 1 })
+      .mockRejectedValueOnce(error)
+      .mockResolvedValueOnce(saved);
+    await expect(saveRoute("route-1", "save-1", {}, "token", undefined, request)).resolves.toEqual(saved);
+    expect(request.mock.calls.filter(([, options]) => options.method === "PUT")).toHaveLength(1);
+  });
+
   it("retries admin authentication capacity on a status GET through apiRequest", async () => {
     vi.useFakeTimers();
     vi.stubEnv("NEXT_PUBLIC_BACKEND_URL", "https://api.example.test");

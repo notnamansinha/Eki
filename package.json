@@ -19,7 +19,7 @@
     "test:e2e:admin": "playwright test --config playwright.admin-access.config.ts",
     "test:rules": "node scripts/run-rules-emulator.mjs",
     "verify:rtdb-instance": "node scripts/rtdb-instance-config.mjs",
-    "verify:web-backend-contract": "node scripts/verify-web-backend-contract.mjs",
+    "verify:web-backend-contract": "node scripts/verify-web-backend-contract.mjs --require",
     "verify:hosting-rewrites": "node scripts/verify-hosting-rewrites.mjs",
     "verify:ui-contracts": "node scripts/verify-ui-contracts.mjs",
     "telemetry:load": "node scripts/benchmark-telemetry-ingestion.mjs",

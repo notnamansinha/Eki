@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import net from 'node:net';
 import {
   EMULATOR_PORTS, parseJavaHome, resolveJavaHome, withJdkFirstOnPath, killProcessTree,
-  isPortFree, parseNetstatListeners, assertEmulatorPortsFree, reapOrphanedEmulators,
+  isPortFree, parseNetstatListeners, assertEmulatorPortsFree, reapOrphanedEmulators, resolveWindowsNpxCli,
 } from './qa/emulator-process.mjs';
 
 const JDK = 'C:\\Program Files\\Java\\jdk-27';
@@ -123,4 +123,22 @@ test('launcher preflights ports, uses the real JDK and kills the tree on deadlin
   assert.match(launcher, /withJdkFirstOnPath\(/);
   assert.match(launcher, /reapOrphanedEmulators\(\)/);
   assert(launcher.indexOf('assertEmulatorPortsFree()') < launcher.indexOf('spawnNpx();'), 'preflight before spawn');
+});
+
+test('Windows emulators:exec goes through an npx-cli.js entry, never the npx.cmd shell', () => {
+  const nodeDir = 'C:\\Program Files\\nodejs';
+  const bundled = `${nodeDir}\\node_modules\\npm\\bin\\npx-cli.js`;
+  const globalNpm = 'C:\\Users\\Synthetic User\\AppData\\Roaming\\npm\\node_modules\\npm\\bin';
+  const exists = (...present) => (candidate) => present.includes(candidate);
+  // The npm running the script wins (for example a global npm 12 upgrade).
+  assert.equal(resolveWindowsNpxCli({ execPath: `${nodeDir}\\node.exe`, npmExecPath: `${globalNpm}\\npm-cli.js`,
+    exists: exists(`${globalNpm}\\npx-cli.js`, bundled) }), `${globalNpm}\\npx-cli.js`);
+  // A direct `node scripts/run-rules-emulator.mjs` falls back to the npm bundled with node.
+  assert.equal(resolveWindowsNpxCli({ execPath: `${nodeDir}\\node.exe`, npmExecPath: undefined, exists: exists(bundled) }), bundled);
+  // Neither available: report it instead of splitting the quoted exec command through cmd.exe.
+  assert.equal(resolveWindowsNpxCli({ execPath: 'D:\\node\\node.exe', npmExecPath: 'D:\\yarn.js', exists: exists() }), null);
+  const launcher = readFileSync(new URL('./run-rules-emulator.mjs', import.meta.url), 'utf8');
+  assert.doesNotMatch(launcher, /npx\.cmd["']/, 'the npx.cmd shell fallback splits `node "<script>"` into two arguments');
+  assert.doesNotMatch(launcher, /shell:\s*true/);
+  assert.match(launcher, /resolveWindowsNpxCli\(\)/);
 });
