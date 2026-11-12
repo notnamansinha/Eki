@@ -3,14 +3,15 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { existsSync } from 'node:fs';
 import { createServer, Server } from 'node:http';
-import { safetyPreflight } from '../../scripts/qa/safety-preflight.mjs';
+import { assertEmulatorBrowserLaunch } from '../../scripts/qa/emulator-environment.mjs';
 import { createProviderAdapter, syntheticProviderKey } from './providers.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 for (const path of ['.env', 'backend/.env', 'e2e/emulator/.env']) {
   if (existsSync(resolve(root, path))) throw new Error('Browser acceptance requires a clean disposable checkout without .env files');
 }
-safetyPreflight(process.env, { mode: 'emulator' });
+// The emulator-mode safety preflight; a direct Playwright run fails here with the qa:browser advice.
+assertEmulatorBrowserLaunch(process.env);
 // Arrival evidence stays real; omit only the post-completion wait in browser
 // journeys. The HTTP emulator suite separately exercises the default 30s wait.
 process.env.AUTOMATIC_TURNAROUND_DWELL_MS = '0';

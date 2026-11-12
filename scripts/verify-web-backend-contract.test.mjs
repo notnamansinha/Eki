@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { copyFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
@@ -57,7 +57,7 @@ const execute = promisify(execFile);
  * Runs the real verifier CLI in an isolated repo layout. The temp tree stays
  * below the workspace so `@next/env` resolves through the root node_modules.
  */
-async function runVerifier({ envFiles = {}, csp, shell = {} }) {
+async function runVerifier({ envFiles = {}, csp, shell = {}, args = [] }) {
   const scratch = fileURLToPath(new URL("../temp/", import.meta.url));
   await mkdir(scratch, { recursive: true });
   const root = await mkdtemp(path.join(scratch, "eki-contract-"));
@@ -70,10 +70,11 @@ async function runVerifier({ envFiles = {}, csp, shell = {} }) {
       await writeFile(path.join(root, "frontend", name), contents);
     await writeFile(path.join(root, "firebase.json"), JSON.stringify(config(csp)));
     const env = { ...process.env, ...shell };
-    for (const name of ["NEXT_PUBLIC_BACKEND_URL", "EKI_STRICT_PRODUCTION_BUILD", "EKI_RUNTIME_SMOKE", "NODE_ENV"])
+    // CI is cleared too, so these cases behave the same locally and on a CI runner.
+    for (const name of ["NEXT_PUBLIC_BACKEND_URL", "EKI_STRICT_PRODUCTION_BUILD", "EKI_RUNTIME_SMOKE", "NODE_ENV", "CI"])
       if (!(name in shell)) delete env[name];
     try {
-      const { stdout } = await execute(process.execPath, [path.join(root, "scripts/verify-web-backend-contract.mjs")], { env });
+      const { stdout } = await execute(process.execPath, [path.join(root, "scripts/verify-web-backend-contract.mjs"), ...args], { env });
       return { code: 0, output: stdout };
     } catch (error) {
       return { code: error.code, output: `${error.stdout}${error.stderr}` };
@@ -124,7 +125,50 @@ describe("web/backend contract CLI resolves the URL the way next build does", ()
   it("skips only when neither the shell nor any frontend env file sets the URL", async () => {
     const result = await runVerifier({ csp: "default-src 'self'; connect-src 'self';" });
     assert.equal(result.code, 0, result.output);
-    assert.match(result.output, /skipped: no NEXT_PUBLIC_BACKEND_URL in the shell or frontend\/\.env\* files/);
+    assert.match(result.output, /SKIPPED \(not verified\): no NEXT_PUBLIC_BACKEND_URL in the shell or frontend\/\.env\* files/);
+  });
+
+  it("reports a skipped contract as SKIPPED, never as a pass", async () => {
+    const skipped = await runVerifier({ csp: "default-src 'self'; connect-src 'self';" });
+    assert.match(skipped.output, /Web\/backend contract: SKIPPED/);
+    assert.match(skipped.output, /not a pass/);
+    assert.doesNotMatch(skipped.output, /PASSED|verified\./);
+    const passed = await runVerifier({
+      envFiles: { ".env.local": "NEXT_PUBLIC_BACKEND_URL=http://localhost:4000\n" },
+      csp: "default-src 'self'; connect-src 'self' http://localhost:4000;",
+    });
+    assert.match(passed.output, /Web\/backend contract: PASSED/);
+    assert.doesNotMatch(passed.output, /SKIPPED/);
+  });
+
+  it("fails instead of skipping when the check is required explicitly or by CI", async () => {
+    for (const run of [{ args: ["--require"] }, { shell: { CI: "true" } }, { shell: { CI: "1" } }]) {
+      const result = await runVerifier({ csp: "default-src 'self'; connect-src 'self';", ...run });
+      assert.equal(result.code, 1, `${JSON.stringify(run)}: ${result.output}`);
+      assert.match(result.output, /Web\/backend contract: FAILED \(not verified\): no NEXT_PUBLIC_BACKEND_URL/);
+      assert.doesNotMatch(result.output, /SKIPPED|PASSED/);
+    }
+  });
+
+  it("still passes a required check that has a backend URL", async () => {
+    const result = await runVerifier({
+      csp: "default-src 'self'; connect-src 'self' https://api.example.test;",
+      shell: { NEXT_PUBLIC_BACKEND_URL: "https://api.example.test", CI: "true" },
+      args: ["--require"],
+    });
+    assert.equal(result.code, 0, result.output);
+    assert.match(result.output, /PASSED/);
+  });
+
+  it("rejects an unknown argument instead of ignoring it", async () => {
+    const result = await runVerifier({ csp: "connect-src 'self';", args: ["--allow-skip"] });
+    assert.notEqual(result.code, 0, result.output);
+    assert.match(result.output, /Unknown argument/);
+  });
+
+  it("keeps the explicit npm verifier script strict", async () => {
+    const manifest = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
+    assert.match(manifest.scripts["verify:web-backend-contract"], /verify-web-backend-contract\.mjs --require$/);
   });
 });
 

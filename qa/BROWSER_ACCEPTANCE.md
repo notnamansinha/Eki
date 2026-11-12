@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-TST-004 | 1.1 | Current | 2026-11-07 |
+| EKI-TST-004 | 1.2 | Current | 2026-11-11 |
 
 ## 1. Purpose
 
@@ -33,6 +33,8 @@
    The script builds the backend, then `scripts/run-rules-emulator.mjs --browser` starts the emulators for project `demo-eki-qa` and runs `scripts/qa/run-browser-tests.mjs`, which runs Playwright with `playwright.emulator.config.ts`.
 
 3. Read the verdict in `artifacts/qa/browser-report.md`.
+
+Do not run `npx playwright test --config playwright.emulator.config.ts` directly. Only the launcher starts the emulators and sets `GCLOUD_PROJECT=demo-eki-qa` and the other emulator variables, so a direct run stops in the backend fixture with an error that names `npm run qa:browser`. On Windows, start the suite with `npm run` so that the launcher finds the `npx-cli.js` of the running npm; see [Windows release QA](../docs/testing/TEST_STRATEGY.md#47-windows-release-qa).
 
 For a narrow reproduction, `npm run qa:browser:providers` runs only the tests whose titles match `provider quota`, and `npm run qa:browser:service` only those matching `admin live service controls`. Their reports record scope `providers` or `service`. A narrow run cannot satisfy the full L3 scope in the [execution ledger](EXECUTION_EVIDENCE.md).
 
@@ -68,7 +70,7 @@ The run writes these files under the ignored `artifacts/qa/` directory: `browser
 
 The progress reporter records each finished test, so a killed run keeps its partial observations. The verdict stays BLOCKED without a final report. Empty, skipped, flaky, timed-out or incomplete results also leave it BLOCKED. The ledger requires the exact test file and title and one first-attempt pass in each viewport.
 
-Deadlines: the Playwright child stops after 6 minutes and the emulator launcher after 8 minutes. The nightly campaign allows 480 s. CI uploads the evidence with seven-day retention, including failed runs.
+Deadlines: each fixture server has 90 s to start, the Playwright child stops after 6 minutes and the emulator launcher after 8 minutes. A fixture server that does not start leaves the run BLOCKED with no observed tests. The nightly campaign allows 480 s. CI uploads the evidence with seven-day retention, including failed runs.
 
 Passing tests give `PARTIAL` status to the limited case links in `qa/browser-test-map.mjs`. They never complete a case.
 

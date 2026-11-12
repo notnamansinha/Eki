@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-API-002 | 2.3 | Current | 2026-11-07 |
+| EKI-API-002 | 2.4 | Current | 2026-11-11 |
 
 ## 1. Purpose
 
@@ -61,7 +61,7 @@ These tests do not prove that a deployment is reachable, that real firmware tran
 
 `npm run verify:web-backend-contract` runs `scripts/verify-web-backend-contract.mjs`:
 
-1. It reads `NEXT_PUBLIC_BACKEND_URL` from the shell or the frontend `.env` files and fails unless its origin is in the `connect-src` directive of the Hosting Content-Security-Policy in `firebase.json`. With `EKI_STRICT_PRODUCTION_BUILD=true` a missing URL is an error; otherwise the check is skipped.
+1. It reads `NEXT_PUBLIC_BACKEND_URL` from the shell or the frontend `.env` files and fails unless its origin is in the `connect-src` directive of the Hosting Content-Security-Policy in `firebase.json`. A missing URL is an error with `EKI_STRICT_PRODUCTION_BUILD=true`, with `--require` (which this npm script passes) and when `CI` is `true` or `1`. Otherwise, as at the end of a local `npm run build`, the check prints `SKIPPED (not verified)` and is not a pass.
 2. With `EKI_RUNTIME_SMOKE=1` it also calls the live backend: `GET /health` must return 200 with `status: ok` and allow `EKI_FRONTEND_ORIGIN` in CORS, and a CORS preflight for `POST /api/users/bootstrap` must allow that origin, the `POST` method and the `authorization` and `content-type` headers. The preflight creates nothing. While `/health` answers 502, 503 or 504, or does not answer within 10 s, the check retries for up to 90 s so that a backend that scaled to zero can start; any other answer fails at once. `EKI_FRONTEND_ORIGIN` must be a bare origin. For an ngrok backend origin both requests also send, and the preflight also requests, the `ngrok-skip-browser-warning` header.
 
 ### 3.4 Hosting rewrite check

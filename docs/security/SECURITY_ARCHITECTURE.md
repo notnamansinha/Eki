@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-SEC-002 | 4.0 | Current | 2026-11-07 |
+| EKI-SEC-002 | 4.0 | Current | 2026-11-11 |
 
 ## 1. Introduction
 
@@ -311,7 +311,7 @@ Firebase App Check is not used. The browser initializes no App Check provider an
 | `Referrer-Policy` | `strict-origin-when-cross-origin` |
 | `Permissions-Policy` | `camera=(), microphone=(), geolocation=(self), payment=(), usb=()` |
 
-The exported pages `/`, `/admin`, `/feedback`, `/install` and `/passenger` and the service worker `/sw.js` are served with `Cache-Control: no-cache, no-store, must-revalidate`; `/sw.js` also carries `Service-Worker-Allowed: /`. `backend/src/securityConfig.test.ts` fails if the page rule misses an exported page or lists a path that has none. Hashed `/_next/static/` assets are cached as `public, max-age=31536000, immutable`, and images as `public, max-age=2592000, stale-while-revalidate=86400`.
+The exported pages `/`, `/admin`, `/feedback`, `/install` and `/passenger` and the service worker `/sw.js` are served with `Cache-Control: no-cache, no-store, must-revalidate`, and so is the `404.html` page Hosting returns for a missing path (its own `/404.html` header rule, checked by `scripts/hosting-not-found.test.mjs`); `/sw.js` also carries `Service-Worker-Allowed: /`. `backend/src/securityConfig.test.ts` fails if the page rule misses an exported page or lists a path that has none. Hashed `/_next/static/` assets are cached as `public, max-age=31536000, immutable`, and images as `public, max-age=2592000, stale-while-revalidate=86400`.
 
 `firebase.json` defines no rewrites. Hosting serves only the static export, and the browser calls the backend at the origin in `NEXT_PUBLIC_BACKEND_URL` (Section 6.4). `npm run verify:hosting-rewrites` (`scripts/verify-hosting-rewrites.mjs`) is a read-only check for a future rewrite to the backend; the [HTTP contract](../api/HTTP_CONTRACT.md#34-hosting-rewrite-check) records why rewrites are not used.
 

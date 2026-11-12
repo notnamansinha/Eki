@@ -13,6 +13,7 @@ import { subscribeLiveBusesByRoute } from "@/lib/liveBusStore";
 import { passengerTripStates } from "@/lib/passengerLiveBus";
 import { passengerBusAvailabilities } from "@/lib/passengerBusAvailability";
 import HomePage from "@/app/page";
+import InstallClient from "@/app/install/InstallClient";
 import { approveVerification, publishPreview, publishAutomaticReturn, rejectVerification, rejectNetworkVerification, reverifyAccount, switchAccount, signOut, tokenWaiting, subscribeTokenWaiting, socketStats, subscribeSocketStats } from "./firebase";
 import { finishRestorationAsAdmin, finishRestorationAsPassenger, finishRestorationSignedOut, restorationPending, subscribeRestoration } from "./firebase";
 import "../../frontend/src/app/globals.css";
@@ -74,10 +75,16 @@ function Fixture() {
     <button onClick={() => void signOut()}>Synthetic sign out</button>
     {query.has("restoreHang") && <>{" "}<RestorationControls /></>}
   </aside>
-  {/* `?landing` mounts the actual landing page instead of a protected route. */}
-  <AuthProvider><TelemetryTraceControls />{query.has("landing") ? <HomePage /> : new URLSearchParams(location.search).has("traceExport") ? <main style={{ paddingTop: 65 }}><h1>Local trace fixture</h1></main> : <RoleGuard allowedRoles={["admin"]}><div style={{ paddingTop: new URLSearchParams(location.search).has("recovery") ? 110 : 65, ...(new URLSearchParams(location.search).has("dashboard") ? { height: "100dvh", boxSizing: "border-box" as const } : {}) }}>
+  {/* `?landing` mounts the actual landing page instead of a protected route; `?install` the install page. */}
+  <AuthProvider><TelemetryTraceControls />{query.has("landing") ? <HomePage /> : query.has("install") ? <InstallClient /> : new URLSearchParams(location.search).has("traceExport") ? <main style={{ paddingTop: 65 }}><h1>Local trace fixture</h1></main> : <RoleGuard allowedRoles={["admin"]}><div style={{ paddingTop: new URLSearchParams(location.search).has("recovery") ? 110 : 65, ...(new URLSearchParams(location.search).has("dashboard") ? { height: "100dvh", boxSizing: "border-box" as const } : {}) }}>
     {new URLSearchParams(location.search).has("dashboard") ? <DashboardPanel /> : new URLSearchParams(location.search).has("projection") ? <RouteProjection /> : new URLSearchParams(location.search).has("resume") ? <Resume /> : new URLSearchParams(location.search).has("metadata") ? <Metadata /> : <FeedbackPanel embedded={new URLSearchParams(location.search).has("embedded")} />}
   </div></RoleGuard>}</AuthProvider>
 </>;
 }
-createRoot(document.getElementById("root")!).render(<Fixture />);
+const root = document.getElementById("root")!;
+// The install page is a flex item of the root layout body (frontend/src/app/layout.tsx).
+if (new URLSearchParams(location.search).has("install")) {
+  document.body.className = "min-h-full flex flex-col";
+  root.style.display = "contents";
+}
+createRoot(root).render(<Fixture />);
