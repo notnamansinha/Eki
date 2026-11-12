@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-UIX-002 | 2.1 | Current | 2026-11-08 |
+| EKI-UIX-002 | 2.1 | Current | 2026-11-11 |
 
 ## 1. Source and delivery
 
@@ -35,11 +35,20 @@ matching size at a time; all six sizes are not downloaded at startup.
 Run `node scripts/optimize-transit-artwork.mjs` from the repository root to
 regenerate delivery files. Do not derive them from another compressed
 WebP. Keep the legacy hero asset (`/images/hero-background.webp`) available
-for social metadata and older cached pages. The delivery files use their own
+for older cached pages and link previews; social metadata no longer uses it.
+The delivery files use their own
 URLs, separate from the legacy hero image, so a cached copy of the older,
 lower-quality background is never served in their place. Images are runtime
 cached by the service worker (`eki-images` in `frontend/src/sw.js`), outside
 the install precache budget.
+
+The 1200x630 social card (`frontend/public/images/social-card.jpg`) is also
+derived from `bus-background-landscape-trees.png`. Run
+`node scripts/generate-social-card.mjs` to rebuild it: the script cover-crops
+the painting, adds a dark left-hand shade, the Eki app icon, the headline
+"Track your campus bus" and a gold rule, and writes a JPEG of about 160 KB.
+It replaces the portrait 900x1284 hero image, which crawlers crop for
+`summary_large_image` cards.
 
 ## 2. Framing and layout
 

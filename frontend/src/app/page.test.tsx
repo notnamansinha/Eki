@@ -106,3 +106,13 @@ describe("cold open while sign-in restores", () => {
     for (const name of ["Try again", "Sign out", "Reload"]) expect(screen.getByRole("button", { name })).toBeTruthy();
   });
 });
+
+describe("install guide discoverability", () => {
+  it("links signed-out visitors to the public install guide", () => {
+    fixture.auth.loading = false;
+    render(<HomePage />);
+    const link = screen.getByRole("link", { name: "Install the app" });
+    expect(link.getAttribute("href")).toBe("/install");
+    expect(link.closest("footer")).not.toBeNull();
+  });
+});

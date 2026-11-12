@@ -66,3 +66,17 @@ test("100% browser zoom on a 150%-scaled desktop keeps the full sign-in view vis
     expect(await page.evaluate(() => scrollY)).toBe(0);
   } finally { await context.close(); }
 });
+
+for (const viewport of [{ width: 1280, height: 585 }, { width: 390, height: 844 }, { width: 320, height: 568 }]) {
+  test(`landing links to the public install guide at ${viewport.width}x${viewport.height}`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    await page.goto("/?landing&restoreHang");
+    const install = page.getByRole("link", { name: "Install the app" });
+    await expect(install).toHaveAttribute("href", "/install");
+    await expect(install).toBeInViewport({ ratio: 1 });
+    expect((await install.boundingBox())!.height).toBeGreaterThanOrEqual(24);
+    await install.focus();
+    await expect(install).toBeFocused();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  });
+}

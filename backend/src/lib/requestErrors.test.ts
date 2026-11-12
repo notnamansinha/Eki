@@ -31,29 +31,29 @@ const post = (path: string, body: BodyInit, headers: Record<string, string> = {}
 it("keeps malformed and oversized JSON on their existing client errors", async () => {
   const malformed = await post("/echo", "{\"a\":");
   expect(malformed.status).toBe(400);
-  expect(await malformed.json()).toEqual({ error: "Invalid JSON body." });
+  expect(await malformed.json()).toEqual({ error: "Invalid JSON body.", code: "INVALID_JSON_BODY" });
   const large = await post("/echo", JSON.stringify({ x: "a".repeat(17 * 1024) }));
   expect(large.status).toBe(413);
-  expect(await large.json()).toEqual({ error: "Request body is too large." });
+  expect(await large.json()).toEqual({ error: "Request body is too large.", code: "REQUEST_TOO_LARGE" });
 });
 
 it("rejects unsupported charsets and content encodings as 415 instead of 500", async () => {
   const charset = await post("/devices/bus-1/telemetry", "{}", { "content-type": "application/json; charset=x-evil" });
   expect(charset.status).toBe(415);
-  expect(await charset.json()).toEqual({ error: "Unsupported request body encoding." });
+  expect(await charset.json()).toEqual({ error: "Unsupported request body encoding.", code: "UNSUPPORTED_ENCODING" });
   const encoding = await post("/echo", "{}", { "content-encoding": "evil" });
   expect(encoding.status).toBe(415);
-  expect(await encoding.json()).toEqual({ error: "Unsupported request body encoding." });
+  expect(await encoding.json()).toEqual({ error: "Unsupported request body encoding.", code: "UNSUPPORTED_ENCODING" });
   expect(unhandled).toEqual([]);
 });
 
 it("rejects corrupt compressed bodies and undecodable path parameters as 400", async () => {
   const corrupt = await post("/echo", "notgzip", { "content-encoding": "gzip" });
   expect(corrupt.status).toBe(400);
-  expect(await corrupt.json()).toEqual({ error: "Invalid request." });
+  expect(await corrupt.json()).toEqual({ error: "Invalid request.", code: "INVALID_REQUEST" });
   const badParam = await post("/devices/%E0%A4%A/telemetry", "{}");
   expect(badParam.status).toBe(400);
-  expect(await badParam.json()).toEqual({ error: "Invalid request." });
+  expect(await badParam.json()).toEqual({ error: "Invalid request.", code: "INVALID_REQUEST" });
   const ok = await post("/echo", gzipSync(Buffer.from("{}")), { "content-encoding": "gzip" });
   expect(ok.status).toBe(200);
   expect(unhandled).toEqual([]);

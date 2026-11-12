@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-TST-002 | 3.1 | Current | 2026-11-07 |
+| EKI-TST-002 | 3.2 | Current | 2026-11-11 |
 
 ## 1. Purpose and scope
 
@@ -85,10 +85,11 @@ npm run verify
 | `npm run test:rules` | Rules and backend integration suites against emulators (Section 4.3) | Java 21 |
 | `npm run test:e2e` | Playwright with `playwright.config.ts` (Section 4.4) | A running frontend |
 | `npm run test:e2e:admin` | Playwright with `playwright.admin-access.config.ts` | Chromium |
+| `npm run test:e2e:no-script` | Playwright with `playwright.no-script.config.ts` against `frontend/out` | `npm run build` first; Chromium |
 | `npm run verify:openapi` | Reconciles the OpenAPI document with Express registrations and `backend/API.md` | Node |
 | `npm run verify:ui-contracts` | Rejects removed UI behaviour, such as the obsolete route type, in named source files | Node |
 | `npm run verify:rtdb-instance` | Checks that frontend and backend RTDB URLs name the same instance. With `RTDB_EXPECTED_REGION` it also checks the region; `npm run verify:rtdb-instance -- --require-region`, which the Deploy workflow runs, fails when that variable is unset | `FIREBASE_DATABASE_URL`, `NEXT_PUBLIC_FIREBASE_DATABASE_URL` |
-| `npm run verify:web-backend-contract` | Checks that the backend origin in `NEXT_PUBLIC_BACKEND_URL` is in the CSP `connect-src` (the last step of `npm run build`). With `EKI_RUNTIME_SMOKE=1` it also retries the deployed backend's `/health` for up to 90 s and checks CORS and the browser preflight for `EKI_FRONTEND_ORIGIN` | Node; a deployed backend for the runtime check |
+| `npm run verify:web-backend-contract` | Checks that the backend origin in `NEXT_PUBLIC_BACKEND_URL` is in the CSP `connect-src` (the last step of `npm run build`). It prints `PASSED`, `SKIPPED (not verified)` or `FAILED`. The npm script passes `--require`, so without a backend URL it fails instead of skipping; the build step may skip locally but fails when `CI` is `true` or `1` (Section 4.7). With `EKI_RUNTIME_SMOKE=1` it also retries the deployed backend's `/health` for up to 90 s and checks CORS and the browser preflight for `EKI_FRONTEND_ORIGIN` | Node; a deployed backend for the runtime check |
 | `npm run verify:hosting-rewrites -- --hosting <origin>` | Read-only GET checks that a Hosting site with rewrites to the backend forwards `/api/**`, `/health` and `/live` to the backend as JSON, passes the `Authorization` header, returns `no-store` API responses, and still serves pages, `/sw.js` and `/__/auth/handler` itself. `--direct <origin>` adds a `/live` latency comparison (`--samples`, default 30). `firebase.json` defines no such rewrite, so the check is for a rewrite proposal ([HTTP contract](../api/HTTP_CONTRACT.md#34-hosting-rewrite-check)). Not run in CI | A Hosting preview channel that carries the rewrites |
 | `npm run docs:sync`, `npm run docs:check` | Documentation mirrors and the documentation quality, mirror and configuration tests | Node |
 | `npm run telemetry:load`, `telemetry:analyze`, `realtime:analyze` | Load generator and trace analysers; see [load test](../operations/TELEMETRY_INGESTION_LOAD_TEST.md) | Node; a target for `telemetry:load` |
@@ -118,15 +119,16 @@ The `qa:*` scripts are listed in Section 4.6.
 
 ### 4.4 Browser suites
 
-Every configuration except the default and the live Maps check starts its own Vite fixture server and refuses to reuse a running one.
+Every configuration except the default and the live Maps check starts its own server (a Vite fixture, or the static export server for no-script) and refuses to reuse a running one.
 
 | Configuration | Command | Specs | Server | Projects (viewport, CSS px) | In CI |
 |---|---|---|---|---|---|
-| `playwright.config.ts` | `npm run test:e2e` | All of `e2e/` except admin-access, routing, passenger-layout and production-audit | None; `EKI_E2E_BASE_URL`, default `http://127.0.0.1:3000` | mobile 360 x 800, desktop 1280 x 800 | No |
+| `playwright.config.ts` | `npm run test:e2e` | All of `e2e/` except admin-access, routing, passenger-layout, production-audit and no-script | None; `EKI_E2E_BASE_URL`, default `http://127.0.0.1:3000` | mobile 360 x 800, desktop 1280 x 800 | No |
 | `playwright.admin-access.config.ts` | `npm run test:e2e:admin` | `e2e/admin-access.spec.ts`, `e2e/admin-access/*.spec.ts` | Admin fixture, port 3105 | mobile 390 x 844, desktop 1280 x 800 | Yes |
 | `playwright.passenger-layout.config.ts` | `npx playwright test --config playwright.passenger-layout.config.ts` | `e2e/passenger-layout/` | Passenger fixture, `EKI_QA_PORT` or 3100 | narrow 360 x 800, mobile 390 x 844 and reported-phone 440 x 956 (these three with touch), short-desktop 1280 x 585, desktop 1280 x 800 | Yes |
 | `playwright.passenger-progress.config.ts` | `npx playwright test --config playwright.passenger-progress.config.ts` | `e2e/passenger-progress/` | Progress fixture, port 3127 | mobile 390 x 844, desktop 1280 x 800 | Yes |
 | `playwright.production-audit.config.ts` | `npx playwright test --config playwright.production-audit.config.ts` | `e2e/production-audit/` | Audit fixture, port 3123 | narrow 360 x 800, mobile 390 x 844, desktop 1280 x 800 | Yes |
+| `playwright.no-script.config.ts` | `npm run test:e2e:no-script` | `e2e/no-script/`: `/` and `/install` with JavaScript disabled show their static fallbacks and hide the loading placeholders; with JavaScript enabled the fallbacks stay out of the page | Built export from `frontend/out` with the `firebase.json` security headers (`e2e/no-script/serve-export.mjs`), `EKI_NOSCRIPT_PORT` or 3129 | android-small 360 x 800 and android (Pixel 7) with touch, desktop 1280 x 800 | Yes, after `build:production` |
 | `playwright.emulator.config.ts` | `npm run qa:browser` (never directly) | `e2e/emulator-acceptance.spec.ts` | Compiled backend 3116, frontend 3115, control 3117, with emulators | mobile 390 x 844, desktop 1280 x 800; one worker, no retries | Yes |
 | `playwright.routing.config.ts` | `npx playwright test --config playwright.routing.config.ts` | `e2e/routing/marker.spec.ts` | Routing fixture, port 3162 | Desktop Chrome default (1280 x 720) | No |
 | `playwright.routing.maps.config.ts` | Manual; see [live Maps check](../../e2e/routing/live-maps/README.md) | `e2e/routing/live-maps/in-app.spec.ts` | Live Maps fixture, port 3163 | 1920 x 1080; one test at 360 x 800 with touch | No |
@@ -170,6 +172,28 @@ The [QA programme](../../qa/README.md) describes the evidence model. Every runne
 
 `scripts/qa/campaign.mjs` refuses a dirty checkout. `npm run qa:report` blocks any family report from another commit or a dirty tree. `npm run build`, and therefore `npm run verify`, rewrites the Content-Security-Policy in the tracked `firebase.json` (`scripts/update-csp.mjs`); restore it with `git checkout -- firebase.json` before a QA run that must record a clean tree.
 
+### 4.7 Windows release QA
+
+Issue #500 recorded Windows release runs that could not be repeated. This is the supported order on Windows 11 with Node 24, Java 21 and PowerShell, from the repository root of a clean checkout:
+
+```powershell
+npm ci
+npm run qa:check
+npm run qa:unit:reviewed      # and qa:soak: record clean-tree gates before any build
+npm run test:rules
+npm run qa:browser
+npm run build                 # the default Turbopack build; rewrites firebase.json
+git checkout -- firebase.json # unless the change is meant to alter inline scripts
+npm run verify:web-backend-contract   # with the target backend's NEXT_PUBLIC_BACKEND_URL
+```
+
+- **Build.** `npm run build` (Turbopack) is the canonical build; a Webpack build is not release evidence. On 2026-11-11 a clean `npm ci` at `aff5b30d` built and exported with Turbopack on Windows 11 (Node 24.14.0, npm 11.9.0) from a path containing a space and an apostrophe, so the earlier "cannot resolve `next/package.json`" failure did not reproduce. If it returns, record the full `next build` output and the lockfiles in the parent directories, and do not substitute a Webpack export.
+- **Emulator runner.** `scripts/run-rules-emulator.mjs` runs `firebase-tools` through `node <npx-cli.js>` so that the `node "<script>"` argument of `emulators:exec` stays one argument. It uses the `npx-cli.js` of the npm that started it (`npm_execpath`), then the one next to `node.exe`. It no longer falls back to `npx.cmd` in a shell, which split that argument and made `firebase emulators:exec` fail with "Too many arguments"; when neither entry exists it stops and says so. Start the emulator suites with `npm run`.
+- **Browser acceptance.** Run `playwright.emulator.config.ts` only through `npm run qa:browser`. A direct `npx playwright test --config playwright.emulator.config.ts` has no emulators and no demo environment; the backend fixture stops with an error that names `npm run qa:browser`. Each fixture server has 90 s to start, because the first Vite start after `npm ci` and a backend fixture started while the emulators were still warming each took more than 30 s on a loaded Windows host.
+- **Skipped is not passed.** A check that did not run must not be recorded as a pass. The web and backend contract prints `SKIPPED (not verified)` when no backend URL is configured, and `npm run verify:web-backend-contract` fails in that case.
+- **Clean tree.** Run gates that record a clean tree (`qa:soak`, `qa:unit:reviewed`, the emulator families and `qa:report`) before `npm run build`, or restore `firebase.json` first (Section 4.6).
+- **Frontend Vitest.** A worker that does not start ("Timeout waiting for worker to respond") fails the whole run even when every test passed. Rerun the named file alone and record both results; the flake is tracked in issue #499.
+
 ## 5. Choosing checks for a change
 
 Run `npm run verify` for every code change, then add the checks for the area changed.
@@ -192,7 +216,7 @@ Run `npm run verify` for every code change, then add the checks for the area cha
 
 | Workflow (file) | Trigger | Jobs and checks |
 |---|---|---|
-| Production verification (`ci.yml`) | Every push and pull request | `web`: `qa:check`; `qa:budget` on pull requests; `qa:catalog`; `qa:gnss`; `qa:unit:reviewed`; `verify:rtdb-instance`; `verify:openapi`; `lint`; `npm test`; emulator suites; admission benchmark; admin-access, passenger-layout, passenger-progress and production-audit Playwright suites; `qa:browser`; `qa:api`; `build:production` with placeholder values and exported origin checks; `npm audit --omit=dev --omit=optional`; full `npm audit`; CycloneDX SBOM |
+| Production verification (`ci.yml`) | Every push and pull request | `web`: `qa:check`; `qa:budget` on pull requests; `qa:catalog`; `qa:gnss`; `qa:unit:reviewed`; `verify:rtdb-instance`; `verify:openapi`; `lint`; `npm test`; emulator suites; admission benchmark; admin-access, passenger-layout, passenger-progress and production-audit Playwright suites; `qa:browser`; `qa:api`; `build:production` with placeholder values and exported origin checks; the no-script Playwright suite on that export; `npm audit --omit=dev --omit=optional`; full `npm audit`; CycloneDX SBOM |
 | | | `backend-image`: builds `backend/Dockerfile`, checks `/health` returns 503 `degraded` and `/live` returns 200 `alive` with placeholder configuration and that the image health check probes `/live`, Trivy scan that fails on fixable critical and high findings |
 | | | `firmware`: installs `hardware/requirements.txt`, secure-fleet configuration check, `qa:native`, host protocol tests, builds of `esp32dev` and `esp32dev-quiet` with a check that trace strings are absent from the quiet image, a check that the SNTP guard is linked, builds of `esp32dev-journal` and `esp32dev-secure` with an ephemeral signing key, signed-image tamper test |
 | | | `qa-evidence`: after `web` and `firmware`, even when they fail, runs `qa:report` on their artifacts |
@@ -277,6 +301,8 @@ Use a dedicated test device and project. Do not expose production secrets in pac
 ### 7.4 Accessibility and user experience
 
 Test every route with the keyboard only: visible focus, tab order, listbox open, select and Escape, admin tabs, dialogs, focus containment and restoration, no focus behind a modal. Check screen-reader names and status announcements, 200 % zoom, 320 px width, high contrast, slow and offline networks, empty, error and loading states, and `prefers-reduced-motion`. Maps need an equivalent text status; colour must not be the only state cue.
+
+Eki ships English-only and left to right ([EKI-ADR-005](../design/LOCALE_SCOPE_DECISION.md), Proposed), so there is no right-to-left, translated-build or locale-formatting matrix to run. What is checked is reflow of other scripts at 320 x 640: `e2e/admin-access/non-latin-reflow.spec.ts` replaces the copy of the landing and install pages with Arabic, Hebrew, Hindi, Thai, Japanese, German and Turkish text, as a browser translation would, and gives the admin feedback list a name and comment in each; `e2e/passenger-layout/non-latin-reflow.spec.ts` names a route, its stops and the passenger in each script and checks Live routes, the destination list, the tracking header and Profile. Each test fails on sideways page scrolling, sample text outside the viewport or horizontally clipped sample text, including text an ancestor clips; each suite also runs negative controls with a narrower clipping ancestor. The samples break at spaces or by the browser's own Thai and Japanese rules; long tokens with no break point are covered by `e2e/admin-access/public-reflow.spec.ts` ([issue #521](https://github.com/notnamansinha/Eki/issues/521)). If the decision is reversed, run the full matrix of [issue #525](https://github.com/notnamansinha/Eki/issues/525).
 
 ### 7.5 Performance and load
 

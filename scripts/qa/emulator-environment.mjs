@@ -1,3 +1,24 @@
+import { safetyPreflight } from './safety-preflight.mjs';
+
+/**
+ * The emulator-mode safety preflight for the browser suite's backend fixture.
+ * playwright.emulator.config.ts needs the disposable emulators and the demo
+ * environment that only scripts/run-rules-emulator.mjs creates. A direct
+ * `playwright test --config playwright.emulator.config.ts` used to stop with a
+ * bare "GCLOUD_PROJECT: required for emulator QA". There is no safe default to
+ * fill in (without the emulators the fixture has nothing to talk to), so keep
+ * failing closed and name the supported entry point.
+ */
+export function assertEmulatorBrowserLaunch(env) {
+  try {
+    safetyPreflight(env, { mode: 'emulator' });
+  } catch (error) {
+    throw new Error(`The emulator browser suite (playwright.emulator.config.ts) cannot run directly: ${error.message}. ` +
+      'Run `npm run qa:browser` (or qa:browser:providers / qa:browser:service), which builds the backend, ' +
+      'starts the disposable demo-eki-qa emulators and sets this environment for Playwright.');
+  }
+}
+
 // firebase-tools synthesizes this demo-only configuration in emulators:exec.
 // Validate its exact shape, then remove it before any SDK can select its URLs.
 // The outer launcher still rejects every inherited FIREBASE_CONFIG.

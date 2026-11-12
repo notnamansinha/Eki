@@ -6,6 +6,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import TransitArtwork from "@/components/shared/TransitArtwork";
+import InstallGuideLink from "@/components/shared/InstallGuideLink";
 
 const WORKSPACES = ["/admin", "/passenger"] as const;
 
@@ -127,7 +128,17 @@ export default function HomePage() {
           Arrival estimates depend on live service data
         </p>
 
-        <div className="flex flex-col sm:flex-row w-full sm:w-auto gap-4">
+        {/* Static fallback (#512): without JavaScript sign-in never becomes ready. */}
+        <noscript>
+          <div role="note" aria-label="JavaScript is turned off" className="max-w-md mx-auto rounded-3xl bg-black/70 px-6 py-5 text-white text-balance shadow-xl">
+            <p className="text-lg font-bold">Eki needs JavaScript</p>
+            <p className="mt-2 text-sm">
+              Sign-in and live bus locations run in your browser. Turn on JavaScript for this site in your
+              browser settings, then reload this page.
+            </p>
+          </div>
+        </noscript>
+        <div className="flex flex-col sm:flex-row w-full sm:w-auto gap-4 [@media(scripting:none)]:hidden">
           <button
             type="button"
             onClick={loginWithGoogle}
@@ -183,6 +194,7 @@ export default function HomePage() {
 
       <footer className="transit-landing-footer relative z-10 w-full pb-8 px-6 md:px-12 flex flex-wrap gap-x-4 gap-y-2 justify-between items-center text-white/70">
         <span className="text-xs font-bold drop-shadow-md">© 2026 Eki Transit</span>
+        <InstallGuideLink />
         <span className="text-xs font-bold uppercase tracking-widest drop-shadow-md">Ahmedabad, India</span>
       </footer>
     </main>

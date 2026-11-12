@@ -4,7 +4,7 @@ import "./globals.css";
 
 import Providers from "@/components/Providers";
 import ServiceWorkerRegistrar from "@/components/ServiceWorkerRegistrar";
-import { siteOrigin, siteIndexingEnabled } from "@/lib/siteMetadata";
+import { publicPageSocialMetadata, siteOrigin, siteIndexingEnabled } from "@/lib/siteMetadata";
 
 
 // Ahmedabad University's web pair, self-hosted at build time so the CSP needs
@@ -40,18 +40,11 @@ export const metadata: Metadata = {
   metadataBase: new URL(siteOrigin()),
   alternates: { canonical: "/" },
   robots: { index: siteIndexingEnabled(), follow: siteIndexingEnabled() },
-  openGraph: {
-    type: "website",
-    url: "/",
+  ...publicPageSocialMetadata({
+    path: "/",
     title: "Eki Live Transit Tracking",
     description: "Real-time bus tracking for Ahmedabad.",
-    siteName: "Eki Transit",
-    images: [{ url: "/images/hero-background.webp", alt: "Eki live transit tracking" }],
-  },
-  twitter: {
-    card: "summary_large_image",
-    images: ["/images/hero-background.webp"],
-  },
+  }),
 };
 
 export default function RootLayout({
