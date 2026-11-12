@@ -153,7 +153,7 @@ All frontend variables are `NEXT_PUBLIC_*` values: Next.js compiles them into th
 | `NEXT_PUBLIC_BUILD_VERSION` | No | Empty | Build label that the passenger **Profile** footer shows as `build <value>`; the footer omits it when empty. No workflow sets it. | `src/config/university.ts`, `src/components/passenger/AccountTab.tsx` |
 | `NEXT_PUBLIC_BUILD_DATE` | No | Empty | Build date that the same footer shows after the build label; omitted when empty. No workflow sets it. | `src/config/university.ts`, `src/components/passenger/AccountTab.tsx` |
 
-`scripts/update-csp.mjs` and `scripts/verify-web-backend-contract.mjs` load `frontend/.env*` with `@next/env` in production mode, and shell values take precedence, as in `next build`. The contract check is skipped only when neither the shell nor a `frontend/.env*` file sets `NEXT_PUBLIC_BACKEND_URL`.
+`scripts/update-csp.mjs` and `scripts/verify-web-backend-contract.mjs` load `frontend/.env*` with `@next/env` in production mode, and shell values take precedence, as in `next build`. When neither the shell nor a `frontend/.env*` file sets `NEXT_PUBLIC_BACKEND_URL`, the contract is not checked. The build step then prints `Web/backend contract: SKIPPED (not verified)` and continues, except when `CI` is `true` or `1`. `npm run verify:web-backend-contract` passes `--require` and fails instead, so an unchecked contract never exits 0 there.
 
 ## 5. Firmware definitions
 
@@ -198,7 +198,7 @@ These variables are set in the shell or by the scripts themselves. None belongs 
 | `R19_BENCH_CASE`, `R19_BENCH_SAMPLES` | Case filter and repetition count (default `300`) for the route-matching benchmark. | `scripts/benchmark-route-matching.mjs` |
 | `R31_DIST` | Backend build directory for the profiler; default `backend/dist`. | `scripts/profile-r31.mjs` |
 | `EKI_DEVTOOLS` | `true` shows the Next.js development indicator. | `frontend/next.config.ts` |
-| `CI`, `GITHUB_RUN_ID`, `GITHUB_STEP_SUMMARY` | Set by GitHub Actions; scripts use them for retries and job summaries. | `playwright.config.ts`, `scripts/qa/` |
+| `CI`, `GITHUB_RUN_ID`, `GITHUB_STEP_SUMMARY` | Set by GitHub Actions; scripts use them for retries and job summaries. With `CI`, the web and backend contract fails instead of skipping. | `playwright.config.ts`, `scripts/qa/`, `scripts/verify-web-backend-contract.mjs` |
 
 ## 7. CI and deployment secrets
 

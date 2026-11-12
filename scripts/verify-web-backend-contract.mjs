@@ -112,8 +112,21 @@ export async function verifyBackendAvailability(origin, frontendOrigin, fetchImp
   }
 }
 
+/**
+ * A contract with no backend URL is not checked, and an unchecked contract is
+ * not a pass. A local `npm run build` may skip it; an explicit verification
+ * (`--require`, which `npm run verify:web-backend-contract` passes) and any CI
+ * run may not, so a QA log can never show exit 0 for a check that did not run.
+ */
+export function contractSkipAllowed(args, env) {
+  const unknown = args.filter((arg) => arg !== "--require");
+  if (unknown.length) throw new Error(`Unknown argument(s): ${unknown.join(" ")}. Only --require is supported.`);
+  return !args.includes("--require") && !/^(1|true)$/i.test(env.CI ?? "");
+}
+
 async function run() {
   const root = path.resolve(import.meta.dirname, "..");
+  const skipAllowed = contractSkipAllowed(process.argv.slice(2), process.env);
   // Check the URL `next build` compiled into the bundle, not only the shell's.
   loadFrontendEnv(root);
   const firebase = JSON.parse(await readFile(path.join(root, "firebase.json"), "utf8"));
@@ -123,15 +136,23 @@ async function run() {
     process.env.EKI_STRICT_PRODUCTION_BUILD === "true",
   );
   if (!result.checked) {
+    const reason = "no NEXT_PUBLIC_BACKEND_URL in the shell or frontend/.env* files";
+    if (!skipAllowed) {
+      console.error(
+        `Web/backend contract: FAILED (not verified): ${reason}. A required check cannot be skipped; set NEXT_PUBLIC_BACKEND_URL to the backend this build targets.`,
+      );
+      process.exitCode = 1;
+      return;
+    }
     console.log(
-      "Web/backend contract skipped: no NEXT_PUBLIC_BACKEND_URL in the shell or frontend/.env* files.",
+      `Web/backend contract: SKIPPED (not verified): ${reason}. This is not a pass; release QA must run npm run verify:web-backend-contract with the deployed backend URL.`,
     );
     return;
   }
   if (process.env.EKI_RUNTIME_SMOKE === "1") {
     await verifyBackendAvailability(result.origin, process.env.EKI_FRONTEND_ORIGIN);
   }
-  console.log("Web/backend CSP contract verified.");
+  console.log("Web/backend contract: PASSED (CSP contract verified).");
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
