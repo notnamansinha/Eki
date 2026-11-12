@@ -76,6 +76,6 @@
     "concurrently": "^10.0.6",
     "fast-glob": "file:tools/next-lint-glob",
     "markdown-it": "15.0.3",
-    "parse5": "8.0.1"
+    "parse5": "8.1.0"
   }
 }
