@@ -1,9 +1,12 @@
 import { useSyncExternalStore, useState, useEffect } from "react";
 import { isPassengerBusSelectable } from "../../frontend/src/lib/passengerAvailability";
 const subscribers = new Set<() => void>();
+// `?qaLabel=<text>` names the route, its stops and the signed-in user with administrator- or
+// account-entered text in another script (e2e/passenger-layout/non-latin-reflow.spec.ts).
+const qaLabel = typeof location === "undefined" ? null : new URLSearchParams(location.search).get("qaLabel");
 export const route = {
-  id: "qa-route", name: "QA route", color: "#3B82F6", duration: "600s", waypoints: [],
-  stops: [{ id: "a", name: "Alpha", shortName: "A", lat: 23, lng: 72 }, { id: "b", name: "Beta", shortName: "B", lat: 23.01, lng: 72.01 }],
+  id: "qa-route", name: qaLabel ?? "QA route", color: "#3B82F6", duration: "600s", waypoints: [],
+  stops: [{ id: "a", name: qaLabel ? `${qaLabel} 1` : "Alpha", shortName: "A", lat: 23, lng: 72 }, { id: "b", name: qaLabel ? `${qaLabel} 2` : "Beta", shortName: "B", lat: 23.01, lng: 72.01 }],
 };
 const extraRoutes = Array.from({ length: 7 }, (_, index) => ({
   ...route, id: `qa-route-${index + 2}`, name: `QA route ${String.fromCharCode(66 + index)}`,
@@ -51,7 +54,7 @@ export function subscribeLiveBusChanges(fn: (change: unknown) => void) {
 const fixtureRole = typeof location === "undefined" ? null : new URLSearchParams(location.search).get("role");
 export const qaUser = fixtureRole === "admin"
   ? { uid: "qa-admin", displayName: "QA Admin", role: "admin" }
-  : { uid: "qa-passenger", displayName: "QA Passenger", role: "passenger" };
+  : { uid: "qa-passenger", displayName: qaLabel ?? "QA Passenger", role: "passenger" };
 export function useAuth() { return { user: qaUser, loading: false, roleError: null, loginReady: true, loginLoading: false, loginError: null, loginFallbackAvailable: false, loginWithGoogle: async () => {}, loginWithGoogleRedirect: async () => {}, logout: async () => {} }; }
 // A published-schedule-only route: it has no live catalog entry, so it never
 // appears on the live map list, only in the passenger Routes (schedule) tab.

@@ -17,6 +17,7 @@
       "**/node_modules/**"
     ],
     "cleanUrls": true,
+    "trailingSlash": false,
     "headers": [
       {
         "source": "**",
@@ -53,6 +54,15 @@
       },
       {
         "source": "/{,admin,feedback,install,passenger}",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache, no-store, must-revalidate"
+          }
+        ]
+      },
+      {
+        "source": "/404.html",
         "headers": [
           {
             "key": "Cache-Control",

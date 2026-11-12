@@ -81,7 +81,7 @@ test('complete repository census reports declarations without granting acceptanc
   assert.equal(catalog.documentedSimulations.at(-1).caseId, 'SIM-20');
   assert.ok(catalog.supplementalTables.some(item => item.cells[0] === 'Fresh online device, no armed session'));
   assert.equal(catalog.cases.find(item => item.caseId === 'H17').latestExecutionStatus, 'NOT_RUN');
-  assert.equal(catalog.cases.find(item => item.caseId === 'AUTH01').latestExecutionStatus, 'NOT_COVERED');
+  assert.equal(catalog.cases.find(item => item.caseId === 'AUTH02').latestExecutionStatus, 'NOT_COVERED');
   assert.ok(catalog.cases.every(item => item.latestExecutionCommit === null));
   assert.match(reportMarkdown(catalog), /Current completed cases: 0/);
   assert.match(reportMarkdown(catalog), /NOT_RELEASE_READY/);
