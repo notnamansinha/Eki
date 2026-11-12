@@ -36,7 +36,7 @@ describe("request error handlers", () => {
     const url = await boot();
     const invalid = await fetch(`${url}/api/echo`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{bad" });
     expect(invalid.status).toBe(400);
-    expect(await invalid.json()).toEqual({ error: "Invalid JSON body." });
+    expect(await invalid.json()).toEqual({ error: "Invalid JSON body.", code: "INVALID_JSON_BODY" });
     const large = await fetch(`${url}/api/echo`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ a: "x".repeat(20_000) }) });
     expect(large.status).toBe(413);
   });
@@ -73,7 +73,7 @@ describe("request error handlers", () => {
     }));
     const response = await fetch(`${url}/api/upstream`);
     expect(response.status).toBe(500);
-    expect(await response.json()).toEqual({ error: "Internal server error." });
+    expect(await response.json()).toEqual({ error: "Internal server error.", code: "INTERNAL_ERROR" });
     expect(errors).toHaveBeenCalledOnce();
     expect(span.record).toHaveBeenCalledOnce();
   });

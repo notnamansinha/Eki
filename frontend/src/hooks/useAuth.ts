@@ -20,6 +20,8 @@ import {
   markGoogleRedirectPending,
   prefersGoogleRedirect,
 } from "@/lib/googleSignInFlow";
+import { AUTH_INTENT_EVENTS, authLoadPolicy, hasStoredSessionHint } from "@/lib/authLoadPolicy";
+import { usePathname } from "next/navigation";
 
 const ROLE_VERIFICATION_TIMEOUT_MS = 10_000;
 // Past this, restoration is reported as slow. It is never an access error:
@@ -111,7 +113,7 @@ function canUseRedirectFallback(code: string | undefined): boolean {
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
-function useAuthState(): AuthContextValue {
+function useAuthState(pathname: string | null): AuthContextValue {
   const [user, setUser] = useState<AppUser | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [restoreSlow, setRestoreSlow] = useState(false);
@@ -129,6 +131,17 @@ function useAuthState(): AuthContextValue {
   const loginDependencies = useRef<FirebaseLoginDependencies | null>(null);
   const refreshVerification = useRef<null | ((onlyIfNeeded?: boolean) => Promise<void>)>(null);
   const retryAuthLoad = useRef<null | (() => void)>(null);
+  // Starts (or retries) loading the Firebase sign-in code. Returns whether a
+  // load is now running or done, so a waiting sign-in tap is not left hanging.
+  const requestAuthLoad = useRef<null | (() => boolean)>(null);
+  // Offers sign-in before the code has loaded; the tap itself loads it.
+  const offerDeferredSignIn = useRef<null | (() => void)>(null);
+  const dependencyWaiters = useRef<Array<(dependencies: FirebaseLoginDependencies | null) => void>>([]);
+  const settleDependencyWaiters = useCallback((dependencies: FirebaseLoginDependencies | null) => {
+    const waiters = dependencyWaiters.current;
+    dependencyWaiters.current = [];
+    for (const settle of waiters) settle(dependencies);
+  }, []);
 
   useEffect(() => {
     let generation = 0;
@@ -146,6 +159,9 @@ function useAuthState(): AuthContextValue {
     let loadAttempt = 0;
     let loadRetryTimer: ReturnType<typeof setTimeout> | undefined;
     let authLoaded = false;
+    // Public pages start the load later (see authLoadPolicy); nothing about
+    // the account is reported, and no slow-restore notice runs, until then.
+    let loadRequested = false;
     // One load of the sign-in code at a time: a second load racing a slow
     // first one registers a second observer (the first leaks past unmount) and
     // verifies the account twice. A retry asked for mid-load (network back,
@@ -185,13 +201,8 @@ function useAuthState(): AuthContextValue {
     window.addEventListener("pageshow", resumeFromHistory);
     // Slow restoration is reported, never treated as denied access: the state
     // stays "unknown" (loading) so nothing is published as signed out.
-    const authTimeout = window.setTimeout(() => {
-      if (!disposed) {
-        console.warn("Firebase auth restoration is taking longer than expected.");
-        setRestoreSlow(true);
-      }
-    }, AUTH_RESTORE_SLOW_MS);
-    const retryLoadWhenOnline = () => { if (!authLoaded) retryAuthLoad.current?.(); };
+    let authTimeout: number | undefined;
+    const retryLoadWhenOnline = () => { if (loadRequested && !authLoaded) retryAuthLoad.current?.(); };
     window.addEventListener("online", retryLoadWhenOnline);
 
     const loadAuth = () => Promise.all([import("firebase/auth"), import("@/lib/firebaseAuth")])
@@ -212,6 +223,7 @@ function useAuthState(): AuthContextValue {
           googleProvider,
           resolver: popupRedirectResolver,
         };
+        settleDependencyWaiters(loginDependencies.current);
 
         // firebaseAuth chooses persistent storage before restoring the account.
         // Do not migrate storage here: removing the old auth record signs out
@@ -486,6 +498,8 @@ function useAuthState(): AuthContextValue {
         console.error("[Auth] Firebase auth initialization failed.", code);
         if (disposed) return;
         loginDependencies.current = null;
+        // A tap waiting for this load resumes after the error below is set.
+        settleDependencyWaiters(null);
         setLoginReady(false);
         // Firebase Auth rejected its own setup (auth/invalid-api-key,
         // auth/already-initialized). Bundlers cache that module error, so
@@ -515,13 +529,38 @@ function useAuthState(): AuthContextValue {
       clearTimeout(loadRetryTimer);
       startLoad();
     };
-    startLoad();
+    requestAuthLoad.current = () => {
+      if (disposed) return false;
+      if (authLoaded) return true;
+      if (loadRequested) {
+        // Mid-load this asks for an immediate retry should the load fail.
+        retryAuthLoad.current?.();
+        return loadInFlight;
+      }
+      loadRequested = true;
+      // Slow restoration is reported, never treated as denied access: the state
+      // stays "unknown" (loading) so nothing is published as signed out.
+      authTimeout = window.setTimeout(() => {
+        if (!disposed) {
+          console.warn("Firebase auth restoration is taking longer than expected.");
+          setRestoreSlow(true);
+        }
+      }, AUTH_RESTORE_SLOW_MS);
+      startLoad();
+      return true;
+    };
+    offerDeferredSignIn.current = () => {
+      if (!disposed && !loadRequested) setLoginReady(true);
+    };
 
     return () => {
       disposed = true;
       invalidateLoginAttempt();
       loginDependencies.current = null;
+      settleDependencyWaiters(null);
       retryAuthLoad.current = null;
+      requestAuthLoad.current = null;
+      offerDeferredSignIn.current = null;
       clearTimeout(loadRetryTimer);
       window.removeEventListener("online", retryLoadWhenOnline);
       clearRecovery();
@@ -532,12 +571,55 @@ function useAuthState(): AuthContextValue {
       clearTimeout(authTimeout);
       unsubscribe();
     };
-  }, [invalidateLoginAttempt]);
+  }, [invalidateLoginAttempt, settleDependencyWaiters]);
+
+  // Public pages do not download Firebase while they hydrate (#522). The
+  // workspaces, a returning account and a Google redirect still load it now.
+  useEffect(() => {
+    const policy = authLoadPolicy(pathname, () => hasStoredSessionHint(process.env.NEXT_PUBLIC_FIREBASE_API_KEY));
+    if (policy === "eager") {
+      requestAuthLoad.current?.();
+      return;
+    }
+    if (policy === "on-demand") return;
+    offerDeferredSignIn.current?.();
+    const start = () => {
+      for (const type of AUTH_INTENT_EVENTS) window.removeEventListener(type, start);
+      requestAuthLoad.current?.();
+    };
+    for (const type of AUTH_INTENT_EVENTS) window.addEventListener(type, start, { passive: true });
+    return () => {
+      for (const type of AUTH_INTENT_EVENTS) window.removeEventListener(type, start);
+    };
+  }, [pathname]);
+
+  /** The loaded sign-in code, loading it first when the page deferred it. */
+  const dependenciesForLogin = useCallback(async (): Promise<FirebaseLoginDependencies | null> => {
+    if (loginDependencies.current) return loginDependencies.current;
+    setLoginError(null);
+    setLoginFallbackAvailable(false);
+    setLoginLoading(true);
+    const attempt = ++loginAttempt.current;
+    const waiting = new Promise<FirebaseLoginDependencies | null>((settle) => {
+      dependencyWaiters.current.push(settle);
+    });
+    if (!requestAuthLoad.current?.()) settleDependencyWaiters(null);
+    const dependencies = await waiting;
+    if (attempt !== loginAttempt.current || signingOut.current) return null;
+    if (!dependencies) {
+      setLoginLoading(false);
+      setLoginError((current) => current ?? (navigator.onLine === false
+        ? "Sign-in could not load. Check your connection; retrying automatically."
+        : "Google sign-in is still initializing. Reload the page and try again."));
+      return null;
+    }
+    return dependencies;
+  }, [settleDependencyWaiters]);
 
   const refreshAccess = useCallback((): Promise<void> => {
     if (!refreshVerification.current) {
-      // The sign-in code has not loaded yet: try loading it again now.
-      retryAuthLoad.current?.();
+      // The sign-in code has not loaded yet: load it (or try again) now.
+      requestAuthLoad.current?.();
       return Promise.resolve();
     }
     return refreshVerification.current();
@@ -545,11 +627,9 @@ function useAuthState(): AuthContextValue {
 
   const loginWithGoogleRedirect = useCallback(async () => {
     if (signingOut.current) return;
-    const dependencies = loginDependencies.current;
-    if (!dependencies) {
-      setLoginError("Google sign-in is still initializing. Reload the page and try again.");
-      return;
-    }
+    // A redirect needs no user activation, so waiting for deferred code is safe.
+    const dependencies = loginDependencies.current ?? await dependenciesForLogin();
+    if (!dependencies) return;
     setLoginError(null);
     setLoginFallbackAvailable(false);
     setLoginLoading(true);
@@ -577,16 +657,16 @@ function useAuthState(): AuthContextValue {
       setLoginError(loginErrorMessage(code));
       setLoginLoading(false);
     }
-  }, []);
+  }, [dependenciesForLogin]);
 
   const loginWithGoogle = useCallback(async () => {
     if (signingOut.current) return;
-    const dependencies = loginDependencies.current;
-    if (!dependencies) {
-      console.error("Google sign-in is unavailable because Firebase Auth is not initialized.");
-      setLoginError("Google sign-in is still initializing. Reload the page and try again.");
-      return;
-    }
+    // Normally loaded by the visitor's first interaction, well before the tap.
+    // A tap that still has to wait opens the popup a moment later; a browser
+    // that blocks it gets the full-page sign-in fallback below.
+    // Loaded code is used without any await so the popup opens within the click.
+    const dependencies = loginDependencies.current ?? await dependenciesForLogin();
+    if (!dependencies) return;
 
     if (prefersGoogleRedirect(dependencies.auth.config.authDomain)) {
       return loginWithGoogleRedirect();
@@ -650,7 +730,7 @@ function useAuthState(): AuthContextValue {
         if (!showRedirectFallback) setLoginFallbackAvailable(false);
       }
     }
-  }, [loginWithGoogleRedirect]);
+  }, [dependenciesForLogin, loginWithGoogleRedirect]);
 
   const logout = useCallback(async () => {
     if (signingOut.current) return;
@@ -730,7 +810,7 @@ function useAuthState(): AuthContextValue {
  * app. Route changes no longer re-run sign-in or Firestore role verification.
  */
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const auth = useAuthState();
+  const auth = useAuthState(usePathname());
 
   return createElement(AuthContext.Provider, { value: auth }, children);
 }

@@ -24,6 +24,14 @@
 # service account are fixed in the job, and the region is the cloud_run_region
 # dispatch input. The Artifact Registry repository `eki` shall exist in that
 # region, with roles/artifactregistry.writer granted to the deploy account.
+#
+# Release evidence (issue #504). Every staging release, including a Hosting-only
+# one, records the Hosting SHA and the serving Cloud Run revision, image digest
+# and source SHA (scripts/release-evidence.mjs) in the job summary and in the
+# release-evidence-staging artifact. It reads Cloud Run as the deploy service
+# account; when that read fails, the evidence says "UNVERIFIED" with the reason
+# and the run shows a warning. The backend job fails when the revision that
+# serves traffic after promotion is not the image and commit it built.
 name: Deploy
 
 on:
@@ -150,7 +158,7 @@ jobs:
         run: |
           gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
           image_tag="${REGION}-docker.pkg.dev/${GCP_PROJECT}/${AR_REPOSITORY}/backend:${GITHUB_SHA}"
-          docker build -f backend/Dockerfile -t "$image_tag" .
+          docker build -f backend/Dockerfile --build-arg "EKI_SOURCE_SHA=${GITHUB_SHA}" -t "$image_tag" .
           docker push "$image_tag"
           digest_ref="$(docker inspect --format '{{index .RepoDigests 0}}' "$image_tag")"
           echo "IMAGE=${digest_ref}" >> "$GITHUB_ENV"
@@ -186,8 +194,15 @@ jobs:
           else
             TRAFFIC="$(printf '    - latestRevision: true\n      percent: 100')"
           fi
-          export TRAFFIC IMAGE RUNTIME_SERVICE_ACCOUNT SERVICE_MIN_SCALE
-          envsubst '${IMAGE} ${RUNTIME_SERVICE_ACCOUNT} ${TRAFFIC} ${SERVICE_MIN_SCALE}' < deploy/cloud-run/staging.service.yaml > "$RUNNER_TEMP/service.yaml"
+          # The revision label names the commit the image was built from, so release
+          # evidence can map the serving revision back to its source (issue #504).
+          SOURCE_SHA="${GITHUB_SHA:-}"
+          if ! [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::The source commit '${SOURCE_SHA}' is not a full commit SHA; refusing to deploy."
+            exit 1
+          fi
+          export TRAFFIC IMAGE RUNTIME_SERVICE_ACCOUNT SERVICE_MIN_SCALE SOURCE_SHA
+          envsubst '${IMAGE} ${RUNTIME_SERVICE_ACCOUNT} ${TRAFFIC} ${SERVICE_MIN_SCALE} ${SOURCE_SHA}' < deploy/cloud-run/staging.service.yaml > "$RUNNER_TEMP/service.yaml"
           gcloud run services replace "$RUNNER_TEMP/service.yaml" --project "$GCP_PROJECT" --region "$REGION"
       - name: Allow public invocation (application authentication stays the gate)
         run: >-
@@ -237,6 +252,14 @@ jobs:
         run: |
           gcloud run services update-traffic "$SERVICE" --project "$GCP_PROJECT" --region "$REGION" --to-revisions "${CANDIDATE_REVISION}=100"
           gcloud run services update-traffic "$SERVICE" --project "$GCP_PROJECT" --region "$REGION" --remove-tags candidate
+      - name: Require the serving revision to be this build
+        # Reads the service back after promotion: every revision that receives
+        # traffic must carry this commit and the digest pushed above, or the job
+        # fails and the Hosting release below does not run.
+        run: >-
+          node scripts/release-evidence.mjs
+          --project "$GCP_PROJECT" --service "$SERVICE" --regions "$REGION"
+          --expect-source-sha "$GITHUB_SHA" --expect-image-digest "${IMAGE##*@}"
       - name: Record the release and the rollback command
         if: always()
         run: |
@@ -270,6 +293,13 @@ jobs:
        github.ref == 'refs/heads/main'))
     runs-on: ubuntu-latest
     environment: staging
+    permissions:
+      contents: read
+      actions: read
+      # Only for the read-only Cloud Run query in the release evidence.
+      id-token: write
+    env:
+      HOSTING_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
     steps:
       - name: Refuse a commit that main does not contain
         env:
@@ -287,6 +317,7 @@ jobs:
             *) echo "::error::${SHA} is not on main (compare status: ${status}); refusing to deploy."; exit 1 ;;
           esac
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        id: checkout
         with:
           persist-credentials: false
           # Deploy the exact SHA that produced the green verification run,
@@ -364,6 +395,7 @@ jobs:
         env:
           FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
       - name: Deploy to staging (hosting + rules)
+        id: hosting
         run: >-
           $FIREBASE_CLI deploy
           --project bustrack-be165
@@ -371,6 +403,43 @@ jobs:
           --token "$FIREBASE_TOKEN"
         env:
           FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+      # Release evidence (issue #504): record the serving backend next to the
+      # Hosting SHA on every release, including a Hosting-only one. These steps
+      # never block or undo the release; a failed Cloud Run read is recorded as
+      # UNVERIFIED with its reason and shows as a warning on the run.
+      - name: Authenticate to Google Cloud for the release evidence
+        id: gcp-auth
+        if: always() && steps.checkout.outcome == 'success'
+        continue-on-error: true
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: projects/449313371438/locations/global/workloadIdentityPools/github/providers/github-actions
+          service_account: eki-github-deployer@bustrack-be165.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+        id: gcloud
+        if: always() && steps.gcp-auth.outcome == 'success'
+        continue-on-error: true
+      - name: Record the release evidence
+        if: always() && steps.checkout.outcome == 'success'
+        env:
+          HOSTING_OUTCOME: ${{ steps.hosting.outcome }}
+          GCP_AUTH_OUTCOME: ${{ steps.gcp-auth.outcome == 'success' && steps.gcloud.outcome || steps.gcp-auth.outcome }}
+        # Keep the region list equal to the cloud_run_region options above.
+        run: >-
+          node scripts/release-evidence.mjs
+          --project bustrack-be165 --service eki-backend-staging
+          --regions asia-south2,us-central1,asia-southeast1
+          --hosting-sha "$HOSTING_SHA" --hosting-outcome "$HOSTING_OUTCOME"
+          --auth-outcome "$GCP_AUTH_OUTCOME"
+          --json "$RUNNER_TEMP/release-evidence.json"
+      - name: Upload the release evidence
+        if: always() && steps.checkout.outcome == 'success'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-evidence-staging
+          path: ${{ runner.temp }}/release-evidence.json
+          if-no-files-found: warn
+          retention-days: 90
 
   deploy-production:
     # Manual production deploys are only allowed from main (audit #113); the

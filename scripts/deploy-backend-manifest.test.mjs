@@ -69,7 +69,7 @@ describe("backend deploy manifest", () => {
       ].join("\n"));
       chmodSync(path.join(dir, "gcloud"), 0o755);
       const applied = path.join(dir, "applied.yaml");
-      const deploy = (service) => {
+      const deploy = (service, sourceSha = "f925ebd723949c3470cf2bf0eb9581638148ad6d") => {
         rmSync(applied, { force: true });
         const result = spawnSync("bash", ["-e", path.join(dir, "step.sh")], {
           cwd: root,
@@ -90,6 +90,7 @@ describe("backend deploy manifest", () => {
             REGION: "asia-south2",
             IMAGE: "asia-south2-docker.pkg.dev/bustrack-be165/eki/backend@sha256:0123",
             RUNTIME_SERVICE_ACCOUNT: "eki-backend-runtime@bustrack-be165.iam.gserviceaccount.com",
+            GITHUB_SHA: sourceSha,
           },
         });
         return { ...result, service: existsSync(applied) ? yaml.load(readFileSync(applied, "utf8")) : undefined };
@@ -104,6 +105,8 @@ describe("backend deploy manifest", () => {
       assert.equal(daytime.service.metadata.annotations["run.googleapis.com/minScale"], "1");
       assert.equal(daytime.service.spec.template.metadata.annotations["autoscaling.knative.dev/minScale"], "0");
       assert.deepEqual(daytime.service.spec.traffic[0], { revisionName: "eki-backend-staging-00007-k6j", percent: 100 });
+      // The new revision names the commit it was built from (issue #504).
+      assert.equal(daytime.service.spec.template.metadata.labels["eki-source-sha"], "f925ebd723949c3470cf2bf0eb9581638148ad6d");
 
       const overnight = deploy(serving({}));
       assert.equal(overnight.status, 0, overnight.stderr);
@@ -117,6 +120,13 @@ describe("backend deploy manifest", () => {
       assert.notEqual(garbled.status, 0);
       assert.equal(garbled.service, undefined);
       assert.match(garbled.stdout, /is not a whole number; refusing to deploy/);
+
+      for (const sourceSha of ["", "main", "f925ebd"]) {
+        const unlabelled = deploy(serving({}), sourceSha);
+        assert.notEqual(unlabelled.status, 0, `source "${sourceSha}" must refuse`);
+        assert.equal(unlabelled.service, undefined);
+        assert.match(unlabelled.stdout, /is not a full commit SHA; refusing to deploy/);
+      }
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
