@@ -76,7 +76,38 @@ export default function InstallClient() {
         Add Eki to your home screen to open it like an app.
       </p>
 
-      {platform === null && <p aria-live="polite">Checking your device…</p>}
+      {platform === null && <p aria-live="polite" className="[@media(scripting:none)]:hidden">Checking your device…</p>}
+
+      {/* Static fallback (#512): device detection needs JavaScript, so list every platform. */}
+      <noscript>
+        <section aria-label="Install without JavaScript" className="space-y-5">
+          <p>Follow the steps for your device.</p>
+          <div>
+            <h2 className="text-lg font-semibold">iPhone or iPad</h2>
+            <ol className="mt-2 list-decimal space-y-2 pl-5">
+              <li>Open this page in Safari.</li>
+              <li>Tap the <strong>Share</strong> button.</li>
+              <li>Scroll down and tap <strong>Add to Home Screen</strong>, then tap <strong>Add</strong>.</li>
+            </ol>
+          </div>
+          <div>
+            <h2 className="text-lg font-semibold">Android</h2>
+            <ol className="mt-2 list-decimal space-y-2 pl-5">
+              <li>Open this page in Chrome.</li>
+              <li>Tap the ⋮ menu.</li>
+              <li>Tap <strong>Install app</strong> or <strong>Add to Home screen</strong>.</li>
+            </ol>
+          </div>
+          <div>
+            <h2 className="text-lg font-semibold">Computer</h2>
+            <p className="mt-2">
+              Open this link on your phone to install Eki. In Chrome or Edge you can also choose{" "}
+              <strong>Install Eki</strong> from the address bar or the browser menu.
+            </p>
+          </div>
+          <p className="text-[var(--text-secondary)]">Eki needs JavaScript to show live buses after you open it.</p>
+        </section>
+      </noscript>
 
       {(platform === "installed" || done) && (
         <p role="status" className="rounded-xl border p-4">
