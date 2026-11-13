@@ -1,4 +1,4 @@
-FROM node:26.13.0-alpine3.23@sha256:e6c03d42b46af3b1e98207e59f06a43cfe5efd3ec4b4d3d9802bddf04f833374 AS builder
+FROM node:26.13.0-alpine3.23@sha256:44a3247313f9bc069a4ec25d01b66254ed7dc4d0408727d8720dc827f0753423 AS builder
 
 WORKDIR /app
 
@@ -18,7 +18,7 @@ RUN --network=none npm prune --workspace=backend --include-workspace-root=false 
     --omit=dev --omit=optional --offline --ignore-scripts --no-audit --no-fund
 
 
-FROM node:26.13.0-alpine3.23@sha256:e6c03d42b46af3b1e98207e59f06a43cfe5efd3ec4b4d3d9802bddf04f833374 AS runtime
+FROM node:26.13.0-alpine3.23@sha256:44a3247313f9bc069a4ec25d01b66254ed7dc4d0408727d8720dc827f0753423 AS runtime
 
 WORKDIR /app
 ENV NODE_ENV=production
