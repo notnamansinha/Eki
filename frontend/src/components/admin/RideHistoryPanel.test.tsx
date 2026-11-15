@@ -19,6 +19,38 @@ async function openConfirmation() {
   return user;
 }
 describe("ride-history controls", () => {
+  const serviceDate = (at: number) => new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Kolkata" }).format(new Date(at));
+  it("dates the end of an overnight ride so it cannot read as ending before it started", () => {
+    const session = state.sessions[0] as Record<string, unknown>;
+    const original = { startTime: session.startTime, endTime: session.endTime };
+    // 18:27:31 IST on 15 Jun 2025, last recorded 15:32:16 IST the next day.
+    const start = Date.UTC(2025, 5, 15, 12, 57, 31), end = Date.UTC(2025, 5, 16, 10, 2, 16);
+    Object.assign(session, { status: "interrupted", startTime: start, endTime: end });
+    try {
+      render(<RideHistoryPanel />);
+      const row = screen.getByRole("button", { expanded: false });
+      const lastRecorded = within(row).getByText("Last recorded").parentElement!;
+      expect(lastRecorded.textContent).toContain(serviceDate(end));
+      expect(within(row).getByText("Started").parentElement!.textContent).not.toContain(serviceDate(start));
+    } finally { Object.assign(session, original); }
+  });
+  it("keeps a same-day ride end as a time only", () => {
+    render(<RideHistoryPanel />);
+    const row = screen.getByRole("button", { expanded: false });
+    expect(within(row).getByText("Ended").parentElement!.textContent).not.toContain(serviceDate(state.sessions[0].endTime));
+  });
+  it("names a session endpoint deleted from the route instead of showing its stop ID", () => {
+    const session = state.sessions[0] as Record<string, unknown>;
+    const original = { originStopId: session.originStopId, destinationStopId: session.destinationStopId, stopsReached: session.stopsReached, direction: session.direction };
+    Object.assign(session, { direction: "forward", originStopId: "stop-1792491592188-7k28u2", destinationStopId: "stop-gone-without-record",
+      stopsReached: [{ stopIndex: 0, stopId: "stop-1792491592188-7k28u2", stopName: "Old Gate", timestamp: 1_750_000_001_000 }] });
+    try {
+      render(<RideHistoryPanel />);
+      const row = screen.getByRole("button", { expanded: false });
+      expect(row.textContent).toContain("Direction: Old Gate → Removed stop");
+      expect(row.textContent).not.toContain("stop-1792491592188-7k28u2");
+    } finally { Object.assign(session, original); }
+  });
   it.each([
     ["pending", "Not started"],
     ["armed", "Ready"],
@@ -102,8 +134,9 @@ describe("ride-history controls", () => {
       state.pendingLimit = null; view.rerender(<RideHistoryPanel pageSize={PAGE} />);
       expect(collapsedRows(view.container)).toHaveLength(PAGE + 1);
       expect(constructed).toBe(0);
-      // Only the newly loaded completed ride formats its date, start and end times.
-      expect(formatted).toBe(3);
+      // Only the newly loaded completed ride formats its date, start and end
+      // times, plus its end date to tell whether the ride ended on another day.
+      expect(formatted).toBe(4);
     } finally {
       state.sessions = original;
       Intl.DateTimeFormat = RealDateTimeFormat;

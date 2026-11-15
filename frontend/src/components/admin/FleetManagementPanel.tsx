@@ -5,6 +5,8 @@ import { useBuses, BusData } from "@/hooks/useBuses";
 import { useDrivers, DriverData } from "@/hooks/useDrivers";
 import { useRoutes } from "@/hooks/useRoutes";
 import { useActiveBuses } from "@/hooks/useActiveBuses";
+import { useUnsavedChanges } from "@/lib/unsavedChanges";
+import { adminLiveReadFailureMessage, classifyLiveReadFailure, type LiveReadFailure } from "@/lib/liveDataErrors";
 import { auth } from "@/lib/firebaseAuth";
 import {
   Bus, User, Trash2, Plus, ArrowRight,
@@ -62,6 +64,12 @@ interface Props {
   mode?: "fleet" | "personnel" | "combined";
 }
 
+function savedBusRoutes(bus: BusData): string[] {
+  return Array.isArray(bus.assignedRoutes)
+    ? bus.assignedRoutes
+    : bus.assignedRouteId ? [bus.assignedRouteId] : [];
+}
+
 export default function FleetManagementPanel({ mode = "combined" }: Props) {
   const {
     buses,
@@ -71,9 +79,9 @@ export default function FleetManagementPanel({ mode = "combined" }: Props) {
   } = useBuses();
   const { drivers, loading: driversLoading, error: driversError, retry: retryDrivers } = useDrivers();
   const { routes, error: routesError, retry: retryRoutes } = useRoutes();
-  const [liveReadFailed, setLiveReadFailed] = useState(false);
-  const onLiveReadError = useCallback(() => setLiveReadFailed(true), []);
-  const onLiveReadRecovered = useCallback(() => setLiveReadFailed(false), []);
+  const [liveReadFailure, setLiveReadFailure] = useState<LiveReadFailure | null>(null);
+  const onLiveReadError = useCallback((error: Error) => setLiveReadFailure(classifyLiveReadFailure(error)), []);
+  const onLiveReadRecovered = useCallback(() => setLiveReadFailure(null), []);
   const activeEntries = useActiveBuses({ onReadError: onLiveReadError, onReadRecovered: onLiveReadRecovered });
   const [, setFreshnessNow] = useState(() => serverNow());
 
@@ -206,9 +214,7 @@ export default function FleetManagementPanel({ mode = "combined" }: Props) {
     setEditingBusId(bus.id);
     setEditBusName(bus.name);
     // Saving always replaces the legacy single-route field, so carry it into the draft.
-    setEditBusRoutes(Array.isArray(bus.assignedRoutes)
-      ? bus.assignedRoutes
-      : bus.assignedRouteId ? [bus.assignedRouteId] : []);
+    setEditBusRoutes(savedBusRoutes(bus));
     setEditingDriverId(null);
   };
 
@@ -303,6 +309,20 @@ export default function FleetManagementPanel({ mode = "combined" }: Props) {
     } catch (error: unknown) { setErrorMsg("Failed to update Operator: " + errorMessage(error)); }
   };
 
+  // Switching admin sections unmounts this panel, so report drafts the way the
+  // route and settings editors do: the tab switch and page unload warn first.
+  const editingBus = editingBusId ? buses.find((bus) => bus.id === editingBusId) : undefined;
+  const editingDriver = editingDriverId ? drivers.find((driver) => driver.id === editingDriverId) : undefined;
+  const fleetDraftDirty =
+    [newBusId, newBusName, newDriverId, newDriverName, newDriverAuthUid, newDriverBusId].some((value) => value.trim() !== "")
+    || newBusRoutes.length > 0
+    || Boolean(editingBus && (editBusName !== editingBus.name
+      || JSON.stringify(editBusRoutes) !== JSON.stringify(savedBusRoutes(editingBus))))
+    || Boolean(editingDriver && (editDriverName !== editingDriver.name
+      || editDriverAuthUid !== (editingDriver.authUid ?? "")
+      || editDriverBusId !== (editingDriver.assignedBusId ?? "")));
+  useUnsavedChanges(fleetDraftDirty);
+
   const liveDriverIds = new Set(
     filteredActiveEntries
       .filter(isActiveService)
@@ -336,7 +356,7 @@ export default function FleetManagementPanel({ mode = "combined" }: Props) {
   return (
     <div className="w-full max-w-7xl mx-auto flex flex-col gap-5 p-3 md:p-6 animate-slide-up">
 
-      {liveReadFailed && <ErrorBanner message="Live vehicle updates are unavailable. Check your connection and reload to retry." onDismiss={() => setLiveReadFailed(false)} />}
+      {liveReadFailure && <ErrorBanner message={adminLiveReadFailureMessage(liveReadFailure)} onDismiss={() => setLiveReadFailure(null)} />}
 
       {/* â”€â”€ Global error banner â”€â”€ */}
       {errorMsg && (

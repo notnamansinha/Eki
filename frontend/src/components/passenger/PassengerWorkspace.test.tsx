@@ -521,3 +521,33 @@ describe("phone Live routes sheet", () => {
     expect(screen.queryByRole("button", { name: /live routes$/ })).toBeNull();
   });
 });
+describe("passenger live data permission denial", () => {
+  it("tells riders a denied catalog read is not a connection problem", () => {
+    setScenario("empty");
+    const resume = vi.spyOn(fixtures, "useRTDBResume").mockReturnValue({ isConnected: true, isResuming: true,
+      resumeGeneration: 0, connectionGeneration: 1, markSnapshotReceived: () => {} });
+    const catalog = vi.spyOn(fixtures, "useLiveRouteCatalog").mockReturnValue({ catalog: {}, projectionReady: true, catalogReady: false,
+      error: "Live route availability could not be loaded: access to live data was denied.", accessDenied: true, retry: () => {} } as unknown as ReturnType<typeof fixtures.useLiveRouteCatalog>);
+    try {
+      render(<PassengerWorkspace />);
+      expect(screen.getByText("Live bus data is unavailable.")).toBeTruthy();
+      expect(screen.getAllByText(/This is not a connection problem/).length).toBeGreaterThan(0);
+      expect(screen.queryByText("Check your connection, then try again.")).toBeNull();
+      expect(screen.queryByText(/Check your connection\./)).toBeNull();
+    } finally { catalog.mockRestore(); resume.mockRestore(); }
+  });
+  it("tells riders a denied route detail read is not a connection problem", async () => {
+    setScenario("forward");
+    const detail = vi.spyOn(fixtures, "subscribeLiveBusChangesByRoute").mockImplementation((_routeId, _listener, error) => {
+      queueMicrotask(() => error?.(Object.assign(new Error("permission_denied at /publicRouteBuses"), { code: "PERMISSION_DENIED" })));
+      return () => {};
+    });
+    try {
+      render(<PassengerWorkspace />); const user = userEvent.setup();
+      await user.click(await screen.findByRole("button", { name: "Track QA route" }));
+      expect(await screen.findByText("Live bus data is unavailable.")).toBeTruthy();
+      expect(screen.getAllByText(/This is not a connection problem/).length).toBeGreaterThan(0);
+      expect(screen.queryByText("Check your connection, then try again.")).toBeNull();
+    } finally { detail.mockRestore(); }
+  });
+});

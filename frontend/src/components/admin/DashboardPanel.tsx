@@ -10,6 +10,7 @@ import { useDrivers } from "@/hooks/useDrivers";
 import { useRoutes } from "@/hooks/useRoutes";
 import { useRTDBResume } from "@/hooks/useRTDBResume";
 import { useActiveBuses, type ActiveBusEntry } from "@/hooks/useActiveBuses";
+import { adminLiveReadFailureMessage, classifyLiveReadFailure, liveDataStatus, type LiveReadFailure } from "@/lib/liveDataErrors";
 import { useBusLocations } from "@/hooks/useBusLocations";
 import { useAuth } from "@/hooks/useAuth";
 import {
@@ -601,10 +602,12 @@ function FleetCard({
 /* â”€â”€ Main Dashboard â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 export default function DashboardPanel() {
   const { user } = useAuth();
-  const [liveReadFailed, setLiveReadFailed] = useState(false);
-  const onLiveReadError = useCallback(() => setLiveReadFailed(true), []);
-  const onLiveReadRecovered = useCallback(() => setLiveReadFailed(false), []);
+  const [liveReadFailure, setLiveReadFailure] = useState<LiveReadFailure | null>(null);
+  const liveReadFailed = liveReadFailure !== null;
+  const onLiveReadError = useCallback((error: Error) => setLiveReadFailure(classifyLiveReadFailure(error)), []);
+  const onLiveReadRecovered = useCallback(() => setLiveReadFailure(null), []);
   const {
+    isConnected,
     isResuming,
     connectionGeneration,
     resumeGeneration,
@@ -776,6 +779,10 @@ export default function DashboardPanel() {
   // While live data is unavailable a missing receiver is unknown, not gone, so
   // the chat stays on its last snapshot instead of closing for good.
   const liveDataUnavailable = isResuming || liveReadFailed;
+  // A denied read never delivers a snapshot, so isResuming alone would claim a
+  // reconnect forever; say which problem it is.
+  const liveStatus = liveDataStatus({ isConnected, isResuming, readFailure: liveReadFailure });
+  const liveReconnecting = liveStatus === "connecting";
   const chatReceiver = liveChatEntry ?? (liveDataUnavailable ? chatEntry ?? undefined : undefined);
   // A chat whose receiver went offline, or whose ride was replaced, ends instead
   // of reopening later over whatever the admin is doing.
@@ -809,9 +816,9 @@ export default function DashboardPanel() {
 
         {/* Map overlay stats */}
         <div className="absolute top-3 left-3 right-3 flex flex-col items-start gap-2 pointer-events-none">
-          {liveReadFailed && (
+          {liveReadFailure && (
             <div className="pointer-events-auto w-full max-w-lg rounded-xl border border-ui-warning/20 bg-ui-paper px-3 py-2 text-xs text-ui-warning shadow-lg" role="alert">
-              Live vehicle updates are unavailable. Check your connection and reload to retry.
+              {adminLiveReadFailureMessage(liveReadFailure)}
             </div>
           )}
           {(busesError || routesError || driversError || busLocationsError) && (
@@ -837,7 +844,7 @@ export default function DashboardPanel() {
               </button>
             </div>
           )}
-          {isResuming && (
+          {liveReconnecting && (
             <div
               className="flex items-center gap-2 rounded-xl border border-ui-warning/20 bg-ui-paper px-3 py-2 text-xs font-semibold text-ui-warning shadow-lg"
               role="status"
@@ -848,9 +855,11 @@ export default function DashboardPanel() {
             </div>
           )}
           <div className="flex items-center gap-2 bg-ui-paper backdrop-blur-sm border border-ui-line rounded-xl px-3 py-2">
-            <span className={`w-2 h-2 rounded-full ${!isResuming && devicesOnline > 0 ? "bg-ui-success animate-pulse" : "bg-ui-hover"}`} />
+            <span className={`w-2 h-2 rounded-full ${liveStatus !== "access_denied" && !isResuming && devicesOnline > 0 ? "bg-ui-success animate-pulse" : "bg-ui-hover"}`} />
             <span className="text-xs font-bold uppercase tracking-widest text-ui-muted">
-              {isResuming
+              {liveStatus === "access_denied"
+                ? "Live data access denied"
+                : isResuming
                 ? "Live data unavailable"
                 : `${devicesOnline} device${devicesOnline === 1 ? "" : "s"} online · ${activeServices} service${activeServices === 1 ? "" : "s"}`}
             </span>
@@ -891,10 +900,10 @@ export default function DashboardPanel() {
         <div className="flex shrink-0 flex-col gap-2 p-3 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:overscroll-contain">
           <p className="text-xs font-bold uppercase tracking-[0.25em] text-ui-quiet px-1">Live Fleet</p>
           {activeEntries.length === 0 ? (
-            <div className={`flex flex-col items-center justify-center py-16 text-center gap-2 ${isResuming ? "text-ui-warning" : "text-ui-quiet"}`}>
-              {isResuming ? <WifiOff className="w-8 h-8" /> : <Wifi className="w-8 h-8" />}
+            <div className={`flex flex-col items-center justify-center py-16 text-center gap-2 ${isResuming || liveReadFailed ? "text-ui-warning" : "text-ui-quiet"}`}>
+              {liveStatus === "access_denied" ? <AlertTriangle className="w-8 h-8" aria-hidden="true" /> : isResuming ? <WifiOff className="w-8 h-8" /> : <Wifi className="w-8 h-8" />}
               <p className="text-xs font-semibold uppercase tracking-widest">
-                {isResuming ? "Live data unavailable" : "No buses active"}
+                {liveStatus === "access_denied" ? "Live data access denied" : isResuming ? "Live data unavailable" : "No buses active"}
               </p>
             </div>
           ) : (

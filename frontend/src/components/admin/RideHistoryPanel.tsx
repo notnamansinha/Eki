@@ -162,6 +162,18 @@ function formatServiceTime(value: TimestampValue): string {
   return serviceTimeFormat.format(date);
 }
 
+/**
+ * An end on another service day than the start carries its date, so an
+ * overnight ride cannot read as ending before it started.
+ */
+function formatServiceEndTime(startDateLabel: string, end: TimestampValue): string {
+  if (!timestampDate(end)) return formatServiceTime(end);
+  const endDateLabel = formatServiceDate(end);
+  return endDateLabel === startDateLabel
+    ? formatServiceTime(end)
+    : `${endDateLabel}, ${formatServiceTime(end)}`;
+}
+
 async function deleteRideHistoryRequest(sessionId: string): Promise<void> {
   const currentUser = auth.currentUser;
   if (!currentUser) {
@@ -440,6 +452,7 @@ const RideHistoryRow = memo(function RideHistoryRow({
   const stopsReached = stopRecords(session.stopsReached);
   const status = STATUS_CONFIG[session.status] ?? STATUS_CONFIG.failed;
   const startValue = session.startTime ?? session.armedAt;
+  const startDateLabel = formatServiceDate(startValue);
 
   return (
     <div
@@ -459,7 +472,7 @@ const RideHistoryRow = memo(function RideHistoryRow({
               {status.label}
             </span>
             <span className="text-sm font-semibold text-ui-ink tabular-nums">
-              {formatServiceDate(startValue)}
+              {startDateLabel}
             </span>
           </div>
           <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-ui-muted tabular-nums">
@@ -469,7 +482,7 @@ const RideHistoryRow = memo(function RideHistoryRow({
                 <span className="text-ui-quiet">
                   {session.status === "interrupted" ? "Last recorded" : "Ended"}
                 </span>{" "}
-                {formatServiceTime(session.endTime)}
+                {formatServiceEndTime(startDateLabel, session.endTime)}
               </span>
             )}
           </div>
@@ -485,6 +498,7 @@ const RideHistoryRow = memo(function RideHistoryRow({
                 routeStops,
                 session.originStopId,
                 session.destinationStopId,
+                stopsReached,
               )}
             </span>
             <span className="flex items-center gap-1">

@@ -1,18 +1,63 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import FleetManagementPanel from "./FleetManagementPanel";
 import type { ActiveBusEntry } from "@/lib/activeBusEntries";
+import type { UseActiveBusesOptions } from "@/hooks/useActiveBuses";
+import { hasUnsavedChanges } from "@/lib/unsavedChanges";
 const DEFAULT_BUSES = [{ id: "qa-bus", name: "QA Bus", assignedRoutes: ["qa-route"] as string[] | undefined, assignedRouteId: undefined as string | undefined }];
-const live = vi.hoisted(() => ({ entries: [] as ActiveBusEntry[], buses: [] as Array<{ id: string; name: string; assignedRoutes?: string[]; assignedRouteId?: string }> }));
+const live = vi.hoisted(() => ({ entries: [] as ActiveBusEntry[], options: null as UseActiveBusesOptions | null, buses: [] as Array<{ id: string; name: string; assignedRoutes?: string[]; assignedRouteId?: string }> }));
 vi.mock("@/hooks/useBuses", () => ({ useBuses: () => ({ buses: live.buses, loading: false }) }));
 vi.mock("@/hooks/useDrivers", () => ({ useDrivers: () => ({ drivers: [{ id: "qa-driver", name: "QA Driver", authUid: "qa-driver-uid", busId: "qa-bus" }], loading: false }) }));
 vi.mock("@/hooks/useRoutes", () => ({ useRoutes: () => ({ routes: [{ id: "qa-route", name: "QA route" }], loading: false }) }));
-vi.mock("@/hooks/useActiveBuses", () => ({ useActiveBuses: () => live.entries }));
+vi.mock("@/hooks/useActiveBuses", () => ({ useActiveBuses: (options?: UseActiveBusesOptions) => { live.options = options ?? null; return live.entries; } }));
 vi.mock("@/lib/firebaseAuth", () => ({ auth: { currentUser: { getIdToken: async () => "test-token" } } }));
 beforeEach(() => { live.entries = []; live.buses = DEFAULT_BUSES.map(bus => ({ ...bus })); vi.stubEnv("NEXT_PUBLIC_BACKEND_URL", "https://qa.ngrok-free.dev"); });
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
+describe("fleet live read failures and drafts", () => {
+  it("names a permission denial instead of blaming the connection", () => {
+    render(<FleetManagementPanel />);
+    act(() => live.options?.onReadError?.(Object.assign(new Error("permission_denied at /publicRouteBuses"), { code: "PERMISSION_DENIED" })));
+    expect(screen.getByText(/not permitted to read live data/)).toBeTruthy();
+    expect(screen.queryByText(/Check your connection/)).toBeNull();
+  });
+
+  it("keeps the connection advice for other read failures", () => {
+    render(<FleetManagementPanel />);
+    act(() => live.options?.onReadError?.(new Error("Network request failed")));
+    expect(screen.getByText("Live vehicle updates are unavailable. Check your connection and reload to retry.")).toBeTruthy();
+  });
+
+  it("reports an add-vehicle draft as unsaved so switching tabs warns first", async () => {
+    render(<FleetManagementPanel />); const user = userEvent.setup();
+    expect(hasUnsavedChanges()).toBe(false);
+    await user.type(screen.getByLabelText("New operator display name"), "Draft driver");
+    expect(hasUnsavedChanges()).toBe(true);
+    await user.clear(screen.getByLabelText("New operator display name"));
+    expect(hasUnsavedChanges()).toBe(false);
+  });
+
+  it("reports a changed vehicle edit as unsaved, but not an untouched or cancelled one", async () => {
+    render(<FleetManagementPanel />); const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Edit vehicle QA Bus" }));
+    expect(hasUnsavedChanges()).toBe(false);
+    const editor = within(screen.getByText("Editing Vehicle").parentElement!);
+    await user.click(editor.getByRole("checkbox", { name: "QA route" }));
+    expect(hasUnsavedChanges()).toBe(true);
+    await user.click(screen.getByRole("button", { name: "Cancel editing vehicle" }));
+    expect(hasUnsavedChanges()).toBe(false);
+  });
+
+  it("stops reporting the draft once the panel unmounts", async () => {
+    const view = render(<FleetManagementPanel />); const user = userEvent.setup();
+    await user.type(screen.getByLabelText("New operator ID"), "draft_driver");
+    expect(hasUnsavedChanges()).toBe(true);
+    view.unmount();
+    expect(hasUnsavedChanges()).toBe(false);
+  });
+});
+
 describe("fleet and personnel controls", () => {
   it("keeps route checkboxes operable when editing a vehicle and discards cancelled selections", async () => {
     const fetchMock = vi.fn(); vi.stubGlobal("fetch", fetchMock);

@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-DAT-001 | 2.2 | Current | 2026-11-08 |
+| EKI-DAT-001 | 2.3 | Current | 2026-11-15 |
 
 ## 1. Purpose
 
@@ -285,7 +285,7 @@ Fields: `id`, `name`, `authUid` and `assignedBusId` (string or null). The browse
 
 ### 4.5 `settings/global`
 
-Fields: `serviceStartTime` (at most 64), `noBusesMessage` (at most 200), `noBusesSubMessage` (at most 300), `announcementText` (at most 500), `announcementActive` (boolean), `updatedAt` (Timestamp) and `updatedBy` (UID) (`backend/src/routes/settings.ts:20`). Writer: `PATCH /api/v2/settings/global`, which the administrator **Settings** tab calls with only the changed fields, and the legacy `PUT /api/settings`. Both reject unknown keys and blank text other than `announcementText`, and merge the validated fields into the document (`settings.ts:34`). Client rule: read, signed in (`firestore.rules:293`). Browsers apply defaults for fields that are missing or of the wrong type (`frontend/src/hooks/useSettings.ts:27`).
+Fields: `serviceStartTime` (at most 64), `noBusesMessage` (at most 200), `noBusesSubMessage` (at most 300), `announcementText` (at most 500), `announcementActive` (boolean), `updatedAt` (Timestamp) and `updatedBy` (UID) (`backend/src/routes/settings.ts:20`). Writer: `PATCH /api/v2/settings/global`, which the administrator **Settings** tab calls with only the changed fields, and the legacy `PUT /api/settings`. Both reject unknown keys and blank text other than `announcementText`, and merge the validated fields into the document (`settings.ts:34`). Client rule: read, signed in (`firestore.rules:293`). Browsers apply defaults for fields that are missing or of the wrong type (`frontend/src/hooks/useSettings.ts:27`). The Settings tab also requires an edited `serviceStartTime` to be a clock time such as `6:30 am` or `18:30`, shown inline as the administrator types (`frontend/src/lib/adminValidation.ts`, `validateServiceStartTime`); the backend checks only length, so stored legacy values stay readable and do not block saving other fields.
 
 ### 4.6 `settings/passengerRoutes`
 
