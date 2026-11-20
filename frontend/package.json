@@ -10,15 +10,15 @@
     "test": "vitest run src"
   },
   "dependencies": {
-    "@vis.gl/react-google-maps": "^1.10.1",
+    "@vis.gl/react-google-maps": "^1.10.2",
     "firebase": "^13.1.0",
     "lucide-react": "^1.62.0",
-    "next": "^16.4.1",
+    "next": "^16.4.5",
     "react": "19.3.1",
     "react-dom": "19.3.1"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4.3.3",
+    "@tailwindcss/postcss": "^4.3.5",
     "@testing-library/react": "^16.3.3",
     "@testing-library/user-event": "^14.6.8",
     "@types/google.maps": "^3.66.9",
