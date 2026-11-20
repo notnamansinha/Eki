@@ -3,7 +3,7 @@ import * as dotenv from "dotenv";
 import { resolve } from "path";
 
 // Load environment variables if not already loaded
-dotenv.config({ path: resolve(__dirname, "../../.env") });
+dotenv.config({ path: resolve(__dirname, "../../.env"), quiet: true });
 
 export interface LatLng {
   lat: number;

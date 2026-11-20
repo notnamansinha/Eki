@@ -5,4 +5,4 @@ import { resolve } from "node:path";
 // configuration belongs to the backend workspace. This module must be imported
 // before Firebase and Google Maps, which read environment variables at import
 // time.
-dotenv.config({ path: resolve(__dirname, "../.env") });
+dotenv.config({ path: resolve(__dirname, "../.env"), quiet: true });
