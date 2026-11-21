@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-OPS-027 | 1.1 | Current | 2026-11-07 |
+| EKI-OPS-027 | 1.2 | Current | 2026-11-21 |
 
 ## 1. Purpose
 
@@ -55,7 +55,7 @@ None of these values is configurable at run time. The defaults of the shared exe
 | Ordered live lifecycle intake | 8 | 256 | 32 | 5 s | `backend/src/services/tripStateEngine.ts:62` |
 | Route matching, newest position per live record | 8 | 256 records | 1 | 5 s | `backend/src/services/telemetryRouteService.ts:1290` |
 | Rerouting, newest position per live record | 2 | 64 records | 1 | 5 s | `backend/src/services/telemetryRouteService.ts:1335` |
-| Passenger projection, newest value per live record | 2 | 64 | 1 | 5 s | `backend/src/services/liveBusProjection.ts:198` |
+| Passenger projection, newest value per live record | 2 | 64 | 1 | 5 s | `backend/src/services/liveBusProjection.ts:319` |
 | Automatic service admission | 8 | 128 | 1 | 10 s | `backend/src/services/automaticServiceAdmission.ts:14` |
 | Lifecycle recovery page | 1 page of 25 | | | | `backend/src/services/pagedLifecycleReplay.ts:8` |
 

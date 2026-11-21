@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-OPS-026 | 1.2 | Current | 2026-11-08 |
+| EKI-OPS-026 | 2.0 | Current | 2026-11-21 |
 
 ## 1. Purpose
 
@@ -50,6 +50,7 @@ A queue shared by fenced and unfenced callers, for example durable ride restores
 |---|---|
 | Firestore lifecycle transactions and deletion batches | The transaction reads the lease and requires the same owner and generation and a wall-clock expiry more than 2 s away. The local deadline is checked before and after the callback. A takeover changes the read set, so Firestore serializes the earlier commit first or retries or aborts it. Each worker write transaction costs one extra lease read. |
 | RTDB lifecycle and retention transactions | Local authority is checked on dispatch and on every SDK callback retry. Written objects carry `_workerGeneration`; a lower generation cannot overwrite a newer projection. Session, timestamp and unchanged-value checks still apply. |
+| Public projection leaf updates | The leader claims each `publicRouteBuses/route:{routeId}` node with the transaction above, then writes only changed fields through a rules-bound Admin app. `database.rules.json` accepts such an update only when it carries the stored `_workerGeneration` and the stored `revision` plus 1, so a successor's claim rejects every later update from the former leader at the destination. These rules must be deployed to the instance the backend uses; otherwise the leader falls back to whole-route transactions and `GET /api/health` reports `workQueues.publicProjection.writeMode` as `transaction-fallback` ([live projection leaf writes](../testing/LIVE_PROJECTION_LEAF_WRITES_2026_11_21.md#6-rollout)). |
 | Firebase Auth and recursive deletes | No destination fence exists. Local authority is checked immediately before each call; a dispatched call can finish after revocation with an unknown outcome. Fleet Auth reconciliation keeps its durable lock until every dispatched call settles, and lease expiry never authorizes a lock takeover or a blind replay. Durable deletion jobs survive an interrupted cleanup and are removed only under a valid lease. |
 
 Firestore and RTDB cannot share one lease atomically. An RTDB generation check applies only after a newer generation has written to that node, and deleting a node also deletes its generation. Requests already dispatched cannot be recalled.

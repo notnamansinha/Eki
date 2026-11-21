@@ -1,23 +1,35 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { deleteApp, initializeApp, type App } from "firebase-admin/app";
 import { getDatabase, type Database } from "firebase-admin/database";
-const projectionFixture = vi.hoisted(() => ({ realtime: {} as any }));
-vi.mock("./lib/firebaseAdmin", () => ({ get rtdb() { return projectionFixture.realtime; } }));
-import { publicLiveBus, routeAvailability, startLiveBusProjection } from "./services/liveBusProjection";
-import { WorkerFence, workerRtdbTransaction } from "./lib/workerFence";
+const projectionFixture = vi.hoisted(() => ({ realtime: {} as any, writer: null as any }));
+// These cases relocate the projection under a per-test root, where the
+// committed rules grant the fenced writer nothing: the rules-bound handle is
+// refused and the publisher must fall back to its fenced transaction.
+vi.mock("./lib/firebaseAdmin", () => ({ get rtdb() { return projectionFixture.realtime; },
+  liveProjectionWriterRtdb: () => ({ ref: (path: string) =>
+    projectionFixture.writer.ref(decodeURIComponent(new URL(projectionFixture.realtime.ref(path).toString()).pathname)) }) }));
+import { getLiveBusProjectionStatus, publicLiveBus, routeAvailability, startLiveBusProjection } from "./services/liveBusProjection";
+import { RTDB_FENCED_WRITER_AUTH, WorkerFence, workerRtdbTransaction } from "./lib/workerFence";
 import { lifecycleIntakeFingerprint } from "./services/lifecycleIntake";
 import { retireDeviceAssignment } from "./services/deviceAssignmentRetirement";
 const integration = process.env.FIREBASE_RULES_TEST === "1" ? describe : describe.skip;
 integration("R14 loopback transaction and payload measurement", () => {
-  let app: App; let realtime: Database;
-  beforeAll(() => {
+  let app: App; let writerApp: App; let realtime: Database;
+  beforeAll(async () => {
     const host = process.env.FIREBASE_DATABASE_EMULATOR_HOST;
     if (!host || !/^(127\.0\.0\.1|\[::1\]):\d+$/.test(host)) throw new Error("Loopback RTDB emulator required");
     app = initializeApp({ projectId: "demo-eki-rules-test", databaseURL: "http://127.0.0.1:9005/?ns=demo-eki-rules-test-default-rtdb",
       credential: { getAccessToken: async () => ({ access_token: "owner", expires_in: 3600 }) } }, "r14-measurement");
     realtime = getDatabase(app);
+    writerApp = initializeApp({ ...app.options, databaseAuthVariableOverride: { ...RTDB_FENCED_WRITER_AUTH } }, "r14-measurement-fenced-writer");
+    projectionFixture.writer = getDatabase(writerApp);
+    const rules = await fetch(`http://${host}/.settings/rules.json?ns=demo-eki-rules-test-default-rtdb`, { method: "PUT", headers: { Authorization: "Bearer owner", "Content-Type": "application/json" },
+      body: readFileSync(process.env.DATABASE_RULES_PATH || resolve(__dirname, "../../database.rules.json"), "utf8") });
+    if (!rules.ok) throw Error(`Failed to install loopback RTDB rules: ${rules.status}`);
   });
-  afterAll(async () => { if (app) await deleteApp(app); });
+  afterAll(async () => { if (writerApp) await deleteApp(writerApp); if (app) await deleteApp(app); });
   it("retires old device presence through actual RTDB transactions and removes its public availability", async () => {
     const root = realtime.ref("_assignment_retirement_integration");
     const presence = { busId: "bus", routeId: "route", deviceId: "device", assignmentRevision: 1,
@@ -116,6 +128,8 @@ integration("R14 loopback transaction and payload measurement", () => {
       await waitFor(async () => (await root.child("publicRouteBuses/route:route/buses/node:bus_route").once("value")).val()?.sessionId === "return");
       const projected = (await root.child("publicRouteBuses/route:route/buses/node:bus_route").once("value")).val();
       expect(projected).toMatchObject({ previousSessionId: "joined", automaticTurnaround: true });
+      // The real rules refused the leaf writer twice here, so this publication used the fenced transaction.
+      expect(getLiveBusProjectionStatus()).toMatchObject({ writeMode: "transaction-fallback", leafWriteDenials: 2, leafWriteFallbacks: 1, leafWrites: 0 });
       expect(projected.privateHistory).toBeUndefined();
       await root.child("activeBuses/bus_route").remove();
       await waitFor(async () => !(await root.child("publicRouteBuses/route:route/buses/node:bus_route").once("value")).exists());

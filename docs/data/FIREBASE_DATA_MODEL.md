@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-DAT-001 | 2.2 | Current | 2026-11-08 |
+| EKI-DAT-001 | 3.0 | Current | 2026-11-21 |
 
 ## 1. Purpose
 
@@ -187,13 +187,13 @@ Configured geometry is never stored here; it comes from `routes/{routeId}`.
 
 ### 3.3 `publicRouteBuses/route:{routeId}`
 
-The browser-readable projection of live nodes, materialized by the leader (`backend/src/services/liveBusProjection.ts:108`).
+The browser-readable projection of live nodes, materialized by the leader (`backend/src/services/liveBusProjection.ts:137`). The leader claims a route once with a transaction on the whole node, then publishes each change to one bus as a multi-path update of only the changed fields, with `null` for a removed field or bus. The security rules accept that update only from the leader's rules-bound writer identity, with the stored `_workerGeneration` and the next `revision` ([live projection leaf writes](../testing/LIVE_PROJECTION_LEAF_WRITES_2026_11_21.md)).
 
 | Field | Type | Meaning |
 |---|---|---|
 | `buses/node:{busId}_{routeId}` | object | Public view of one live node (below) |
-| `revision` | integer | Increments on every change |
-| `_workerGeneration` | integer | Publisher generation |
+| `revision` | integer | Increments on every publication that changes the route. A leaf update must carry the stored value plus 1 |
+| `_workerGeneration` | integer | Generation of the leader that last claimed the route. A leaf update must carry the same value |
 
 The public view (`liveBusProjection.ts:37`) contains only `busId`, `routeId`, `driverId`, `sessionId`, `lat`, `lng`, `speed`, `heading`, `timestamp`, `seq`, `deviceSentAt`, `backendReceivedAt`, `receivedAt`, `status`, `deviceState`, `signalState`, `motionState`, `tripState`, `currentStopIndex`, `delayMinutes`, `direction`, `directionState`, `originStopId`, `destinationStopId`, `automaticServicePaused`, `automaticServiceState`, `activeRouteId`, `routeVersion`, `routeSource`, `routeState`, `routeDirection`, `routeGeometryVersion`, `routeComputedAt`, `routeTrafficState`, `mapMatchSeq`, `mapMatchSampledAt`, `mapMatchUpdatedAt`, `matchConfidence` and `distanceToActiveRoute`, plus:
 
@@ -211,7 +211,7 @@ A node with `retiredAssignmentRevision`, or with an invalid `busId` or `routeId`
 | Item | Value |
 |---|---|
 | Readers | Passenger map (one route's `buses`), and admin Live Ops and fleet management (whole root) (`frontend/src/lib/liveBusStore.ts:17`, `frontend/src/lib/createLiveBusStore.ts:182`) |
-| Client rule | `buses` read, signed in; root read, current admin (`database.rules.json:17`) |
+| Client rule | `buses` read, signed in; root read, current admin (`database.rules.json:17`). No client write. The backend's projection writer (`auth.uid` `eki:live-projection-writer`, set by an Admin SDK auth override) may update a route node under the generation and revision conditions above; every bus it writes keeps `busId` and `routeId` (`database.rules.json:20-27`) |
 | Retention | Follows `activeBuses`: an entry is removed when its source node is removed |
 
 ### 3.4 `liveRouteCatalog`

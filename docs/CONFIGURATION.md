@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-GEN-005 | 1.7 | Current | 2026-11-11 |
+| EKI-GEN-005 | 2.0 | Current | 2026-11-21 |
 
 ## 1. Purpose
 
@@ -48,6 +48,7 @@ The template is a production template. Copied unchanged, it sets `NODE_ENV=produ
 |---|---|---|---|---|
 | `FIREBASE_SERVICE_ACCOUNT` | No | Unset | Firebase Admin service-account JSON object. When unset, the backend uses Application Default Credentials [1]. Malformed JSON refuses startup. Prefer Workload Identity or a secret manager in production. | `lib/firebaseAdmin.ts` |
 | `FIREBASE_DATABASE_URL` | In production | None | Realtime Database (RTDB) origin for Firebase Admin. Outside production a missing value lets the process start, but every RTDB feature fails. Must name the same instance as `NEXT_PUBLIC_FIREBASE_DATABASE_URL`. | `lib/firebaseAdmin.ts` |
+| `LIVE_PROJECTION_WRITE_MODE` | No | Unset (leaf writes) | How the worker leader publishes `publicRouteBuses`. Unset, it writes only the changed fields of one bus, fenced by `database.rules.json`; if the deployed rules deny that write, it falls back to whole-route transactions for 5 minutes at a time and logs a warning. `transaction` (trimmed, any case) forces whole-route transactions, which resend every bus on a route to every listener on each publication. See [live projection leaf writes](testing/LIVE_PROJECTION_LEAF_WRITES_2026_11_21.md#6-rollout). | `services/liveBusProjection.ts` |
 | `GOOGLE_MAPS_API_KEY` | For route geometry | None | Server key for the Google Routes API (`computeRoutes`: route geometry, reroutes and departure traffic) and Places API (New) Text Search (admin place search). Without it, route computation and place search fail and `npm run seed` stops. Use this server key, not the browser key, also in a local `backend/.env`, and restrict it to these two APIs. The staging key has no application restriction, because Cloud Run egress addresses are not fixed; Cloud Run reads it from the Secret Manager secret `google-maps-server-key`. | `lib/googleMaps.ts`, `routes/polyline.ts`, `routes/places.ts` |
 
 ### 3.3 Ride lifecycle and live state

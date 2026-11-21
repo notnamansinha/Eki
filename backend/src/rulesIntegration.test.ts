@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { RulesTestEnvironment } from "@firebase/rules-unit-testing";
-import { get, ref, set } from "firebase/database";
+import { get, ref, set, update } from "firebase/database";
 import {
   collection,
   doc,
@@ -208,6 +208,44 @@ rulesDescribe("Firebase security rules integration", () => {
       await assertFails(set(ref(context.database(), "publicRouteBuses/route:route_1/buses/x"), { lat: 1 }));
       await assertFails(set(ref(context.database(), "liveRouteCatalog/values/route:route_1"), { active: 99 }));
       await assertFails(set(ref(context.database(), "clientProjectionStatus/public"), { schemaVersion: 1, ready: true }));
+    }
+  });
+
+  it("grants the projection writer identity only a route write fenced by the stored generation and the next revision", async () => {
+    // The backend reaches this rule through an Admin auth override with this
+    // uid; ordinary sign-in cannot produce it, and minting a custom token for
+    // it needs the project's service-account signing rights.
+    const writer = environment.authenticatedContext("eki:live-projection-writer");
+    const route = (context: ReturnType<typeof environment.authenticatedContext>) => ref(context.database(), "publicRouteBuses/route:route_1");
+    const lat = "buses/node:bus_1_route_1/lat";
+    try {
+      // Seeded state: generation 7, revision 1.
+      await assertFails(update(route(writer), { _workerGeneration: 6, revision: 2, [lat]: 99 }));
+      await assertFails(update(route(writer), { _workerGeneration: 8, revision: 2, [lat]: 99 }));
+      await assertFails(update(route(writer), { _workerGeneration: 7, revision: 1, [lat]: 99 }));
+      await assertFails(update(route(writer), { _workerGeneration: 7, revision: 3, [lat]: 99 }));
+      await assertFails(update(route(writer), { _workerGeneration: 7, [lat]: 99 }));
+      await assertFails(update(route(writer), { _workerGeneration: 7, revision: 2, "buses/node:ghost_route_1/lat": 99 }));
+      await assertFails(set(ref(writer.database(), `publicRouteBuses/route:route_1/${lat}`), 99));
+      await assertFails(update(ref(writer.database(), "publicRouteBuses/route:unclaimed"), { _workerGeneration: 7, revision: 1, "buses/node:bus_9_unclaimed": { busId: "bus_9", routeId: "unclaimed" } }));
+      for (const path of ["activeBuses/bus_1_route_1/lat", "liveRouteCatalog/values/route:route_1/active", "clientProjectionStatus/public/ready", "_userAuthorization/admin_1/role"]) {
+        await assertFails(set(ref(writer.database(), path), 99));
+      }
+      await assertFails(get(route(writer)));
+      await assertFails(get(ref(writer.database(), "activeBuses")));
+      const valid = { _workerGeneration: 7, revision: 2, [lat]: 23.5 };
+      for (const other of [environment.authenticatedContext("route_viewer", { role: "passenger" }),
+        environment.authenticatedContext("fleet_viewer", { role: "admin", admin: true, authorizationVersion: "current" }), environment.unauthenticatedContext()]) {
+        await assertFails(update(route(other), valid));
+      }
+      await assertSucceeds(update(route(writer), valid));
+      // The accepted write moved the revision: the same update cannot be applied twice.
+      await assertFails(update(route(writer), valid));
+      await assertSucceeds(update(route(writer), { _workerGeneration: 7, revision: 3, "buses/node:bus_3_route_1": { busId: "bus_3", routeId: "route_1", lat: 25 } }));
+      await assertSucceeds(update(route(writer), { _workerGeneration: 7, revision: 4, "buses/node:bus_3_route_1": null }));
+    } finally {
+      await environment.withSecurityRulesDisabled(context => set(ref(context.database(), "publicRouteBuses/route:route_1"),
+        { _workerGeneration: 7, revision: 1, buses: { "node:bus_1_route_1": { busId: "bus_1", routeId: "route_1", lat: 23 } } }));
     }
   });
 
