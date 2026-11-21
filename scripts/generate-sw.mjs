@@ -5,7 +5,8 @@
  * bundles the Workbox runtime + src/sw.js, and writes the final sw.js
  * into frontend/out/ ready for Firebase Hosting deployment.
  *
- * Run after `next build` and before `update-csp.mjs`.
+ * Run after `next build` and `compile-hints.mjs` (which changes chunk
+ * contents), and before `update-csp.mjs`.
  *
  * Performance: the SW pipeline (workbox injectManifest + Rollup/Babel bundle)
  * costs several seconds on every build even when the static export is
