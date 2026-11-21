@@ -5,11 +5,12 @@ import { repositoryRoot } from './acceptance-catalog.mjs';
 import { safetyPreflight } from './safety-preflight.mjs';
 import { removeGeneratedDemoConfig } from './emulator-environment.mjs';
 import { apiTestMap } from '../../qa/api-test-map.mjs';
+import { describeDirty, workingTreeState } from './working-tree.mjs';
 
 const directory = resolve(repositoryRoot, 'artifacts/qa'); mkdirSync(directory, { recursive: true });
 for (const file of ['api-junit.xml', 'api-observed.json', 'api-operation-observations.json', 'api-progress.log']) rmSync(resolve(directory, file), { force: true });
 const report = { schemaVersion: 1, sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repositoryRoot, encoding: 'utf8' }).trim(),
-  dirty: Boolean(execFileSync('git', ['status', '--porcelain', '--untracked-files=all'], { cwd: repositoryRoot, encoding: 'utf8' }).trim()),
+  ...workingTreeState(repositoryRoot),
   startedAt: new Date().toISOString(), workflowRunId: process.env.GITHUB_RUN_ID ?? null, node: process.version,
   level: 'L2', verdict: 'BLOCKED', realProvidersExecuted: false, physicalMotionExecuted: false,
   appCheckAttestationExecuted: false, osNetworkSandboxVerified: false };
@@ -42,7 +43,7 @@ try {
 } catch (error) { report.setupError = error.message; }
 report.finishedAt = new Date().toISOString();
 writeFileSync(resolve(directory, 'api-report.json'), JSON.stringify(report, null, 2) + '\n');
-const markdown = `# Disposable HTTP authorization scope\n\nSource: ${report.sourceCommit}; dirty: ${report.dirty}; level L2; verdict: ${report.verdict}.\n\n`
+const markdown = `# Disposable HTTP authorization scope\n\nSource: ${report.sourceCommit}; dirty: ${describeDirty(report)}; level L2; verdict: ${report.verdict}.\n\n`
   + `Observed assertions: ${JSON.stringify(report.counts ?? {})}; HTTP requests recorded: ${report.operationObservations?.length ?? 0}.\n\n`
   + (report.setupError ? `Setup: ${report.setupError}\n\n` : '')
   + 'Actual backend and local demo Auth/Firestore/RTDB; synthetic providers. Includes saved driver/admin tokens, CLI/HTTP offboarding, case/HEAD admission and device OTA reservations. Cloud staging, physical OTA, token-expiry and real-provider acceptance remain separate. App Check is intentionally removed.\n';

@@ -155,6 +155,17 @@ async function run() {
   console.log("Web/backend contract: PASSED (CSP contract verified).");
 }
 
+/** The one line every failed check prints, so a QA log never ends in a bare stack trace. */
+export function contractFailureLine(error) {
+  const cause = error?.cause ? ` (${error.cause.message ?? error.cause})` : "";
+  return `Web/backend contract: FAILED: ${error?.message ?? error}${cause}`;
+}
+
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  await run();
+  try {
+    await run();
+  } catch (error) {
+    console.error(contractFailureLine(error));
+    process.exitCode = 1;
+  }
 }

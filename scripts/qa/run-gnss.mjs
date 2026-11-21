@@ -5,6 +5,7 @@ import { dirname, resolve, relative } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { safetyPreflight } from './safety-preflight.mjs';
 import { gnssTestMap } from '../../qa/gnss-test-map.mjs';
+import { describeDirty, workingTreeState } from './working-tree.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const suites = ['src/services/qaGnssProperties.test.ts', 'src/services/qaTelemetrySequences.test.ts'];
@@ -48,7 +49,7 @@ function main() {
   rmSync(jsonPath, { force: true });
   rmSync(resolve(directory, 'gnss-junit.xml'), { force: true });
   const commit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
-  const dirty = Boolean(execFileSync('git', ['status', '--porcelain', '--untracked-files=all'], { cwd: root, encoding: 'utf8' }).trim());
+  const { dirty, ignoredChanges } = workingTreeState(root);
   const cli = resolve(dirname(require.resolve('vitest/package.json')), 'vitest.mjs');
   const started = new Date().toISOString();
   const result = configurationError ? { status: null, error: { code: 'QA_CONFIGURATION_BLOCKED' }, stdout: '', stderr: configurationError + '\n' }
@@ -64,14 +65,14 @@ function main() {
   const verdict = result.status === 0 && evidence && evidence.counts.blocked === 0 && evidence.counts.failed === 0 &&
     evidence.cases.every(item => item.status === 'PARTIAL')
     ? 'GREEN_FOR_UNIT_SCOPE' : evidence?.counts.failed ? 'RED' : 'BLOCKED';
-  const report = { schemaVersion: 1, sourceCommit: commit, dirty, startedAt: started, finishedAt: new Date().toISOString(),
+  const report = { schemaVersion: 1, sourceCommit: commit, dirty, ignoredChanges, startedAt: started, finishedAt: new Date().toISOString(),
     timezone: 'Asia/Calcutta', workflowRunId: process.env.GITHUB_RUN_ID ?? null, level: 'L1',
     environment: { node: process.version, platform: process.platform, vitest: require('vitest/package.json').version },
     seed: process.env.EKI_QA_SEED ?? '42', replayPath: process.env.EKI_QA_REPLAY_PATH ?? null,
     verdict, runnerExitCode: result.status, runnerError: result.error?.code ?? null, evidenceError, ...evidence,
     completeFeatureCases: 0, physicalMotionExecuted: false, realProvidersExecuted: false };
   writeFileSync(resolve(directory, 'gnss-report.json'), JSON.stringify(report, null, 2) + '\n');
-  const markdown = ['# GNSS software execution', '', `Commit: ${commit}; dirty: ${dirty}; level: L1; verdict: ${verdict}.`,
+  const markdown = ['# GNSS software execution', '', `Commit: ${commit}; dirty: ${describeDirty({ dirty, ignoredChanges })}; level: L1; verdict: ${verdict}.`,
     `Started: ${started}; Node: ${process.version}; seed: ${report.seed}; replay path: ${report.replayPath ?? 'all'}.`, '',
     `Assertions: ${evidence?.counts.discovered ?? 0} discovered; ${evidence?.counts.passed ?? 0} passed; ${evidence?.counts.failed ?? 0} failed; ${evidence?.counts.blocked ?? 'runner blocked'} blocked.`, '',
     '| Case | Unit status | Tested scope |', '| --- | --- | --- |',

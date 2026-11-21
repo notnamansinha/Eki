@@ -2,14 +2,14 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-TST-003 | 1.1 | Current | 2026-11-07 |
+| EKI-TST-003 | 1.2 | Current | 2026-11-21 |
 
 ## 1. Purpose
 
 The QA programme measures how much of the [A to Z acceptance plan](../testing/WEBAPP_A_Z_AB_TESTING_PLAN.md) has been observed on a given commit. It has three parts:
 
 1. A static acceptance catalog that imports every requirement and inventories the current source.
-2. Isolated harnesses that run selected tests and record exact assertion identities, the source commit and whether the working tree was dirty.
+2. Isolated harnesses that run selected tests and record exact assertion identities, the source commit and whether the working tree was dirty. The CSP hashes that a build regenerates in `firebase.json` do not make the tree dirty; the report lists them in `ignoredChanges` ([test strategy](../testing/TEST_STRATEGY.md#46-qa-programme-scripts)).
 3. An execution ledger that links those observations to requirement IDs through reviewed test maps.
 
 The programme never marks a requirement complete. It shows which parts of each requirement have been observed and at which level. The [test strategy](../testing/TEST_STRATEGY.md) defines the levels L0 to L5 and lists every command; the [testing index](../testing/README.md) lists dated results.

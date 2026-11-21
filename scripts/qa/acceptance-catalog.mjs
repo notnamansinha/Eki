@@ -6,6 +6,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { sourceCensus } from './source-census.mjs';
 import { testMap } from '../../qa/test-map.mjs';
+import { describeDirty, workingTreeState } from './working-tree.mjs';
 
 export const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 export const categoryCounts = Object.freeze({ AUTH: 18, PAX: 26, BOARD: 22, MAP: 30,
@@ -200,7 +201,7 @@ export async function buildCatalog(root = repositoryRoot, mappings = testMap) {
     environment: { platform: process.platform, architecture: process.arch, node: process.version,
       workflowRunId: process.env.GITHUB_RUN_ID ?? null, applicationTestsExecuted: false },
     sourceCommit: git(['rev-parse', 'HEAD']),
-    dirty: Boolean(git(['status', '--porcelain', '--untracked-files=all'])),
+    ...workingTreeState(root),
     documents: { [planPath]: plan.manifest, [ledgerPath]: ledger.manifest, [strategyPath]: strategy.manifest },
     cases, simulations: requirements.simulations, documentedSimulations,
     supplements: requirements.supplements, supplementalTables: requirements.supplementalTables, inventory });
@@ -208,7 +209,7 @@ export async function buildCatalog(root = repositoryRoot, mappings = testMap) {
 
 export function reportMarkdown(catalog) {
   const lines = ['# Eki acceptance coverage (static definitions)', '', `Source commit: ${catalog.sourceCommit}`,
-    `Working tree dirty: ${catalog.dirty}. No application acceptance execution imported.`, '',
+    `Working tree dirty: ${describeDirty(catalog)}. No application acceptance execution imported.`, '',
     'Verdict: **NOT_RELEASE_READY**. Static census is L0; declarations and historical records are not current passes.', '',
     '| Category | Defined | Mapped, not run | Unmapped | Historical partial |', '| --- | ---: | ---: | ---: | ---: |'];
   for (const prefix of [...Object.keys(categoryCounts), 'C', 'H', 'AB']) {
@@ -235,7 +236,7 @@ async function main() {
     const markdown = reportMarkdown(catalog); writeFileSync(resolve(output, 'qa-report.md'), markdown);
     if (process.env.GITHUB_STEP_SUMMARY) writeFileSync(process.env.GITHUB_STEP_SUMMARY, markdown, { flag: 'a' });
   }
-  console.log(JSON.stringify({ sourceCommit: catalog.sourceCommit, dirty: catalog.dirty,
+  console.log(JSON.stringify({ sourceCommit: catalog.sourceCommit, dirty: catalog.dirty, ignoredChanges: catalog.ignoredChanges,
     featureCases: 351, matrixCases: 40, experimentProtocols: 8, simulations: catalog.simulations.length,
     planBytes: catalog.documents[planPath].bytes, planFullyScanned: true,
     operations: catalog.inventory.operations.length, controls: catalog.inventory.controls.length,

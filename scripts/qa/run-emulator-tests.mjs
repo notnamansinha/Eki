@@ -7,13 +7,14 @@ import { safetyPreflight } from './safety-preflight.mjs';
 import { emulatorTestMap } from '../../qa/emulator-test-map.mjs';
 import { removeGeneratedDemoConfig } from './emulator-environment.mjs';
 import { verifiedEmulatorTargets } from './evidence-inputs.mjs';
+import { describeDirty, workingTreeState } from './working-tree.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const directory = resolve(root, 'artifacts/qa'); mkdirSync(directory, { recursive: true });
 const json = resolve(directory, 'emulator-vitest.json');
 rmSync(json, { force: true }); rmSync(resolve(directory, 'emulator-junit.xml'), { force: true });
 const report = { sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim(),
-  dirty: Boolean(execFileSync('git', ['status', '--porcelain', '--untracked-files=all'], { cwd: root, encoding: 'utf8' }).trim()),
+  ...workingTreeState(root),
   startedAt: new Date().toISOString(), timezone: 'Asia/Calcutta', level: 'L2',
   workflowRunId: process.env.GITHUB_RUN_ID ?? null, node: process.version, platform: process.platform,
   java: spawnSync('java', ['-version'], { encoding: 'utf8', timeout: 5000 }).stderr?.trim() ?? null,
@@ -61,7 +62,7 @@ try {
 } catch (error) { report.setupError = error.message; console.error(`Emulator QA blocked: ${error.message}`); }
 report.finishedAt = new Date().toISOString();
 writeFileSync(resolve(directory, 'emulator-report.json'), JSON.stringify(report, null, 2) + '\n');
-const markdown = ['# Disposable emulator execution', '', `Commit: ${report.sourceCommit}; dirty: ${report.dirty}; verdict: ${report.verdict}.`,
+const markdown = ['# Disposable emulator execution', '', `Commit: ${report.sourceCommit}; dirty: ${describeDirty(report)}; verdict: ${report.verdict}.`,
   `Observed L2 assertions: ${JSON.stringify(report.counts ?? { blocked: 'setup/runner unavailable' })}.`,
   '', '| Case | Observed scope status |', '| --- | --- |', ...(report.cases ?? []).map(item => `| ${item.caseId} | ${item.status} at L2 |`),
   '', 'Demo namespaces, explicit loopback emulator targets and a preloaded Node socket/DNS guard confine this suite’s SDK transport.',

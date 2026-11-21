@@ -1,8 +1,13 @@
-import { readFile, readdir, writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { backendOriginFromUrl } from "./csp-backend-origin.mjs";
 import { parseRtdbInstanceUrl } from "./rtdb-instance-config.mjs";
-import { inlineScriptHashes } from "./inline-script-hashes.mjs";
+import {
+  cspDirectivePattern,
+  exportedInlineScriptHashes,
+  globalCspHeader,
+  withInlineScriptHashes,
+} from "./inline-script-hashes.mjs";
 import { loadFrontendEnv } from "./load-frontend-env.mjs";
 
 const root = path.resolve(import.meta.dirname, "..");
@@ -12,34 +17,18 @@ loadFrontendEnv(root);
 const output = path.join(root, "frontend", "out");
 const firebasePath = path.join(root, "firebase.json");
 
-async function htmlFiles(directory) {
-  const entries = await readdir(directory, { withFileTypes: true });
-  const nested = await Promise.all(entries.map((entry) => {
-    const target = path.join(directory, entry.name);
-    if (entry.isDirectory()) return htmlFiles(target);
-    return entry.isFile() && entry.name.endsWith(".html") ? [target] : [];
-  }));
-  return nested.flat();
-}
-
-const hashes = new Set();
-for (const file of await htmlFiles(output)) {
-  const html = await readFile(file, "utf8");
-  for (const hash of inlineScriptHashes(html)) hashes.add(hash);
-}
-
-if (hashes.size === 0) throw new Error("No inline Next.js scripts found; refusing to write an empty CSP.");
+const hashes = exportedInlineScriptHashes(output);
+if (hashes.length === 0) throw new Error("No inline Next.js scripts found; refusing to write an empty CSP.");
 
 const firebase = JSON.parse(await readFile(firebasePath, "utf8"));
-const globalHeaders = firebase.hosting.headers.find((entry) => entry.source === "**");
-const csp = globalHeaders?.headers.find((header) => header.key === "Content-Security-Policy");
+const csp = globalCspHeader(firebase);
 if (!csp) throw new Error("Global Content-Security-Policy header not found.");
 
 // Rewrite a managed directive wherever it appears (including as the final,
 // unterminated directive). A missing directive is a build error: reporting
 // success without hashes or sources would ship a policy that blocks the app.
 function replaceDirective(name, sources) {
-  const pattern = new RegExp(`(^|;\\s*)${name} [^;]*`);
+  const pattern = cspDirectivePattern(name);
   if (!pattern.test(csp.value)) {
     throw new Error(`Global Content-Security-Policy has no ${name} directive to update.`);
   }
@@ -66,7 +55,6 @@ const rtdbLongPollSources = [
 // www.google.com): it would run attacker-chosen calls despite the hashes.
 const sources = [
   "'self'",
-  ...[...hashes].sort(),
   "https://apis.google.com",
   "https://www.gstatic.com",
   "https://maps.googleapis.com",
@@ -74,6 +62,10 @@ const sources = [
   ...rtdbLongPollSources,
 ].join(" ");
 replaceDirective("script-src", sources);
+// The inline-script hashes go where withInlineScriptHashes puts them (sorted,
+// after 'self'). The QA clean-tree check (scripts/qa/working-tree.mjs) uses the
+// same function, so it accepts exactly the hashes this build writes.
+csp.value = withInlineScriptHashes(csp.value, hashes);
 const connectSources = [
   "'self'",
   // Workbox fetches Google's Auth helper on controlled pages. The worker's
@@ -108,5 +100,5 @@ const frameSources = [
 ].join(" ");
 replaceDirective("frame-src", frameSources);
 await writeFile(firebasePath, `${JSON.stringify(firebase, null, 2)}\n`);
-console.log(`Updated CSP with ${hashes.size} inline-script hashes.`);
+console.log(`Updated CSP with ${hashes.length} inline-script hashes.`);
 
