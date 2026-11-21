@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WorkerFence } from "../lib/workerFence";
-const fixture = vi.hoisted(() => ({ data: {} as Record<string, any>, listeners: new Map<string, (s: any) => void>(), reads: [] as { path: string; limit?: number }[], fail: false, gate: null as Promise<void> | null, heldPath: "", holdTransaction: false }));
+const fixture = vi.hoisted(() => ({ data: {} as Record<string, any>, listeners: new Map<string, (s: any) => void>(), reads: [] as { path: string; limit?: number }[], updates: [] as { path: string; values: Record<string, any> }[], denyLeafWrites: false, fail: false, gate: null as Promise<void> | null, heldPath: "", holdTransaction: false }));
 vi.mock("../lib/firebaseAdmin", () => {
   const snapshot = (value: any, key: string | null = null): any => ({ key, val: () => value,
     forEach: (fn: (s: any) => void) => Object.entries(value ?? {}).forEach(([k, v]) => fn(snapshot(v, k))) });
@@ -26,18 +26,38 @@ vi.mock("../lib/firebaseAdmin", () => {
       if (next !== undefined) write(path, next);
       return { committed: next !== undefined, snapshot: snapshot(structuredClone(read(path))) };
     },
+    // Stands in for the rules-bound writer: applies a multi-path update only
+    // under the conditions database.rules.json evaluates for it.
+    update: async (values: Record<string, any>) => {
+      fixture.updates.push({ path, values: structuredClone(values) });
+      const current = read(path), next = structuredClone(current ?? {}), touched = new Set<string>();
+      for (const [child, value] of Object.entries(values)) {
+        const parts = child.split("/"); let target = next;
+        for (const part of parts.slice(0, -1)) target = target[part] ??= {};
+        if (value === null) delete target[parts.at(-1)!]; else target[parts.at(-1)!] = structuredClone(value);
+        if (parts[0] === "buses" && parts[1]) touched.add(parts[1]);
+      }
+      const allowed = !fixture.denyLeafWrites && typeof current?._workerGeneration === "number" &&
+        next._workerGeneration === current._workerGeneration && next.revision === current.revision + 1 &&
+        [...touched].every(key => !next.buses?.[key] || ("busId" in next.buses[key] && "routeId" in next.buses[key]));
+      if (!allowed) throw Object.assign(new Error("PERMISSION_DENIED: Permission denied"), { code: "PERMISSION_DENIED" });
+      write(path, next);
+    },
   });
-  return { rtdb: { ref: (path: string) => reference(path) } };
+  return { rtdb: { ref: (path: string) => reference(path) }, liveProjectionWriterRtdb: () => ({ ref: (path: string) => reference(path) }) };
 });
-import { getLiveBusProjectionStatus, publicLiveBus, routeAvailability, startLiveBusProjection } from "./liveBusProjection";
+import { getLiveBusProjectionStatus, projectionLeafChanges, publicLiveBus, routeAvailability, startLiveBusProjection } from "./liveBusProjection";
 import { lifecycleIntakeFingerprint } from "./lifecycleIntake";
 let stop: (() => Promise<void>) | undefined;
 const live = (sessionId = "s1") => ({ busId: "bus1", routeId: "route1", sessionId, deviceState: "online", status: "active", tripState: "in_service", timestamp: Date.now(), lat: 23, lng: 72 });
 const emit = (event: string, value: any) => fixture.listeners.get(event)?.({ key: "bus1_route1", val: () => value });
 async function settle() { for (let n = 0; n < 40; n++) await Promise.resolve(); }
-function start(generation = 1) { const fence = new WorkerFence("test", generation, performance.now() + 100_000); stop = fence.run(startLiveBusProjection); return fence; }
-beforeEach(() => { vi.useFakeTimers(); fixture.data = {}; fixture.listeners.clear(); fixture.reads = []; fixture.fail = false; fixture.gate = null; fixture.heldPath = ""; fixture.holdTransaction = false; });
-afterEach(async () => { await stop?.(); stop = undefined; vi.useRealTimers(); });
+function start(generation = 1, lifetime = 100_000) { const fence = new WorkerFence("test", generation, performance.now() + lifetime); stop = fence.run(startLiveBusProjection); return fence; }
+beforeEach(() => { vi.useFakeTimers(); fixture.data = {}; fixture.listeners.clear(); fixture.reads = []; fixture.updates = []; fixture.denyLeafWrites = false; fixture.fail = false; fixture.gate = null; fixture.heldPath = ""; fixture.holdTransaction = false; });
+afterEach(async () => { await stop?.(); stop = undefined; vi.useRealTimers(); vi.unstubAllEnvs(); });
+const node = "node:bus1_route1", routePath = "publicRouteBuses/route:route1";
+const route = () => fixture.data.publicRouteBuses["route:route1"];
+async function publish(value: any) { fixture.data.activeBuses = { bus1_route1: value }; emit("child_changed", value); await settle(); }
 describe("public live projection", () => {
   it("removes retired assignment presence from both the public view and route catalog", async () => {
     const retired = { ...live(), status: undefined, sessionId: undefined, deviceState: "offline", retiredAssignmentRevision: 2 };
@@ -155,6 +175,108 @@ describe("public live projection", () => {
     const fence = start(); emit("child_changed", live()); await settle();
     fence.revoke(); release(); await settle();
     expect(fixture.data.publicRouteBuses).toBeUndefined();
+  });
+  it("reduces a change to its leaves, with null for a removed field and whole values where that is smaller", () => {
+    const raw = { lat: 23, lng: 72, speed: 10, heading: 90, gpsHdop: 1.2, motionState: "moving", seq: 1, sampledAt: 1_800_000_000_000 };
+    const before = { ...live(), driverId: "driver1", direction: "forward", atStopIndex: 2, rawLocation: raw, unobservedStopIndices: [1, 2] };
+    const one = (change: Record<string, unknown>) => projectionLeafChanges("buses/k", before, { ...before, ...change });
+    expect(one({ lat: 23.5 })).toEqual({ "buses/k/lat": 23.5 });
+    expect(one({ rawLocation: { ...raw, lat: 23.5 } })).toEqual({ "buses/k/rawLocation/lat": 23.5 });
+    // Most of the nested map changed: one replacement beats six full paths.
+    const moved = { lat: 23.5, lng: 72.5, speed: 11, heading: 91, gpsHdop: 1.2, motionState: "moving", seq: 2, sampledAt: 1_800_000_001_000 };
+    expect(one({ rawLocation: moved })).toEqual({ "buses/k/rawLocation": moved });
+    expect(one({ unobservedStopIndices: [1, 2, 3] })).toEqual({ "buses/k/unobservedStopIndices": [1, 2, 3] });
+    expect(one({ matchedLocation: { lat: 23.5 } })).toEqual({ "buses/k/matchedLocation": { lat: 23.5 } });
+    const without = Object.fromEntries(Object.entries(before).filter(([key]) => key !== "atStopIndex" && key !== "rawLocation"));
+    expect(projectionLeafChanges("buses/k", before, without)).toEqual({ "buses/k/atStopIndex": null, "buses/k/rawLocation": null });
+    expect(projectionLeafChanges("buses/k", before, structuredClone(before))).toEqual({});
+    expect(projectionLeafChanges("buses/k", null, before)).toEqual({ "buses/k": before });
+    expect(projectionLeafChanges("buses/k", before, null)).toEqual({ "buses/k": null });
+    // Nearly every field differs: the bus is replaced as one value.
+    const other = { busId: "bus1", routeId: "route1", sessionId: "s9", deviceState: "offline", status: "idle", tripState: "completed", timestamp: 5, lat: 1, lng: 2 };
+    expect(projectionLeafChanges("buses/k", before, other)).toEqual({ "buses/k": other });
+  });
+  it("publishes a position fix as only its changed leaves, stamped with its generation and the next revision", async () => {
+    const raw = { lat: 23, lng: 72, speed: 10, heading: 90, gpsHdop: 1.2, motionState: "moving", seq: 1, sampledAt: 1_800_000_000_000 };
+    const first = { ...live(), seq: 1, rawLocation: raw };
+    start(7); await publish(first);
+    expect(fixture.updates).toEqual([{ path: routePath, values: { _workerGeneration: 7, revision: 2, ["buses/" + node]: publicLiveBus(first) } }]);
+    const moved = { ...first, lat: 23.001, seq: 2, rawLocation: { ...raw, lat: 23.001, seq: 2 } };
+    await publish(moved);
+    expect(fixture.updates.at(-1)).toEqual({ path: routePath, values: { _workerGeneration: 7, revision: 3,
+      [`buses/${node}/lat`]: 23.001, [`buses/${node}/seq`]: 2, [`buses/${node}/rawLocation/lat`]: 23.001, [`buses/${node}/rawLocation/seq`]: 2 } });
+    expect(route()).toEqual({ _workerGeneration: 7, revision: 3, buses: { [node]: publicLiveBus(moved) } });
+    expect(getLiveBusProjectionStatus()).toMatchObject({ writeMode: "leaf", routeClaims: 1, leafWrites: 2, committed: 2, leafWriteDenials: 0 });
+  });
+  it("writes null for a field that left the public value and removes a bus that left the route", async () => {
+    start(); await publish({ ...live(), atStop: { sessionId: "s1", index: 2 }, matchedLocation: { lat: 23, lng: 72 } });
+    expect(route().buses[node]).toMatchObject({ atStopIndex: 2, matchedLocation: { lat: 23, lng: 72 } });
+    await publish(live());
+    expect(fixture.updates.at(-1)!.values).toEqual({ _workerGeneration: 1, revision: 3, [`buses/${node}/atStopIndex`]: null, [`buses/${node}/matchedLocation`]: null });
+    expect(route().buses[node]).toEqual(publicLiveBus(live()));
+    delete fixture.data.activeBuses.bus1_route1; emit("child_removed", live()); await settle();
+    expect(fixture.updates.at(-1)!.values).toEqual({ _workerGeneration: 1, revision: 4, ["buses/" + node]: null });
+    expect(route().buses).toEqual({});
+  });
+  it("has its leaf write denied once a successor claims the route, and never falls back to overwrite it", async () => {
+    start(4); await publish(live("old"));
+    // Generation 5 takes over the route and the catalog, then publishes its own state.
+    // As claimRoute leaves it: a new generation, the revision unchanged, so only
+    // the generation comparison can deny the former leader's next revision.
+    Object.assign(route(), { _workerGeneration: 5, buses: { [node]: publicLiveBus(live("new")) } });
+    const revision = route().revision;
+    fixture.data.liveRouteCatalog._workerGeneration = 5;
+    const writes = fixture.updates.length;
+    await publish({ ...live("old"), lat: 99 });
+    expect(fixture.updates).toHaveLength(writes + 1);
+    expect(fixture.updates.at(-1)!.values).toMatchObject({ _workerGeneration: 4, revision: revision + 1, [`buses/${node}/lat`]: 99 });
+    expect(route()).toEqual({ _workerGeneration: 5, revision, buses: { [node]: publicLiveBus(live("new")) } });
+    expect(getLiveBusProjectionStatus()).toMatchObject({ leafWriteDenials: 1, leafWriteFallbacks: 0, writeMode: "leaf" });
+  });
+  it("adopts a route only from a claim that committed, never from an abort", async () => {
+    start(4); await publish(live());
+    const claims = getLiveBusProjectionStatus() as unknown as Record<string, number>;
+    // An erased bus without a revision change forces a denial and a fresh claim.
+    delete route().buses[node];
+    await publish({ ...live(), lat: 24 });
+    const after = getLiveBusProjectionStatus() as unknown as Record<string, number>;
+    // The claim wrote the unchanged node back rather than aborting, so it was confirmed.
+    expect(after.routeClaims - claims.routeClaims).toBe(1);
+    expect(route()).toMatchObject({ _workerGeneration: 4, buses: { [node]: publicLiveBus({ ...live(), lat: 24 }) } });
+  });
+  it("claims again and repairs the destination when it changed behind the leader's copy", async () => {
+    start(4); await publish(live());
+    // The bus was erased without a revision change: a leaf write would leave a partial record.
+    delete route().buses[node];
+    await publish({ ...live(), lat: 24 });
+    expect(route().buses[node]).toEqual(publicLiveBus({ ...live(), lat: 24 }));
+    // The revision moved without this leader: its next write must not land on the unknown state.
+    route().revision += 3; route().buses[node].tripState = "completed";
+    await publish({ ...live(), lat: 25 });
+    expect(route().buses[node]).toEqual(publicLiveBus({ ...live(), lat: 25 }));
+    expect(getLiveBusProjectionStatus()).toMatchObject({ leafWriteDenials: 2, leafWriteFallbacks: 0, routeClaims: 3, writeMode: "leaf" });
+  });
+  it("keeps publishing through the fenced transaction where rules do not grant the leaf writer, then probes again", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    fixture.denyLeafWrites = true; start(4, 1_000_000); await publish(live());
+    expect(route().buses[node]).toEqual(publicLiveBus(live()));
+    expect(getLiveBusProjectionStatus()).toMatchObject({ writeMode: "transaction-fallback", leafWriteAttempts: 2, leafWriteDenials: 2, leafWriteFallbacks: 1 });
+    expect(warn).toHaveBeenCalledTimes(1);
+    await publish({ ...live(), lat: 24 });
+    expect(route().buses[node].lat).toBe(24);
+    expect(getLiveBusProjectionStatus()).toMatchObject({ leafWriteAttempts: 2 });
+    fixture.denyLeafWrites = false; await vi.advanceTimersByTimeAsync(5 * 60_000); await settle();
+    await publish({ ...live(), lat: 25 });
+    expect(route().buses[node].lat).toBe(25);
+    expect(getLiveBusProjectionStatus()).toMatchObject({ writeMode: "leaf", leafWriteAttempts: 3, leafWriteFallbacks: 1 });
+    warn.mockRestore();
+  });
+  it("publishes by whole-route transaction only when LIVE_PROJECTION_WRITE_MODE=transaction", async () => {
+    vi.stubEnv("LIVE_PROJECTION_WRITE_MODE", "transaction");
+    start(4); await publish(live()); await publish({ ...live(), lat: 24 });
+    expect(route()).toMatchObject({ _workerGeneration: 4, revision: 2, buses: { [node]: { lat: 24 } } });
+    expect(fixture.updates).toHaveLength(0);
+    expect(getLiveBusProjectionStatus()).toMatchObject({ writeMode: "transaction", committed: 2, leafWrites: 0 });
   });
   it("does not continue replay or admit work after a stalled page resolves during shutdown", async () => {
     let release!: () => void; fixture.gate = new Promise<void>(resolve => { release = resolve; });

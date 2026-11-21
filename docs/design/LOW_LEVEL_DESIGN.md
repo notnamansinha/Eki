@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-ARC-003 | 3.3 | Current | 2026-11-12 |
+| EKI-ARC-003 | 3.4 | Current | 2026-11-21 |
 
 ## 1. Introduction
 
@@ -248,7 +248,7 @@ The whole request has an 8 s response deadline and 5 s per dependency stage (`ba
 | Stale sweep | Leader | 1 s tick | 25 nodes per page, 4 writes at once, failure backoff up to 30 s | `tripStateEngine.ts:1361`, `backend/src/services/staleBusSweeper.ts:4` |
 | Completed ride retirement | Leader | 30 s after completion | One timer per node | `tripStateEngine.ts:1273` |
 | Route watcher reconnect | Leader | On listener error | 1 s doubling to 30 s | `tripStateEngine.ts:118` |
-| Public projection readiness and repair | Leader | 1 s and 60 s | One readiness write at a time | `backend/src/services/liveBusProjection.ts:315` |
+| Public projection readiness and repair | Leader | 1 s and 60 s | One readiness write at a time | `backend/src/services/liveBusProjection.ts:429` |
 | Abandoned-ride reconciliation | Leader | Startup and every hour | Pages of 100 | `backend/src/services/abandonedRideReconciler.ts:18`, `backend/src/lib/reconciliationPages.ts:2` |
 | Fleet authorization reconciliation | Leader | Startup and every 10 min | 30 s budget per page; cursor persisted | `workerCoordinator.ts:147`, `workerCoordinator.ts:171` |
 | Privacy deletion queue | Leader | Startup and every 60 s | Pages of 20 requests | `backend/src/services/privacyDeletionWorker.ts:126` |

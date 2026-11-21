@@ -94,3 +94,47 @@ export function workerRtdbTransaction(ref: Reference, update: (current: any) => 
       ? { ...next, _workerGeneration: fence.generation } : next;
   }, undefined, false);
 }
+
+/**
+ * `auth.uid` of the rules-bound Admin handle used for fenced multi-path
+ * updates. `database.rules.json` grants this identity, and no other, a
+ * conditional write; securityConfig.test.ts keeps the two in step.
+ */
+export const RTDB_FENCED_WRITER_UID = "eki:live-projection-writer";
+
+/**
+ * The `databaseAuthVariableOverride` for that handle. Ordinary sign-in cannot
+ * produce this uid; a custom token for it needs the project's service-account
+ * signing rights, which already amount to Admin access. The rules cannot tell
+ * the override from such a token: the emulator also exposes custom-token
+ * claims as top-level `auth` variables.
+ */
+export const RTDB_FENCED_WRITER_AUTH = Object.freeze({ uid: RTDB_FENCED_WRITER_UID });
+
+/**
+ * Multi-path update fenced at the destination by security rules instead of a
+ * read-modify-write, so listeners receive only the written leaves. Rules see
+ * the merged result, so they cannot tell an omitted `_workerGeneration` from
+ * an unchanged one: the fence relies on this helper always writing the
+ * caller's own generation, as `workerRtdbTransaction` always stamped it.
+ *
+ * `ref` must come from the rules-bound handle (`liveProjectionWriterRtdb`).
+ * Its `.write` rule compares the `_workerGeneration` stamped here with the
+ * stored one and rejects the whole update unless they are equal, atomically
+ * with the write. A route is therefore claimed with `workerRtdbTransaction`
+ * first; after a successor claims it, every update from this generation is
+ * denied. An unrestricted Admin reference bypasses rules, and with them the
+ * fence: never pass one.
+ */
+export function workerRtdbFencedUpdate(ref: Pick<Reference, "update">, values: Record<string, unknown>): Promise<void> {
+  const fence = context.getStore();
+  if (!fence) throw new Error("A fenced RTDB update requires worker leadership.");
+  fence.assert();
+  return ref.update({ ...values, _workerGeneration: fence.generation });
+}
+
+/** Rules denied the write: a successor generation, a drifted revision, or rules that do not grant the fenced writer. */
+export function isRtdbPermissionDenied(error: unknown): boolean {
+  const { code, message } = (error ?? {}) as { code?: unknown; message?: unknown };
+  return /permission[_ ]denied/i.test(`${typeof code === "string" ? code : ""} ${typeof message === "string" ? message : ""}`);
+}
