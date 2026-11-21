@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-PKG-007 | 2.3 | Current | 2026-11-12 |
+| EKI-PKG-007 | 2.4 | Current | 2026-11-21 |
 
 ## 1. Purpose
 
@@ -17,7 +17,7 @@ npx playwright install chromium
 npm run test:e2e:admin
 ```
 
-`npm run test:e2e:admin` uses `playwright.admin-access.config.ts`. It starts the Vite fixture in this folder on `http://127.0.0.1:3105` and runs `e2e/admin-access.spec.ts` and every `e2e/admin-access/*.spec.ts` (`resilience.spec.ts`, `cold-open.spec.ts`, `landing-layout.spec.ts`, `public-reflow.spec.ts` and `non-latin-reflow.spec.ts`) in two projects: mobile (390 x 844) and desktop (1280 x 800). The default `playwright.config.ts` ignores these files.
+`npm run test:e2e:admin` uses `playwright.admin-access.config.ts`. It starts the Vite fixture in this folder on `http://127.0.0.1:3105` and runs `e2e/admin-access.spec.ts` and every `e2e/admin-access/*.spec.ts` (`resilience.spec.ts`, `cold-open.spec.ts`, `landing-layout.spec.ts`, `install-layout.spec.ts`, `public-reflow.spec.ts` and `non-latin-reflow.spec.ts`) in two projects: mobile (390 x 844) and desktop (1280 x 800). The default `playwright.config.ts` ignores these files.
 
 To run the same checks against another revision for an A/B baseline, set `EKI_ADMIN_ACCESS_SRC` to that checkout's `frontend/src`, with its `node_modules` reachable from it.
 
@@ -35,7 +35,7 @@ The fixture selects a scenario from the query string.
 | `?dashboard`, `?dashboard&fleet` | Live fleet details stay reachable below the service controls on a short screen; End ride early stays reachable by wheel scrolling among several expanded rides on desktop and is offered in the live details drawer (`/api/shifts/stop` is intercepted) |
 | `?traceExport`, `?telemetryTrace=1` | Passenger, driver and admin each download their own tab's opt-in telemetry trace without a protected health request; traces record the browser online and reduced-motion state |
 | `?restoreHang`, `?landing&restoreHang` | Cold open while a saved session is still restoring (`cold-open.spec.ts`, Section 3.1); the landing page fit (`landing-layout.spec.ts`, Section 3.2) |
-| `?install` | The install page inside the root layout body flex column; public page reflow (`public-reflow.spec.ts`, Section 3.3) and non-Latin reflow (`non-latin-reflow.spec.ts`, Section 3.4) |
+| `?install` | The install page inside the root layout body flex column; the desktop branch's controls (`install-layout.spec.ts`, Section 3.5), public page reflow (`public-reflow.spec.ts`, Section 3.3) and non-Latin reflow (`non-latin-reflow.spec.ts`, Section 3.4) |
 
 `resilience.spec.ts` races feedback reads and status writes against sign-out and account switches: a late result never reaches the next account, a dropped read recovers through Retry, and rapid offline and online flapping settles on one ready fleet.
 
@@ -65,6 +65,10 @@ Eki ships English-only ([EKI-ADR-005](../../docs/design/LOCALE_SCOPE_DECISION.md
 - serves the admin feedback list (`?embedded`) one entry whose passenger name and comment are in that script, and expands it.
 
 Each test fails if the page scrolls sideways, or if a visible element holding the sample text leaves the viewport or clips its text horizontally, itself or through an ancestor that clips its overflow (`overflow-x` other than `visible`, or paint containment); a single line cut with an ellipsis by design, such as the feedback author's name, counts as fitting. Two negative controls (`overflow: hidden` and `overflow: clip`) load a 200 px paragraph inside a 100 px clipping ancestor and require the measurement to report it. The samples break at spaces or by the browser's Thai and Japanese rules; long tokens with no break point are covered by `public-reflow.spec.ts` (Section 3.3, [issue #521](https://github.com/notnamansinha/Eki/issues/521)). The document stays `lang="en"` and left to right, and the browser locale is not changed.
+
+### 3.5 Install page on a computer
+
+`install-layout.spec.ts` covers issue #516, where a computer saw one sentence on `/install` and nothing to focus. It runs in the `desktop` project only, whose desktop user agent selects the desktop branch, and opens `?install` at 1280 x 720, 1280 x 585, 390 x 844 and 320 x 568 with clipboard permissions granted. After removing the fixture controls it requires at least one tabbable element in `main`; **Copy link** and **Back to Eki** (`href="/"`) fully inside the viewport and at least 44 px high; Tab to reach **Copy link** and then **Back to Eki**; no horizontal or vertical page scroll; **Copy link** to put the page address on the clipboard and read "Link copied"; and **Back to Eki** to navigate to `/`.
 
 ## 4. Boundaries
 

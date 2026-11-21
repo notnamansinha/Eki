@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { detectInstallPlatform, type InstallPlatform } from "@/lib/installPlatform";
 
@@ -68,6 +69,12 @@ export default function InstallClient() {
 
   const button =
     "w-full rounded-xl bg-[#b3262a] px-4 py-3 text-base font-semibold text-white disabled:opacity-60";
+  // Shared by the iOS-in-another-browser and desktop branches.
+  const copyLinkButton = (
+    <button type="button" className={button} onClick={copyLink}>
+      {copied ? "Link copied" : "Copy link"}
+    </button>
+  );
 
   return (
     <main className="public-page-shell mx-auto flex min-h-screen max-w-md flex-col justify-center gap-6 px-4 py-10">
@@ -143,15 +150,23 @@ export default function InstallClient() {
             For the most reliable install on iPhone, open this page in Safari. Copy the link, open it in
             Safari, then tap Share and Add to Home Screen.
           </p>
-          <button type="button" className={button} onClick={copyLink}>
-            {copied ? "Link copied" : "Copy link"}
-          </button>
+          {copyLinkButton}
         </div>
       )}
 
+      {/* #516: let a computer visitor copy the link to send to their phone. */}
       {platform === "desktop" && (
-        <p>Open this link on your phone to install Eki.</p>
+        <div className="space-y-3">
+          <p>Open this link on your phone to install Eki.</p>
+          {copyLinkButton}
+        </div>
       )}
+
+      {/* Server-rendered on every branch, including without JavaScript, so the page is never a dead end (#516).
+          No prefetch: most visitors copy the link or install, so the landing page is fetched only on click. */}
+      <Link href="/" prefetch={false} className="inline-flex min-h-11 items-center self-start font-semibold underline underline-offset-4">
+        Back to Eki
+      </Link>
     </main>
   );
 }

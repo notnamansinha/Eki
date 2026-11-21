@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-UIX-001 | 3.4 | Current | 2026-11-12 |
+| EKI-UIX-001 | 3.5 | Current | 2026-11-21 |
 
 ## 1. Purpose
 
@@ -649,7 +649,9 @@ Unit tests in `components/passenger/PassengerWorkspace.test.tsx` ("phone Live ro
 | Android | An **Install Eki** button when the browser has fired `beforeinstallprompt` ("Installing…" while the prompt is open); otherwise three steps for the Chrome menu, **Install app** or **Add to Home screen** |
 | iOS Safari | Three steps: **Share**, **Add to Home Screen**, **Add** |
 | iOS in another browser or an in-app view | Advice to open the page in Safari, with **Copy link** ("Link copied") |
-| Desktop | "Open this link on your phone to install Eki." |
+| Desktop | "Open this link on your phone to install Eki." with **Copy link** ("Link copied"), the same button as the iOS branch |
+
+Every branch, including the no-JavaScript one, ends with **Back to Eki**, a link to `/` (semibold, underlined, at least 44 px high, sized to its text), so the page always has something to focus (issue #516). On a failed clipboard write **Copy link** keeps its label; it reads "Link copied" only after the write succeeds.
 
 The page is a single column at most 28 rem wide with a 30 px bold title. The installed message appears after the browser's `appinstalled` event, not when the prompt closes. Its buttons are `#b3262a` with white 16 px semibold text, at 6.51:1 contrast (Section 4).
 
@@ -776,7 +778,7 @@ On Android, an installed app that does not draw behind the gesture bar gets a st
 | Names | Icon-only buttons carry `aria-label` (for example "Back to home", "Center on bus", "Show route overview", "Show live routes", "Back to all routes", "Open live details for <bus>"). Bus glyphs have `role="img"` with a status label; stop markers are buttons named "Show stop <name>", with the visit state appended when the stop is passed or the bus is there. |
 | Colour is not the only signal | Health states, stop states and ride states always have a text label; passed stops also carry a tick badge and unconfirmed stops a dashed border. |
 | Forced colours | Under `forced-colors: active` the Routes headers, which lose their AU Red band, regain a `CanvasText` bottom edge. |
-| Touch targets | The convention is 44 px (`size-11`, `h-11`, `min-h-11`, and `min-height: 44px` on `.pp-btn-*` and admin fields): passenger back button, map stop buttons, select controls, dialog close buttons, navigation buttons; Profile rows are at least 56 px. `e2e/admin-responsive.spec.ts` asserts at least 44 × 44 px for the route editor's move and remove stop buttons, and `e2e/passenger-layout/routes-schedule.spec.ts` asserts at least 44 px high navigation buttons at 320 px and 375 px widths. |
+| Touch targets | The convention is 44 px (`size-11`, `h-11`, `min-h-11`, and `min-height: 44px` on `.pp-btn-*` and admin fields): passenger back button, map stop buttons, select controls, dialog close buttons, navigation buttons; Profile rows are at least 56 px. `e2e/admin-responsive.spec.ts` asserts at least 44 × 44 px for the route editor's move and remove stop buttons, and `e2e/passenger-layout/routes-schedule.spec.ts` asserts at least 44 px high navigation buttons at 320 px and 375 px widths. `e2e/admin-access/install-layout.spec.ts` asserts at least 44 px high **Copy link** and **Back to Eki** on the desktop `/install` branch. |
 | Reduced motion | Section 8.3. |
 | Language and indexing | `<html lang="en">`, left to right, English copy only; text that people enter in other scripts is shown as typed and must reflow at 320 px ([EKI-ADR-005](LOCALE_SCOPE_DECISION.md), Proposed). Protected routes are `noindex`. |
 
@@ -785,7 +787,7 @@ On Android, an installed app that does not draw behind the gesture bar gets a st
 | Gap | Location |
 |---|---|
 | Text contrast below AA for the default danger dialog button shown outside the workspaces (Section 4). | `ConfirmModal.tsx` |
-| Controls below the 44 px convention: the fleet card eye button (36 px), delay buttons (36 px minimum) and **End ride early** in the card (40 px). All exceed the 24 px minimum of SC 2.5.8 [1]. | `DashboardPanel.tsx:473`, `:566`, `:578` |
+| Controls below the 44 px convention: the fleet card eye button (36 px), delay buttons (36 px minimum), **End ride early** in the card (40 px) and the landing footer link **Install the app** (24 px minimum height, so the footer stays on one row). All meet the 24 px minimum of SC 2.5.8 [1]. | `DashboardPanel.tsx:473`, `:566`, `:578`, `shared/InstallGuideLink.tsx:37` |
 | `html { scroll-behavior: smooth; }` and the smooth scrolling of the phone route list are not reset under reduced motion. | `app/globals.css` |
 | `animate-in fade-in` on both dialogs produces no CSS, because no plugin defines these classes. | `ConfirmModal.tsx`, `AlertModal.tsx` |
 
