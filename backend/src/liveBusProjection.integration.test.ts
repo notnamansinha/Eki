@@ -1,5 +1,3 @@
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { deleteApp, initializeApp, type App } from "firebase-admin/app";
 import { getDatabase, type Database } from "firebase-admin/database";
@@ -12,6 +10,7 @@ vi.mock("./lib/firebaseAdmin", () => ({ get rtdb() { return projectionFixture.re
     projectionFixture.writer.ref(decodeURIComponent(new URL(projectionFixture.realtime.ref(path).toString()).pathname)) }) }));
 import { getLiveBusProjectionStatus, publicLiveBus, routeAvailability, startLiveBusProjection } from "./services/liveBusProjection";
 import { RTDB_FENCED_WRITER_AUTH, WorkerFence, workerRtdbTransaction } from "./lib/workerFence";
+import { installCommittedDatabaseRules } from "./test-support/emulatorIsolation";
 import { lifecycleIntakeFingerprint } from "./services/lifecycleIntake";
 import { retireDeviceAssignment } from "./services/deviceAssignmentRetirement";
 const integration = process.env.FIREBASE_RULES_TEST === "1" ? describe : describe.skip;
@@ -25,9 +24,7 @@ integration("R14 loopback transaction and payload measurement", () => {
     realtime = getDatabase(app);
     writerApp = initializeApp({ ...app.options, databaseAuthVariableOverride: { ...RTDB_FENCED_WRITER_AUTH } }, "r14-measurement-fenced-writer");
     projectionFixture.writer = getDatabase(writerApp);
-    const rules = await fetch(`http://${host}/.settings/rules.json?ns=demo-eki-rules-test-default-rtdb`, { method: "PUT", headers: { Authorization: "Bearer owner", "Content-Type": "application/json" },
-      body: readFileSync(process.env.DATABASE_RULES_PATH || resolve(__dirname, "../../database.rules.json"), "utf8") });
-    if (!rules.ok) throw Error(`Failed to install loopback RTDB rules: ${rules.status}`);
+    await installCommittedDatabaseRules("demo-eki-rules-test", host);
   });
   afterAll(async () => { if (writerApp) await deleteApp(writerApp); if (app) await deleteApp(app); });
   it("retires old device presence through actual RTDB transactions and removes its public availability", async () => {

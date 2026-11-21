@@ -3,10 +3,8 @@ import type { Server } from "node:http";
 import { initializeApp, deleteApp, type App } from "firebase-admin/app";
 import { Firestore, Timestamp } from "firebase-admin/firestore";
 import { getDatabase, type Database } from "firebase-admin/database";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { emulatorDatabaseUrl } from "./test-support/emulatorIsolation";
+import { emulatorDatabaseUrl, installCommittedDatabaseRules } from "./test-support/emulatorIsolation";
 const state = vi.hoisted(() => ({ firestore: null as Firestore | null, realtime: null as Database | null, writer: null as Database | null }));
 vi.mock("./lib/firebaseAdmin", () => ({
   db: { collection: (name: string) => state.firestore!.collection(name),
@@ -54,9 +52,7 @@ integration("authenticated telemetry to durable lifecycle and public emulator pr
     // The public projection publishes through the rules-bound writer, as in production.
     writerApp = initializeApp({ ...app.options, databaseAuthVariableOverride: { ...RTDB_FENCED_WRITER_AUTH } }, "qa-ingest-fenced-writer");
     state.writer = getDatabase(writerApp);
-    const rules = await fetch("http://127.0.0.1:9005/.settings/rules.json?ns=demo-eki-ingest-test-default-rtdb", { method: "PUT", headers: { Authorization: "Bearer owner", "Content-Type": "application/json" },
-      body: readFileSync(process.env.DATABASE_RULES_PATH || resolve(__dirname, "../../database.rules.json"), "utf8") });
-    if (!rules.ok) throw new Error(`Failed to install loopback RTDB rules: ${rules.status}`);
+    await installCommittedDatabaseRules("demo-eki-ingest-test");
     const web = express();
     web.use("/api/devices/:deviceId/telemetry", (_req, res, next) => { res.locals.telemetryServerReceivedAt = Date.now(); next(); });
     web.use("/api/devices/:deviceId/telemetry", express.json({ limit: "512b", strict: true }));

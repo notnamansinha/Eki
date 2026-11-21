@@ -1,10 +1,9 @@
-import { readFileSync } from "node:fs";
 import net from "node:net";
-import { resolve } from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { deleteApp, initializeApp, type App } from "firebase-admin/app";
 import { getDatabase, type Database, type DataSnapshot } from "firebase-admin/database";
 import { RTDB_FENCED_WRITER_AUTH, WorkerFence, workerRtdbFencedUpdate, workerRtdbTransaction } from "./lib/workerFence";
+import { installCommittedDatabaseRules } from "./test-support/emulatorIsolation";
 
 const fixture = vi.hoisted(() => ({ realtime: null as Database | null, writer: null as Database | null, failures: vi.fn(),
   leafWrites: [] as Array<{ generation: unknown; denied: boolean; values: Record<string, unknown> }> }));
@@ -96,9 +95,7 @@ integration("R14 actual SDK publisher fences, recovery and listener isolation", 
     writerApp = initializeApp({ ...app.options, databaseAuthVariableOverride: { ...RTDB_FENCED_WRITER_AUTH } }, "r14-sdk-fenced-writer");
     fixture.writer = getDatabase(writerApp);
     // The fence under test is the committed rule set, installed on this disposable namespace.
-    const rules = await fetch(`http://${host}/.settings/rules.json?ns=${NAMESPACE}`, { method: "PUT", headers: { Authorization: "Bearer owner", "Content-Type": "application/json" },
-      body: readFileSync(process.env.DATABASE_RULES_PATH || resolve(__dirname, "../../database.rules.json"), "utf8") });
-    if (!rules.ok) throw Error(`Failed to install loopback RTDB rules: ${rules.status}`);
+    await installCommittedDatabaseRules("demo-eki-rules-test", host);
   });
   beforeEach(async () => {
     fixture.failures.mockClear(); fixture.leafWrites.length = 0;
