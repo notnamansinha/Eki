@@ -651,7 +651,7 @@ Unit tests in `components/passenger/PassengerWorkspace.test.tsx` ("phone Live ro
 | iOS in another browser or an in-app view | Advice to open the page in Safari, with **Copy link** ("Link copied") |
 | Desktop | "Open this link on your phone to install Eki." with **Copy link** ("Link copied"), the same button as the iOS branch |
 
-Every branch, including the no-JavaScript one, ends with **Back to Eki**, a link to `/` (semibold, underlined, at least 44 px high, sized to its text), so the page always has something to focus (issue #516). On a failed clipboard write **Copy link** keeps its label; it reads "Link copied" only after the write succeeds.
+Every branch, including the no-JavaScript one, ends with **Back to Eki**, a link to `/` (semibold, underlined, at least 44 px high, sized to its text), so the page always has something to focus (issue #516). **Copy link** reads "Link copied" only after the clipboard write succeeds; after a failed write it shows **Copy link**.
 
 The page is a single column at most 28 rem wide with a 30 px bold title. The installed message appears after the browser's `appinstalled` event, not when the prompt closes. Its buttons are `#b3262a` with white 16 px semibold text, at 6.51:1 contrast (Section 4).
 
@@ -787,7 +787,7 @@ On Android, an installed app that does not draw behind the gesture bar gets a st
 | Gap | Location |
 |---|---|
 | Text contrast below AA for the default danger dialog button shown outside the workspaces (Section 4). | `ConfirmModal.tsx` |
-| Controls below the 44 px convention: the fleet card eye button (36 px), delay buttons (36 px minimum), **End ride early** in the card (40 px) and the landing footer link **Install the app** (24 px minimum height, so the footer stays on one row). All meet the 24 px minimum of SC 2.5.8 [1]. | `DashboardPanel.tsx:473`, `:566`, `:578`, `shared/InstallGuideLink.tsx:37` |
+| Controls below the 44 px convention: the fleet card eye button (36 px), delay buttons (36 px minimum), **End ride early** in the card (40 px) and the landing footer link **Install the app** (24 px minimum height, so the footer stays on one row). All meet the 24 px minimum of SC 2.5.8 [1]. | `DashboardPanel.tsx:473`, `:566`, `:578`, `shared/InstallGuideLink.tsx:12` |
 | `html { scroll-behavior: smooth; }` and the smooth scrolling of the phone route list are not reset under reduced motion. | `app/globals.css` |
 | `animate-in fade-in` on both dialogs produces no CSS, because no plugin defines these classes. | `ConfirmModal.tsx`, `AlertModal.tsx` |
 

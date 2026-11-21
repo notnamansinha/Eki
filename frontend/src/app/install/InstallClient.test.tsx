@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { renderToString } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { detectInstallPlatform } from "@/lib/installPlatform";
 import InstallClient from "./InstallClient";
@@ -137,5 +138,18 @@ describe("InstallClient", () => {
       cleanup();
       vi.restoreAllMocks();
     }
+    // Installed (standalone display mode).
+    setup(ANDROID);
+    window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as unknown as typeof window.matchMedia;
+    render(<InstallClient />);
+    expect(screen.getByText(/Eki is installed/)).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Back to Eki" }).getAttribute("href")).toBe("/");
+  });
+
+  it("server-renders the link back, so it works before hydration and without JavaScript", () => {
+    const html = renderToString(<InstallClient />);
+    expect(html).toContain("Checking your device…");
+    expect(html).toMatch(/<a [^>]*href="\/"[^>]*>Back to Eki<\/a>/);
+    expect(html).not.toContain("Copy link");
   });
 });

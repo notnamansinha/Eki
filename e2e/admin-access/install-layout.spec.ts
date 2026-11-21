@@ -3,8 +3,8 @@ import { expect, test } from "@playwright/test";
 // Issue #516: on a computer /install held one sentence and nothing focusable, so a
 // keyboard walk found no tabbable element and the page was a dead end. The desktop
 // branch now offers Copy link, and every branch links back to the landing page.
-// The project's desktop user agent selects the desktop branch; the viewport is set
-// per test, so one project is enough.
+// Both projects use a desktop Chrome user agent, which selects the desktop branch;
+// the viewport is set per test, so one project is enough.
 test.beforeEach(({ page }, info) => {
   test.skip(info.project.name !== "desktop", "viewports are set per test");
   return page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
@@ -54,5 +54,30 @@ for (const viewport of [
 
     await back.click();
     await page.waitForURL(url => url.pathname === "/" && url.search === "");
+  });
+}
+
+// The phone branches gained the same link; they must still fit a small phone.
+const PHONES = {
+  android: "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chrome/120.0 Mobile Safari/537.36",
+  "iPhone Chrome": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/120.0 Mobile/15E148 Safari/604.1",
+};
+for (const [platform, userAgent] of Object.entries(PHONES)) {
+  test(`install page on ${platform} links back without scrolling at 320x568`, async ({ browser, baseURL }) => {
+    const context = await browser.newContext({ baseURL, userAgent, viewport: { width: 320, height: 568 } });
+    try {
+      const page = await context.newPage();
+      await page.goto("/?install");
+      await expect(page.getByRole("heading", { name: "Install Eki", level: 1 })).toBeVisible();
+      await expect(page.getByText("Checking your device…")).toHaveCount(0);
+      const back = page.getByRole("link", { name: "Back to Eki" });
+      await expect(back).toHaveAttribute("href", "/");
+      await expect(back).toBeInViewport({ ratio: 1 });
+      expect((await back.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+      const size = await page.evaluate(() => ({
+        scrollWidth: document.documentElement.scrollWidth, scrollHeight: document.documentElement.scrollHeight }));
+      expect(size.scrollWidth).toBeLessThanOrEqual(320);
+      expect(size.scrollHeight).toBeLessThanOrEqual(568);
+    } finally { await context.close(); }
   });
 }

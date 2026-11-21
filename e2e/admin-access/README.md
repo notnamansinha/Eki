@@ -35,7 +35,7 @@ The fixture selects a scenario from the query string.
 | `?dashboard`, `?dashboard&fleet` | Live fleet details stay reachable below the service controls on a short screen; End ride early stays reachable by wheel scrolling among several expanded rides on desktop and is offered in the live details drawer (`/api/shifts/stop` is intercepted) |
 | `?traceExport`, `?telemetryTrace=1` | Passenger, driver and admin each download their own tab's opt-in telemetry trace without a protected health request; traces record the browser online and reduced-motion state |
 | `?restoreHang`, `?landing&restoreHang` | Cold open while a saved session is still restoring (`cold-open.spec.ts`, Section 3.1); the landing page fit (`landing-layout.spec.ts`, Section 3.2) |
-| `?install` | The install page inside the root layout body flex column; the desktop branch's controls (`install-layout.spec.ts`, Section 3.5), public page reflow (`public-reflow.spec.ts`, Section 3.3) and non-Latin reflow (`non-latin-reflow.spec.ts`, Section 3.4) |
+| `?install` | The install page inside the root layout body flex column; public page reflow (`public-reflow.spec.ts`, Section 3.3), non-Latin reflow (`non-latin-reflow.spec.ts`, Section 3.4) and the install page controls (`install-layout.spec.ts`, Section 3.5) |
 
 `resilience.spec.ts` races feedback reads and status writes against sign-out and account switches: a late result never reaches the next account, a dropped read recovers through Retry, and rapid offline and online flapping settles on one ready fleet.
 
@@ -68,7 +68,7 @@ Each test fails if the page scrolls sideways, or if a visible element holding th
 
 ### 3.5 Install page on a computer
 
-`install-layout.spec.ts` covers issue #516, where a computer saw one sentence on `/install` and nothing to focus. It runs in the `desktop` project only, whose desktop user agent selects the desktop branch, and opens `?install` at 1280 x 720, 1280 x 585, 390 x 844 and 320 x 568 with clipboard permissions granted. After removing the fixture controls it requires at least one tabbable element in `main`; **Copy link** and **Back to Eki** (`href="/"`) fully inside the viewport and at least 44 px high; Tab to reach **Copy link** and then **Back to Eki**; no horizontal or vertical page scroll; **Copy link** to put the page address on the clipboard and read "Link copied"; and **Back to Eki** to navigate to `/`.
+`install-layout.spec.ts` covers issue #516, where a computer saw one sentence on `/install` and nothing to focus. Both projects use a desktop Chrome user agent, which selects the desktop branch; the viewport is set per test, so the spec runs in the `desktop` project only. It opens `?install` at 1280 x 720, 1280 x 585, 390 x 844 and 320 x 568 with clipboard permissions granted. After removing the fixture controls it requires at least one tabbable element in `main`; **Copy link** and **Back to Eki** (`href="/"`) fully inside the viewport and at least 44 px high; Tab to reach **Copy link** and then **Back to Eki**; no horizontal or vertical page scroll; **Copy link** to put the page address on the clipboard and read "Link copied"; and **Back to Eki** to load `/`. The fixture's `next/link` stub is a plain anchor (it keeps `className`), so this is a full page load, not a client-side navigation. With Android and iPhone Chrome user agents at 320 x 568 it also requires **Back to Eki** in the viewport, at least 44 px high, with no page scroll. The no-JavaScript link is checked in `e2e/no-script/no-script.spec.ts`.
 
 ## 4. Boundaries
 
