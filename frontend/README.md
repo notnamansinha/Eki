@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-PKG-002 | 4.1 | Current | 2026-11-12 |
+| EKI-PKG-002 | 5.0 | Current | 2026-11-21 |
 
 ## 1. Purpose
 
@@ -63,7 +63,7 @@ Root scripts that build or check the frontend:
 
 | Script | Effect on the frontend |
 |---|---|
-| `npm run build` | Backend build, `next build`, `scripts/generate-sw.mjs`, `scripts/update-csp.mjs`, `scripts/verify-web-backend-contract.mjs`. |
+| `npm run build` | Backend build, `next build`, `scripts/compile-hints.mjs`, `scripts/generate-sw.mjs`, `scripts/update-csp.mjs`, `scripts/verify-web-backend-contract.mjs`. |
 | `npm run build:production` | `npm run build` with `EKI_STRICT_PRODUCTION_BUILD=true`. See [Section 11](#11-static-export-and-hosting). |
 | `npm run verify:ui-contracts` | Source checks in `scripts/verify-ui-contracts.mjs`, for example that the passenger map uses the shared stop-label helper. |
 | `npm run test:e2e:admin` | Playwright admin, auth, landing-page layout and feedback suite with synthetic Firebase dependencies. |
@@ -169,7 +169,7 @@ The [HTTP contract](../docs/api/HTTP_CONTRACT.md) and the [API reference](../bac
 
 `src/app/manifest.ts` produces the manifest. Its colours and icons are listed in the [UI design system](../docs/design/UI_DESIGN_SYSTEM.md#9-pwa-manifest-and-map-styling).
 
-`scripts/generate-sw.mjs` runs after `next build`. It uses Workbox `injectManifest` to bundle `src/sw.js` into `frontend/out/sw.js`. The precache holds every exported HTML file, `manifest.webmanifest`, `icon*.png`, `apple-icon.png`, and every `/_next/static` JavaScript or CSS file that an exported HTML file references. The build fails if one file exceeds 1 MB or the precache exceeds 2 MB. When the inputs are unchanged, the script reuses the `sw.js` cached in `frontend/.next/cache/sw/`.
+`scripts/generate-sw.mjs` runs after `next build` and `scripts/compile-hints.mjs`. It uses Workbox `injectManifest` to bundle `src/sw.js` into `frontend/out/sw.js`. The precache holds every exported HTML file, `manifest.webmanifest`, `icon*.png`, `apple-icon.png`, and every `/_next/static` JavaScript or CSS file that an exported HTML file references. The build fails if one file exceeds 1 MB or the precache exceeds 2 MB. When the inputs are unchanged, the script reuses the `sw.js` cached in `frontend/.next/cache/sw/`.
 
 | Requests | Strategy | Cache |
 |---|---|---|
@@ -208,6 +208,8 @@ For work on this package:
 | `devIndicators` | Shown only when `EKI_DEVTOOLS=true`. |
 
 With `EKI_STRICT_PRODUCTION_BUILD=true`, which `npm run build:production` sets, `next.config.ts` fails if any required `NEXT_PUBLIC_*` value is missing, or if `NEXT_PUBLIC_FIREBASE_DATABASE_URL` or `NEXT_PUBLIC_BACKEND_URL` is not a non-local HTTPS URL.
+
+After `next build`, `scripts/compile-hints.mjs` adds V8's `//# allFunctionsCalledOnLoad` comment as the first line of every `/_next/static/chunks/*.js` file that `out/index.html` loads with a `<script src>` (not the `nomodule` polyfill), and moves each file's source map down one line. All but one of those chunks are the root chunks every page loads. Without the comment, V8 compiles each Turbopack module lazily on the main thread when hydration first runs it, which was most of the landing page's one long task (#498). With it, Chromium compiles these files on the background thread that streams them. Other browsers ignore the comment. Chunk names do not change. The step fails the build when these chunks exceed 170 KiB gzipped (`LANDING_JS_GZIP_BUDGET_BYTES`), because hydration time grows with them. `scripts/compile-hints.test.mjs` checks the step and that it runs before `scripts/generate-sw.mjs`.
 
 Firebase Hosting serves `frontend/out` with `cleanUrls: true`. The header rule for `/`, `/admin`, `/feedback`, `/install` and `/passenger` sends `Cache-Control: no-cache, no-store, must-revalidate`. It lists every top-level page folder in `src/app`, and `backend/src/securityConfig.test.ts` fails when a new page is not added to it. `/_next/static/**` is sent as immutable for one year, and images for 30 days with one day of stale-while-revalidate. `/sw.js` is never cached and carries `Service-Worker-Allowed: /`. A path with no file gets `404.html` (exported from `src/app/not-found.tsx`, with a link back to `/`) and HTTP 404. Hosting matches header rules for that page against `404.html`, so the `/404.html` rule sends it with the same `no-cache, no-store, must-revalidate`; without it Hosting adds its default one-hour `max-age=3600`, and a URL that becomes valid after a release could keep showing the 404 for an hour. `scripts/hosting-not-found.test.mjs` checks this. The release procedure is in [CI/CD and releases](../docs/operations/CI_CD_AND_RELEASES.md).
 
