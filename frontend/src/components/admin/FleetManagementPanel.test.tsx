@@ -7,13 +7,13 @@ import type { ActiveBusEntry } from "@/lib/activeBusEntries";
 import type { UseActiveBusesOptions } from "@/hooks/useActiveBuses";
 import { hasUnsavedChanges } from "@/lib/unsavedChanges";
 const DEFAULT_BUSES = [{ id: "qa-bus", name: "QA Bus", assignedRoutes: ["qa-route"] as string[] | undefined, assignedRouteId: undefined as string | undefined }];
-const live = vi.hoisted(() => ({ entries: [] as ActiveBusEntry[], options: null as UseActiveBusesOptions | null, buses: [] as Array<{ id: string; name: string; assignedRoutes?: string[]; assignedRouteId?: string }> }));
+const live = vi.hoisted(() => ({ entries: [] as ActiveBusEntry[], options: null as UseActiveBusesOptions | null, driversUnavailable: false, buses: [] as Array<{ id: string; name: string; assignedRoutes?: string[]; assignedRouteId?: string }> }));
 vi.mock("@/hooks/useBuses", () => ({ useBuses: () => ({ buses: live.buses, loading: false }) }));
-vi.mock("@/hooks/useDrivers", () => ({ useDrivers: () => ({ drivers: [{ id: "qa-driver", name: "QA Driver", authUid: "qa-driver-uid", busId: "qa-bus" }], loading: false }) }));
+vi.mock("@/hooks/useDrivers", () => { const drivers = [{ id: "qa-driver", name: "QA Driver", authUid: "qa-driver-uid", busId: "qa-bus" }]; return { useDrivers: () => ({ drivers: live.driversUnavailable ? [] : drivers, loading: false }) }; });
 vi.mock("@/hooks/useRoutes", () => ({ useRoutes: () => ({ routes: [{ id: "qa-route", name: "QA route" }], loading: false }) }));
 vi.mock("@/hooks/useActiveBuses", () => ({ useActiveBuses: (options?: UseActiveBusesOptions) => { live.options = options ?? null; return live.entries; } }));
 vi.mock("@/lib/firebaseAuth", () => ({ auth: { currentUser: { getIdToken: async () => "test-token" } } }));
-beforeEach(() => { live.entries = []; live.buses = DEFAULT_BUSES.map(bus => ({ ...bus })); vi.stubEnv("NEXT_PUBLIC_BACKEND_URL", "https://qa.ngrok-free.dev"); });
+beforeEach(() => { live.entries = []; live.driversUnavailable = false; live.buses = DEFAULT_BUSES.map(bus => ({ ...bus })); vi.stubEnv("NEXT_PUBLIC_BACKEND_URL", "https://qa.ngrok-free.dev"); });
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 describe("fleet live read failures and drafts", () => {
   it("names a permission denial instead of blaming the connection", () => {
@@ -46,6 +46,19 @@ describe("fleet live read failures and drafts", () => {
     await user.click(editor.getByRole("checkbox", { name: "QA route" }));
     expect(hasUnsavedChanges()).toBe(true);
     await user.click(screen.getByRole("button", { name: "Cancel editing vehicle" }));
+    expect(hasUnsavedChanges()).toBe(false);
+  });
+
+  it("keeps an operator edit unsaved when the saved operator list becomes unavailable mid-edit", async () => {
+    const view = render(<FleetManagementPanel />); const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Edit operator QA Driver" }));
+    expect(hasUnsavedChanges()).toBe(false);
+    await user.type(screen.getByLabelText("Edit operator display name"), " renamed");
+    expect(hasUnsavedChanges()).toBe(true);
+    live.driversUnavailable = true; view.rerender(<FleetManagementPanel />);
+    expect(hasUnsavedChanges()).toBe(true);
+    live.driversUnavailable = false; view.rerender(<FleetManagementPanel />);
+    await user.click(screen.getByRole("button", { name: "Cancel editing operator" }));
     expect(hasUnsavedChanges()).toBe(false);
   });
 

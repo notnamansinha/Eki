@@ -138,6 +138,9 @@ export default function FleetManagementPanel({ mode = "combined" }: Props) {
   const [editingBusId, setEditingBusId] = useState<string | null>(null);
   const [editBusName, setEditBusName] = useState("");
   const [editBusRoutes, setEditBusRoutes] = useState<string[]>([]);
+  // Saved values captured when editing starts: the draft is compared against
+  // these, so a failed or emptied collection read cannot hide an unsaved edit.
+  const [editBusBaseline, setEditBusBaseline] = useState<{ name: string; routes: string[] } | null>(null);
 
   // ── Driver add form ──────────────────────────────────────────────────────
   const [newDriverId, setNewDriverId] = useState("");
@@ -151,6 +154,7 @@ export default function FleetManagementPanel({ mode = "combined" }: Props) {
   const [editDriverName, setEditDriverName] = useState("");
   const [editDriverAuthUid, setEditDriverAuthUid] = useState("");
   const [editDriverBusId, setEditDriverBusId] = useState("");
+  const [editDriverBaseline, setEditDriverBaseline] = useState<{ name: string; authUid: string; busId: string } | null>(null);
 
   // ── Route togglers ───────────────────────────────────────────────────────
   const toggleRoute = (id: string) =>
@@ -215,6 +219,7 @@ export default function FleetManagementPanel({ mode = "combined" }: Props) {
     setEditBusName(bus.name);
     // Saving always replaces the legacy single-route field, so carry it into the draft.
     setEditBusRoutes(savedBusRoutes(bus));
+    setEditBusBaseline({ name: bus.name, routes: savedBusRoutes(bus) });
     setEditingDriverId(null);
   };
 
@@ -289,6 +294,7 @@ export default function FleetManagementPanel({ mode = "combined" }: Props) {
     setEditDriverName(driver.name);
     setEditDriverAuthUid(driver.authUid ?? "");
     setEditDriverBusId(driver.assignedBusId ?? "");
+    setEditDriverBaseline({ name: driver.name, authUid: driver.authUid ?? "", busId: driver.assignedBusId ?? "" });
     setEditingBusId(null);
   };
 
@@ -311,16 +317,14 @@ export default function FleetManagementPanel({ mode = "combined" }: Props) {
 
   // Switching admin sections unmounts this panel, so report drafts the way the
   // route and settings editors do: the tab switch and page unload warn first.
-  const editingBus = editingBusId ? buses.find((bus) => bus.id === editingBusId) : undefined;
-  const editingDriver = editingDriverId ? drivers.find((driver) => driver.id === editingDriverId) : undefined;
   const fleetDraftDirty =
     [newBusId, newBusName, newDriverId, newDriverName, newDriverAuthUid, newDriverBusId].some((value) => value.trim() !== "")
     || newBusRoutes.length > 0
-    || Boolean(editingBus && (editBusName !== editingBus.name
-      || JSON.stringify(editBusRoutes) !== JSON.stringify(savedBusRoutes(editingBus))))
-    || Boolean(editingDriver && (editDriverName !== editingDriver.name
-      || editDriverAuthUid !== (editingDriver.authUid ?? "")
-      || editDriverBusId !== (editingDriver.assignedBusId ?? "")));
+    || Boolean(editingBusId && editBusBaseline && (editBusName !== editBusBaseline.name
+      || JSON.stringify(editBusRoutes) !== JSON.stringify(editBusBaseline.routes)))
+    || Boolean(editingDriverId && editDriverBaseline && (editDriverName !== editDriverBaseline.name
+      || editDriverAuthUid !== editDriverBaseline.authUid
+      || editDriverBusId !== editDriverBaseline.busId));
   useUnsavedChanges(fleetDraftDirty);
 
   const liveDriverIds = new Set(

@@ -51,6 +51,20 @@ describe("ride-history controls", () => {
       expect(row.textContent).not.toContain("stop-1792491592188-7k28u2");
     } finally { Object.assign(session, original); }
   });
+  it("finds a removed endpoint's name in a duplicate record that deduplication drops", () => {
+    const session = state.sessions[0] as Record<string, unknown>;
+    const original = { originStopId: session.originStopId, destinationStopId: session.destinationStopId, stopsReached: session.stopsReached, direction: session.direction };
+    // The observed arrival wins deduplication but has no name; the recovered duplicate has it.
+    Object.assign(session, { direction: "forward", originStopId: "stop-gone", destinationStopId: "destination",
+      stopsReached: [
+        { stopIndex: 0, stopId: "stop-gone", stopName: "", timestamp: 1_750_000_001_000, evidence: "gnss_progress" },
+        { stopIndex: 0, stopId: "stop-gone", stopName: "Old Gate", timestamp: 1_750_000_002_000, evidence: "recovered_checkpoint" },
+      ] });
+    try {
+      render(<RideHistoryPanel />);
+      expect(screen.getByRole("button", { expanded: false }).textContent).toContain("Direction: Old Gate → Destination");
+    } finally { Object.assign(session, original); }
+  });
   it.each([
     ["pending", "Not started"],
     ["armed", "Ready"],

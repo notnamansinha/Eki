@@ -219,7 +219,9 @@ export default function PassengerWorkspace() {
   const [trackedSessionId, setTrackedSessionId] = useState("");
   const [joinedRouteId, setJoinedRouteId] = useState("");
   const [detailDataError, setDetailDataError] = useState<string | null>(null);
-  const [detailAccessDenied, setDetailAccessDenied] = useState(false);
+  // Routes whose detail read was denied and has not delivered since. Tracked per
+  // route so another route's network failure cannot clear an unresolved denial.
+  const [detailDeniedRoutes, setDetailDeniedRoutes] = useState<ReadonlySet<string>>(() => new Set());
   const [rideRecoveryError, setRideRecoveryError] = useState<string | null>(null);
   const [rideRecoveryNotice, setRideRecoveryNotice] = useState<string | null>(null);
   const [rideStatusRetry, setRideStatusRetry] = useState(0);
@@ -227,8 +229,6 @@ export default function PassengerWorkspace() {
     uid: string; sessionId: string; boardingStopId: string; alightingStopId: string | null;
   } | null>(null);
   const liveDataError = catalogError || detailDataError || rideRecoveryError;
-  // A permission denial is not a connection problem; never tell riders to check theirs.
-  const liveAccessDenied = Boolean((catalogError && catalogAccessDenied) || (detailDataError && detailAccessDenied));
   const trackedRideRef = useRef<TrackedRide | null>(null);
   const pendingCompletionSessionIdRef = useRef<string | null>(null);
   const latestTripStatesRef = useRef<Map<string, ActiveBusData["tripState"]>>(new Map());
@@ -280,6 +280,10 @@ export default function PassengerWorkspace() {
   // to recover them. Catalog scope and user-selectable availability differ.
   const effectiveRouteId = ((currentView === "tracking" && Boolean(selectedRouteId)) || catalogRoutes.some(route => route.id === selectedRouteId))
     ? selectedRouteId : catalogRoutes[0]?.id ?? "";
+  // A permission denial is not a connection problem; never tell riders to check
+  // theirs. Only denials on routes still subscribed count.
+  const detailAccessDenied = [...detailDeniedRoutes].some(routeId => routeId === effectiveRouteId || routeId === joinedRouteId);
+  const liveAccessDenied = Boolean((catalogError && catalogAccessDenied) || (detailDataError && detailAccessDenied));
 
   // Listen to Firebase Realtime Database for active buses using the existing
   // Firebase session established by the root auth provider.
@@ -294,6 +298,12 @@ export default function PassengerWorkspace() {
     // Keep an explicitly joined ride observable while browsing another route.
     const subscribedRoutes = [...new Set([effectiveRouteId, joinedRouteId].filter((id): id is string => Boolean(id)))];
     const authoritative = new Set<string>();
+    const markRouteDenied = (routeId: string, denied: boolean) => setDetailDeniedRoutes(previous => {
+      if (previous.has(routeId) === denied) return previous;
+      const next = new Set(previous);
+      if (denied) next.add(routeId); else next.delete(routeId);
+      return next;
+    });
     const disposals = subscribedRoutes.map(routeId => subscribeLiveBusChangesByRoute(routeId, (change) => {
         if (!current()) return;
         const trackedRideSessionId =
@@ -353,14 +363,15 @@ export default function PassengerWorkspace() {
         ));
         if (isAuthoritativeLiveBusDelivery(change.source)) {
           authoritative.add(routeId);
-          if (authoritative.size === subscribedRoutes.length) { setDetailDataError(null); setDetailAccessDenied(false); if (!catalogError) markSnapshotReceived(); }
+          markRouteDenied(routeId, false);
+          if (authoritative.size === subscribedRoutes.length) { setDetailDataError(null); if (!catalogError) markSnapshotReceived(); }
         }
         if (change.source === "invalidation") authoritative.delete(routeId);
       }, (error) => {
         if (!current()) return;
         authoritative.delete(routeId);
         const denied = isPermissionDeniedError(error);
-        setDetailAccessDenied(denied);
+        markRouteDenied(routeId, denied);
         setDetailDataError(denied
           ? "Live bus data could not be loaded: access to live data was denied."
           : `Live bus data could not be loaded. ${error.message}. Retry after checking your connection.`);

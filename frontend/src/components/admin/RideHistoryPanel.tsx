@@ -450,6 +450,9 @@ const RideHistoryRow = memo(function RideHistoryRow({
 }: RideHistoryRowProps) {
   const passengers = passengerRecords(session.passengers);
   const stopsReached = stopRecords(session.stopsReached);
+  // Endpoint names come from every recorded stop: deduplication keeps the
+  // best arrival evidence, which may be a duplicate without a name.
+  const recordedStopNames = recordValues(session.stopsReached);
   const status = STATUS_CONFIG[session.status] ?? STATUS_CONFIG.failed;
   const startValue = session.startTime ?? session.armedAt;
   const startDateLabel = formatServiceDate(startValue);
@@ -498,7 +501,7 @@ const RideHistoryRow = memo(function RideHistoryRow({
                 routeStops,
                 session.originStopId,
                 session.destinationStopId,
-                stopsReached,
+                recordedStopNames,
               )}
             </span>
             <span className="flex items-center gap-1">
