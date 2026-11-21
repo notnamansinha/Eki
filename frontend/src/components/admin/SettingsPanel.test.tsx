@@ -49,7 +49,7 @@ describe("admin settings editing", () => {
     let finish!: () => void;
     mocks.save.mockImplementation(() => new Promise<void>(resolve => { finish = resolve; }));
     render(<SettingsPanel />); const user = userEvent.setup();
-    await user.type(screen.getByLabelText("Service Start Time"), " edited");
+    await user.type(screen.getByLabelText("Service Start Time"), "{Backspace}{Backspace}pm");
     await user.click(screen.getByRole("button", { name: "Save changes" }));
     await waitFor(() => expect(mocks.save).toHaveBeenCalledOnce());
     try {
@@ -70,11 +70,11 @@ describe("admin settings editing", () => {
   it("retains the draft and supports retry after a failed save", async () => {
     mocks.save.mockRejectedValueOnce(new Error("backend unavailable")).mockResolvedValueOnce(undefined);
     render(<SettingsPanel />); const user = userEvent.setup();
-    await user.type(screen.getByLabelText("Service Start Time"), " edited");
+    await user.type(screen.getByLabelText("Service Start Time"), "{Backspace}{Backspace}pm");
     await user.click(screen.getByRole("button", { name: "Save changes" }));
     await screen.findByText("Failed to save: backend unavailable");
     await user.click(screen.getByRole("button", { name: "OK" }));
-    expect((screen.getByLabelText("Service Start Time") as HTMLInputElement).value).toBe("8:00 am edited");
+    expect((screen.getByLabelText("Service Start Time") as HTMLInputElement).value).toBe("8:00 pm");
     await user.click(screen.getByRole("button", { name: "Save changes" }));
     expect(await screen.findByText("Settings saved")).toBeTruthy(); expect(mocks.save).toHaveBeenCalledTimes(2);
   });
@@ -134,11 +134,45 @@ describe("admin settings editing", () => {
     await user.click(screen.getByRole("checkbox", { name: /1A/ }));
     expect(hasUnsavedChanges()).toBe(true);
     expect((screen.getByRole("button", { name: "No changes" }) as HTMLButtonElement).disabled).toBe(true);
-    await user.type(screen.getByLabelText("Service Start Time"), "x");
+    await user.type(screen.getByLabelText("Service Start Time"), "{Backspace}{Backspace}pm");
     await user.click(screen.getByRole("button", { name: "Save changes" }));
     await screen.findByText("Settings saved");
-    expect(mocks.save).toHaveBeenCalledWith({ serviceStartTime: "8:00 amx" });
+    expect(mocks.save).toHaveBeenCalledWith({ serviceStartTime: "8:00 pm" });
     expect(mocks.savePassengerRoutes).not.toHaveBeenCalled();
     expect(hasUnsavedChanges()).toBe(true);
+  });
+  it.each([
+    ["banana o'clock", /must be a clock time/],
+    ["", /Service start time is required/],
+    ["25:00", /must be a clock time/],
+  ])("flags an invalid start time (%j) inline as it is typed and blocks saving", async (value, message) => {
+    render(<SettingsPanel />); const user = userEvent.setup();
+    const field = screen.getByLabelText("Service Start Time");
+    await user.clear(field); if (value) await user.type(field, value);
+    const error = screen.getByRole("alert");
+    expect(error.textContent).toMatch(message);
+    expect(field.getAttribute("aria-invalid")).toBe("true");
+    expect(field.getAttribute("aria-describedby")).toBe(error.id);
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+    expect(mocks.save).not.toHaveBeenCalled();
+  });
+  it.each(["6:30 am", "6 PM", "6:30 a.m.", "06:30", "18:30"])("accepts the clock time %j without an inline error", async value => {
+    render(<SettingsPanel />); const user = userEvent.setup();
+    const field = screen.getByLabelText("Service Start Time");
+    await user.clear(field); await user.type(field, value);
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(field.getAttribute("aria-invalid")).toBeNull();
+  });
+  it("does not flag a stored legacy start time until it is edited", async () => {
+    const original = mocks.settings.serviceStartTime;
+    mocks.settings.serviceStartTime = "6:30 am ($$ fare)";
+    mocks.save.mockResolvedValue(undefined);
+    try {
+      render(<SettingsPanel />); const user = userEvent.setup();
+      expect(screen.queryByRole("alert")).toBeNull();
+      await user.click(screen.getByRole("switch"));
+      await user.click(screen.getByRole("button", { name: "Save changes" }));
+      expect(await screen.findByText("Settings saved")).toBeTruthy();
+    } finally { mocks.settings.serviceStartTime = original; }
   });
 });

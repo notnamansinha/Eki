@@ -380,12 +380,9 @@ export default function FeedbackPanel({ embedded = false }: { embedded?: boolean
             <ShieldCheck className="w-3.5 h-3.5 text-ui-muted" />
           </div>
           <div className="flex flex-col">
-            <span
-              className="font-bold text-sm uppercase tracking-[0.18em] text-ui-ink leading-none"
-
-            >
+            <h1 className="font-bold text-sm uppercase tracking-[0.18em] text-ui-ink leading-none">
               Feedback Console
-            </span>
+            </h1>
             <span className="text-xs text-ui-quiet font-semibold uppercase tracking-widest">
               Admin Only
             </span>

@@ -19,7 +19,8 @@ export interface UseActiveBusesOptions {
   connectionGeneration?: number;
   resumeGeneration?: number;
   markSnapshotReceived?: () => void;
-  onReadError?: () => void;
+  /** Receives the listener error so callers can tell a permission denial from a network failure. */
+  onReadError?: (error: Error) => void;
   onReadRecovered?: () => void;
 }
 
@@ -58,7 +59,7 @@ export function useActiveBuses(options: UseActiveBusesOptions = {}): ActiveBusEn
       },
       (error) => {
         console.warn("[RTDB] activeBuses read failed:", error.message);
-        onReadError?.();
+        onReadError?.(error);
       },
     );
     return () => {

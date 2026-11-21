@@ -47,17 +47,35 @@ export function directionLabelState(
     : "Direction pending";
 }
 
-/** Uses immutable session endpoints before falling back to the current route. */
+/** Shown for a session endpoint whose stop has since been deleted from the route. */
+export const REMOVED_STOP_LABEL = "Removed stop";
+
+/** A stop name the ride session recorded itself (for example a `stopsReached` entry). */
+export interface RecordedStopName {
+  stopId?: unknown;
+  stopName?: unknown;
+}
+
+/**
+ * Uses immutable session endpoints before falling back to the current route.
+ * An endpoint deleted from the route uses the name the session recorded for
+ * it, and never shows its raw stop ID.
+ */
 export function persistedDirectionLabel(
   direction: RideDirection | null | undefined,
   stops: RouteData["stops"],
   originStopId: string | null | undefined,
   destinationStopId: string | null | undefined,
+  recordedStops: readonly RecordedStopName[] = [],
 ): string {
   if (originStopId && destinationStopId) {
     const stopLabel = (stopId: string) => {
       const stop = stops.find((candidate) => candidate.id === stopId);
-      return stop?.shortName || stop?.name || stopId;
+      const current = stop?.shortName || stop?.name;
+      if (current) return current;
+      const recorded = recordedStops.find((candidate) => candidate.stopId === stopId &&
+        typeof candidate.stopName === "string" && candidate.stopName.trim().length > 0)?.stopName;
+      return typeof recorded === "string" ? recorded.trim() : REMOVED_STOP_LABEL;
     };
     return `${stopLabel(originStopId)} → ${stopLabel(destinationStopId)}`;
   }
@@ -70,6 +88,7 @@ export function persistedDirectionLabelState(
   stops: RouteData["stops"],
   originStopId: string | null | undefined,
   destinationStopId: string | null | undefined,
+  recordedStops: readonly RecordedStopName[] = [],
 ): string {
   return isResolvedRideDirection(direction)
     ? persistedDirectionLabel(
@@ -77,6 +96,7 @@ export function persistedDirectionLabelState(
         stops,
         originStopId,
         destinationStopId,
+        recordedStops,
       )
     : "Direction pending";
 }

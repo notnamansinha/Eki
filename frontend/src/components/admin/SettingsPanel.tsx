@@ -5,7 +5,7 @@ import { useSettings, GlobalSettings } from "@/hooks/useSettings";
 import { Save, Loader2, Eye, EyeOff, Megaphone, Clock, Info } from "lucide-react";
 import AlertModal from "@/components/ui/AlertModal";
 import { errorMessage } from "@/lib/errors";
-import { validateSettingsInput } from "@/lib/adminValidation";
+import { validateServiceStartTime, validateSettingsInput } from "@/lib/adminValidation";
 import { useUnsavedChanges } from "@/lib/unsavedChanges";
 import { formatNoBusesSubMessage } from "@/lib/serviceMessages";
 import { PASSENGER_BUS_START_TIME } from "@/config/passenger";
@@ -25,6 +25,11 @@ export default function SettingsPanel() {
   )) as Partial<GlobalSettings>;
   const isDirty = Object.keys(changedFields).length > 0;
   useUnsavedChanges(isDirty);
+  // Check the start time as it is edited; a stored legacy value does not block
+  // saving other fields.
+  const serviceStartTimeError = "serviceStartTime" in changedFields
+    ? validateServiceStartTime(draft.serviceStartTime)
+    : null;
 
   useEffect(() => {
     return () => {
@@ -36,7 +41,7 @@ export default function SettingsPanel() {
     setOverrides(current => ({ ...current, [k]: v }));
 
   const handleSave = async () => {
-    const validationError = validateSettingsInput(draft);
+    const validationError = serviceStartTimeError ?? validateSettingsInput(draft);
     if (validationError) {
       setAlertMessage(validationError);
       return;
@@ -112,8 +117,15 @@ export default function SettingsPanel() {
               value={draft.serviceStartTime}
               onChange={e => set("serviceStartTime", e.target.value)}
               placeholder="e.g. 6:30 am"
+              aria-invalid={serviceStartTimeError ? true : undefined}
+              aria-describedby={serviceStartTimeError ? "setting-service-start-time-error" : undefined}
               className="input-rc h-11"
             />
+            {serviceStartTimeError && (
+              <p id="setting-service-start-time-error" className="text-xs font-semibold text-ui-danger" role="alert">
+                {serviceStartTimeError}
+              </p>
+            )}
           </Field>
 
           <Field controlId="setting-no-buses-headline" label="No Buses — Headline" hint='The bold line. e.g. "No buses running"'>
