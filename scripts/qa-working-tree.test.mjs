@@ -6,7 +6,11 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { GENERATED_CSP_HASHES, describeDirty, workingTreeState } from './qa/working-tree.mjs';
 
-const POLICY = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self'; frame-src 'self'; object-src 'none'";
+// GIT_DIR and friends (set inside a git hook, for example) would point every
+// git call here, including workingTreeState's, at another repository.
+for (const name of Object.keys(process.env)) if (name.startsWith('GIT_')) delete process.env[name];
+
+const POLICY ="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self'; frame-src 'self'; object-src 'none'";
 const CLEAN = { dirty: false, ignoredChanges: [] };
 const IGNORED = { dirty: false, ignoredChanges: [GENERATED_CSP_HASHES] };
 
@@ -131,6 +135,18 @@ test('hashes count as generated only while the current export produces them', as
   assert.deepEqual(workingTreeState(root), { dirty: true, ignoredChanges: [] }, 'an export changed after the build');
   await rm(file('frontend/out'), { recursive: true });
   assert.deepEqual(workingTreeState(root), { dirty: true, ignoredChanges: [] }, 'no export at all');
+});
+
+test('a file mode change is dirty, with or without new hashes', async t => {
+  const { root, git, build } = await repository(t);
+  // Commit firebase.json as executable; the working copy keeps its ordinary mode.
+  git('update-index', '--chmod=+x', 'firebase.json');
+  git('-c', 'user.name=QA fixture', '-c', 'user.email=qa@example.invalid', 'commit', '--quiet', '--message', 'mode');
+  git('config', 'core.fileMode', 'true');
+  assert.equal(git('status', '--porcelain'), ' M firebase.json\n', 'git lists the mode change');
+  assert.deepEqual(workingTreeState(root), { dirty: true, ignoredChanges: [] }, 'mode change alone');
+  build();
+  assert.deepEqual(workingTreeState(root), { dirty: true, ignoredChanges: [] }, 'mode change and new hashes');
 });
 
 test('a staged hash change is dirty', async t => {

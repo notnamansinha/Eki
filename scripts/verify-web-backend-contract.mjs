@@ -157,8 +157,11 @@ async function run() {
 
 /** The one line every failed check prints, so a QA log never ends in a bare stack trace. */
 export function contractFailureLine(error) {
-  const cause = error?.cause ? ` (${error.cause.message ?? error.cause})` : "";
-  return `Web/backend contract: FAILED: ${error?.message ?? error}${cause}`;
+  // fetch reports a refused connection as an AggregateError with no message of its own.
+  const reason = (value) => value?.message || value?.errors?.map(reason).filter(Boolean).join("; ")
+    || value?.code || String(value);
+  const cause = error?.cause ? ` (${reason(error.cause)})` : "";
+  return `Web/backend contract: FAILED: ${reason(error)}${cause}`;
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

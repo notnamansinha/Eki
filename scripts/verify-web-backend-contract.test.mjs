@@ -192,6 +192,13 @@ describe("web/backend contract CLI resolves the URL the way next build does", ()
     const error = new TypeError("fetch failed", { cause: new Error("connect ECONNREFUSED 127.0.0.1:9") });
     assert.equal(contractFailureLine(error), "Web/backend contract: FAILED: fetch failed (connect ECONNREFUSED 127.0.0.1:9)");
     assert.equal(contractFailureLine(new Error("plain")), "Web/backend contract: FAILED: plain");
+    // A refused connection: fetch's cause is an AggregateError without a message of its own.
+    const refused = new AggregateError([new Error("connect ECONNREFUSED ::1:4000"), new Error("connect ECONNREFUSED 127.0.0.1:4000")], "");
+    refused.code = "ECONNREFUSED";
+    assert.equal(contractFailureLine(new TypeError("fetch failed", { cause: refused })),
+      "Web/backend contract: FAILED: fetch failed (connect ECONNREFUSED ::1:4000; connect ECONNREFUSED 127.0.0.1:4000)");
+    assert.equal(contractFailureLine(new TypeError("fetch failed", { cause: Object.assign(new AggregateError([], ""), { code: "ECONNREFUSED" }) })),
+      "Web/backend contract: FAILED: fetch failed (ECONNREFUSED)");
   });
 
   it("keeps the explicit npm verifier script strict", async () => {

@@ -65,7 +65,9 @@ replaceDirective("script-src", sources);
 // The inline-script hashes go where withInlineScriptHashes puts them (sorted,
 // after 'self'). The QA clean-tree check (scripts/qa/working-tree.mjs) uses the
 // same function, so it accepts exactly the hashes this build writes.
-csp.value = withInlineScriptHashes(csp.value, hashes);
+const hashed = withInlineScriptHashes(csp.value, hashes);
+if (hashed === null) throw new Error("Global Content-Security-Policy script-src must start with 'self'.");
+csp.value = hashed;
 const connectSources = [
   "'self'",
   // Workbox fetches Google's Auth helper on controlled pages. The worker's
