@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-TST-002 | 3.2 | Current | 2026-11-11 |
+| EKI-TST-002 | 3.3 | Current | 2026-11-24 |
 
 ## 1. Purpose and scope
 
@@ -39,7 +39,8 @@ The QA test maps (`qa/*-test-map.mjs`) and the execution ledger label every obse
 | npm dependencies | `npm ci` from `package-lock.json` | Every suite; Playwright `^1.64.1` and Stryker 10.1.1 are development dependencies in the root [`package.json`](../../package.json), and Vitest `^4.1.12` in the backend and frontend `package.json` files |
 | Java | 21 (CI version) | Firebase emulators: `test:rules`, `qa:browser`, `qa:api`, nightly emulator, browser and API campaigns |
 | Firebase CLI | 15.14.0, fetched by `npx --yes firebase-tools@15.14.0` inside `scripts/run-rules-emulator.mjs` | Emulator suites; no global install is needed |
-| Chromium for Playwright | `npx playwright install chromium` (CI adds `--with-deps`) | Every browser suite |
+| Chromium for Playwright | `npx playwright install chromium` (CI adds `--with-deps`) | Every browser suite except `qa:visual` |
+| Docker | Docker Desktop or Docker Engine; image `mcr.microsoft.com/playwright:v1.64.1-noble`, pinned by digest in [`scripts/qa/visual-plan.mjs`](../../scripts/qa/visual-plan.mjs) | `qa:visual`, whose browsers run in that image |
 | Python and PlatformIO | Python 3.12 in CI; `platformio==6.2.0`, pinned in [`hardware/requirements.txt`](../../hardware/requirements.txt) and installed with `pip install --requirement hardware/requirements.txt`. `qa:native` refuses any other PlatformIO version | Native firmware tests, firmware builds, `qa:native` |
 | C++ compiler | Host `g++` or equivalent | Native firmware tests; without it every native suite fails at compilation |
 
@@ -130,6 +131,7 @@ Every configuration except the default and the live Maps check starts its own se
 | `playwright.production-audit.config.ts` | `npx playwright test --config playwright.production-audit.config.ts` | `e2e/production-audit/` | Audit fixture, port 3123 | narrow 360 x 800, mobile 390 x 844, desktop 1280 x 800 | Yes |
 | `playwright.no-script.config.ts` | `npm run test:e2e:no-script` | `e2e/no-script/`: `/` and `/install` with JavaScript disabled show their static fallbacks and hide the loading placeholders; with JavaScript enabled the fallbacks stay out of the page | Built export from `frontend/out` with the `firebase.json` security headers (`e2e/no-script/serve-export.mjs`), `EKI_NOSCRIPT_PORT` or 3129 | android-small 360 x 800 and android (Pixel 7) with touch, desktop 1280 x 800 | Yes, after `build:production` |
 | `playwright.emulator.config.ts` | `npm run qa:browser` (never directly) | `e2e/emulator-acceptance.spec.ts` | Compiled backend 3116, frontend 3115, control 3117, with emulators | mobile 390 x 844, desktop 1280 x 800; one worker, no retries | Yes |
+| `playwright.visual.config.ts` | `npm run qa:visual` (never directly) | `e2e/visual/`: 19 reviewed states, each a screenshot and an accessibility tree compared with `e2e/visual/baselines/` | Passenger fixture on 3141 and the surface fixture (`e2e/visual/fixture/`) on 3142; browsers in the pinned Playwright image | phone (Pixel 7) 412 x 839 and tablet (iPad Pro 11) 834 x 1194 with touch, desktop 1280 x 800 | Yes, job `visual-baselines` |
 | `playwright.routing.config.ts` | `npx playwright test --config playwright.routing.config.ts` | `e2e/routing/marker.spec.ts` | Routing fixture, port 3162 | Desktop Chrome default (1280 x 720) | No |
 | `playwright.routing.maps.config.ts` | Manual; see [live Maps check](../../e2e/routing/live-maps/README.md) | `e2e/routing/live-maps/in-app.spec.ts` | Live Maps fixture, port 3163 | 1920 x 1080; one test at 360 x 800 with touch | No |
 
@@ -166,6 +168,7 @@ The [QA programme](../../qa/README.md) describes the evidence model. Every runne
 | `npm run test:rules` | L2 | Emulator integration suites | [Emulator acceptance](../../qa/EMULATOR_ACCEPTANCE.md) |
 | `npm run qa:api` | L2 | HTTP authorization sweep of every published operation | [HTTP authorization](../../qa/HTTP_AUTHORIZATION.md) |
 | `npm run qa:browser` | L3 | Disposable browser acceptance; `qa:browser:providers` and `qa:browser:service` run narrow subsets | [Browser acceptance](../../qa/BROWSER_ACCEPTANCE.md) |
+| `npm run qa:visual` | L3 | Compares the reviewed screenshots and accessibility trees (needs Docker); `qa:visual:update` rewrites the baselines that differ, for review | [Visual baselines](../../qa/VISUAL_BASELINES.md) |
 | `npm run qa:report` | Ledger | Combines the six family reports into `artifacts/qa/execution-report.*` | [Execution ledger](../../qa/EXECUTION_EVIDENCE.md) |
 | `npm run qa:nightly` | Campaign | `qa:check`, then all six families through `scripts/qa/campaign.mjs`, then `campaign-report.mjs` | [Scheduled reliability](../../qa/SCHEDULED_RELIABILITY.md) |
 | `npm run qa:mutation`, `qa:soak`, `qa:weekly` | Campaign | Stryker mutation of `telemetryPayload.ts`; five admission-helper trials | [Scheduled reliability](../../qa/SCHEDULED_RELIABILITY.md) |
@@ -204,6 +207,7 @@ Run `npm run verify` for every code change, then add the checks for the area cha
 | Firestore or RTDB rules, transactions, workers | `npm run test:rules` |
 | Authentication, landing page, admin, feedback | `npm run test:e2e:admin`; `npm run test:rules` for rules |
 | Passenger UI, artwork, map or progress | Passenger layout and passenger progress configurations |
+| Anything that changes a rendered page, component or accessible name | `npm run qa:visual`; review and commit the changed baselines ([visual baselines](../../qa/VISUAL_BASELINES.md#42-update-and-review-baselines-after-an-intended-change)) |
 | A Google map element, `MapProviders` or `config/maps.ts` | The map construction counters in Section 7.6 (in `npm test`); after deploying, the Dynamic Maps metric in the Cloud Console |
 | Admin dashboard, route editor, history | Production audit configuration; `npm run qa:browser` for persisted flows |
 | HTTP routes or OpenAPI | `npm run verify:openapi` (in `npm test`); `npm run qa:api` for authorization |
@@ -219,6 +223,7 @@ Run `npm run verify` for every code change, then add the checks for the area cha
 | Production verification (`ci.yml`) | Every push and pull request | `web`: `qa:check`; `qa:budget` on pull requests; `qa:catalog`; `qa:gnss`; `qa:unit:reviewed`; `verify:rtdb-instance`; `verify:openapi`; `lint`; `npm test`; emulator suites; admission benchmark; admin-access, passenger-layout, passenger-progress and production-audit Playwright suites; `qa:browser`; `qa:api`; `build:production` with placeholder values and exported origin checks; the no-script Playwright suite on that export; `npm audit --omit=dev --omit=optional`; full `npm audit`; CycloneDX SBOM |
 | | | `backend-image`: builds `backend/Dockerfile`, checks `/health` returns 503 `degraded` and `/live` returns 200 `alive` with placeholder configuration and that the image health check probes `/live`, Trivy scan that fails on fixable critical and high findings |
 | | | `firmware`: installs `hardware/requirements.txt`, secure-fleet configuration check, `qa:native`, host protocol tests, builds of `esp32dev` and `esp32dev-quiet` with a check that trace strings are absent from the quiet image, a check that the SNTP guard is linked, builds of `esp32dev-journal` and `esp32dev-secure` with an ephemeral signing key, signed-image tamper test |
+| | | `visual-baselines`: `npm run qa:visual` against the committed baselines; keeps differences and traces for 7 days |
 | | | `qa-evidence`: after `web` and `firmware`, even when they fail, runs `qa:report` on their artifacts |
 | CodeQL (`codeql.yml`) | Every pull request; every push except to `dependabot/**` branches | `security-extended` queries for JavaScript/TypeScript and Python |
 | Isolated nightly QA (`deep-qa.yml`) | Daily 20:17 UTC, manual dispatch, pushes to named QA branches | Six campaign shards (`gnss`, `emulator`, `browser`, `api`, `native`, `reviewedUnit`), two at a time, then `campaign-report.mjs` |

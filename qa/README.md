@@ -126,6 +126,8 @@ A passing preflight proves the configuration only. Runtime isolation comes from 
 | Emulator integration | L2 | `npm run test:rules` | [Emulator acceptance](EMULATOR_ACCEPTANCE.md) |
 | HTTP authorization | L2 | `npm run qa:api` | [HTTP authorization sweep](HTTP_AUTHORIZATION.md) |
 | Browser | L3 | `npm run qa:browser` | [Browser acceptance](BROWSER_ACCEPTANCE.md) |
+| Visual and accessibility-tree baselines | L3 | `npm run qa:visual`, `npm run qa:visual:update` | [Visual and accessibility-tree baselines](VISUAL_BASELINES.md) |
+| Real devices and screen readers | L4 | Manual | [Device and screen-reader acceptance](DEVICE_AND_SCREEN_READER_ACCEPTANCE.md) |
 | Ledger | All | `npm run qa:report` | [Execution ledger](EXECUTION_EVIDENCE.md) |
 | Scheduled campaigns | L1 to L3 | `npm run qa:nightly`, `npm run qa:weekly` | [Scheduled reliability](SCHEDULED_RELIABILITY.md) |
 | Witnessed field | L5 | Manual | [Field acceptance package](FIELD_ACCEPTANCE.md) |
