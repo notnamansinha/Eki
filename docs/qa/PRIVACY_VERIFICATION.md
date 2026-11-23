@@ -55,7 +55,7 @@ Stores outside the code:
 
 - Backend logs in Cloud Logging. Section 4.1 scans the local equivalent; the deployed sink and its retention are not observable from the repository.
 - Cloud Run and Hosting request logs, which record client IP addresses and request paths. An administrator recovery request, `POST /api/v2/privacy-deletion-requests/{uid}/recovery`, puts a UID in the path.
-- Backups and exports: the [deployment checklist](../operations/UNIVERSITY_DEPLOYMENT_CHECKLIST.md) records that none are provisioned.
+- Backups and exports: the [deployment checklist](../operations/UNIVERSITY_DEPLOYMENT_CHECKLIST.md) item for scheduled backups or exports is open, so there is no backup erasure to observe yet.
 - The browser: Firebase Auth state in IndexedDB, `sessionStorage` key `eki:location-notice`, and the service worker cache. Sign-out after the deletion request clears the Auth state.
 
 ### 3.1 Findings
@@ -79,7 +79,7 @@ Run every command from the repository root.
 
 ### 4.1 Deletion, local
 
-1. Run `npm run qa:privacy:deletion`. It builds the backend, starts the emulators through `firebase-tools@15.14.0 emulators:exec` with a 12 min deadline and reruns [`scripts/qa/run-privacy-deletion.mjs`](../../scripts/qa/run-privacy-deletion.mjs) inside them. Expected: about 3 min, and `artifacts/qa/privacy-deletion-local-report.md` with `verdict: MATCHES_INVENTORY`.
+1. Run `npm run qa:privacy:deletion`. It builds the backend, starts the emulators through `firebase-tools@15.14.0 emulators:exec` with a 12 min deadline and reruns [`scripts/qa/run-privacy-deletion.mjs`](../../scripts/qa/run-privacy-deletion.mjs) inside them. Expected: about 4 min, most of it the wait for the worker's 60 s scan, and `artifacts/qa/privacy-deletion-local-report.md` with `verdict: MATCHES_INVENTORY`.
 
 Inside the emulators the runner:
 
@@ -142,6 +142,8 @@ The host check loads `/`, `/install`, `/passenger`, `/admin`, `/feedback`, `/pri
 
 A declared vendor that never loads is a warning, not a failure: signed-in screens, such as the passenger map, load vendors that the public routes do not.
 
+The first runs and their results are recorded in [privacy verification, 24 November](../testing/PRIVACY_VERIFICATION_2026_11_24.md).
+
 ## 6. DPDP notice and code checklist
 
 This checklist compares what a privacy notice would have to state with what the code does. On 2026-11-24 no notice is published (PRIV-07), so every notice cell reads "Not published". The code column is verified against the sources cited. Whether the code's behaviour satisfies the Digital Personal Data Protection Act, 2023 and its rules is a legal question for the data owner [1].
@@ -178,7 +180,6 @@ The data owner records here whether the findings in Section 3.1 and the gaps in 
 | `Firestore Emulator has exited with code: 1` and `Unable to establish loopback connection` on Windows | Set `$env:JAVA_TOOL_OPTIONS = "-Djdk.net.unixdomain.tmpdir=<ASCII folder>"` and run again ([emulator acceptance](EMULATOR_ACCEPTANCE.md#6-troubleshooting)) |
 | `Port 3116 is in use` or `Emulator port(s) already in use` | Another emulator or browser QA run is active; wait for it or stop the process the message names |
 | `The backend fixture did not start` | Read `artifacts/qa/privacy-deletion-local/backend.log` |
-| `Boarding returned HTTP 409` | The fixture's bus fix aged past 60 s before boarding; run again |
 | `A deletion did not finish within 180 s` | Read the backend log for `[Privacy]` lines and check that the worker took the lease |
 | `frontend/out is missing` | Run `npm run build` first |
 | A local Turbopack build fails with `Could not find the Next.js package` | `node_modules` is a link outside the checkout; Turbopack does not follow it. Build in a checkout with its own `node_modules` |
