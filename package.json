@@ -44,7 +44,9 @@
     "qa:api": "npm run build --workspace=backend && node scripts/run-rules-emulator.mjs --api",
     "qa:mutation": "node scripts/qa/run-mutation.mjs",
     "qa:soak": "npm run build --workspace=backend && node scripts/qa/run-soak.mjs",
-    "qa:weekly": "npm run qa:check && npm run qa:mutation && npm run qa:soak"
+    "qa:weekly": "npm run qa:check && npm run qa:mutation && npm run qa:soak",
+    "qa:visual": "node scripts/qa/run-visual.mjs",
+    "qa:visual:update": "node scripts/qa/run-visual.mjs --update"
   },
   "overrides": {
     "typed-rest-client": {

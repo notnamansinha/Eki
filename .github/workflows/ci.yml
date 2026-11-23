@@ -216,6 +216,32 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+  visual-baselines:
+    # Issue #523: reviewed screenshots and accessibility trees of the public,
+    # passenger and admin surfaces (qa/VISUAL_BASELINES.md). The browsers run
+    # in the pinned Playwright image, so CI renders exactly what was reviewed.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Compare with the reviewed visual and accessibility-tree baselines
+        run: npm run qa:visual
+      - name: Retain differences, traces and the run record
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: visual-baselines
+          path: artifacts/visual/
+          if-no-files-found: warn
+          retention-days: 7
+
   backend-image:
     # Issue #28: the backend runs as replicated containers, so the exact image
     # that would be scaled must build and boot on every push. The smoke step

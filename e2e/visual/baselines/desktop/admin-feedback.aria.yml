@@ -1,0 +1,43 @@
+- main:
+  - tablist "Administration sections":
+    - tab "Live Ops"
+    - tab "Routes"
+    - tab "Fleet & People"
+    - tab "History"
+    - tab "Feedback" [selected]
+    - tab "Settings"
+  - link "Passenger Panel":
+    - /url: /passenger
+  - tabpanel "Feedback":
+    - heading "Feedback" [level=2]
+    - paragraph: Passenger ratings and comments
+    - text: Total 3 Unreviewed 1 Avg Rating 3.0
+    - textbox "Search feedback":
+      - /placeholder: Search by user, bus, driver, or route…
+    - combobox "Feedback type":
+      - option "All types" [selected]
+      - option "Ride"
+      - option "General"
+    - combobox "Feedback status":
+      - option "All statuses" [selected]
+      - option "New"
+      - option "Reviewed"
+      - option "Resolved"
+    - text: Entries 3 of 3
+    - article:
+      - button /QA Passenger new 4\/5 Ride feedback \d+ Nov \d+, \d+:\d+ am Synthetic bus · Synthetic operator The bus reached Beta on time and the live position matched\./:
+        - text: ""
+        - time: /\d+ Nov \d+, \d+:\d+ am/
+        - text: ""
+        - paragraph: The bus reached Beta on time and the live position matched.
+    - article:
+      - button /Second Passenger reviewed No rating General feedback \d+ Nov \d+, \d+:\d+ pm Please add the library stop to the evening route\./:
+        - text: ""
+        - time: /\d+ Nov \d+, \d+:\d+ pm/
+        - paragraph: Please add the library stop to the evening route.
+    - article:
+      - button /Third Passenger resolved 2\/5 Ride feedback \d+ Nov \d+, \d+:\d+ am Synthetic bus · Synthetic operator The arrival estimate jumped twice near the main gate\./:
+        - text: ""
+        - time: /\d+ Nov \d+, \d+:\d+ am/
+        - text: ""
+        - paragraph: The arrival estimate jumped twice near the main gate.
