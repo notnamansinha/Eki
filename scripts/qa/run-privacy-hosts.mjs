@@ -46,7 +46,7 @@ const report = {
   browser: null, origin: target === 'live' ? LIVE_ORIGIN : `http://127.0.0.1:${port}`,
   notice: { configuredUrl, published: configuredUrl !== '', file: noticeFile ? 'provided' : null,
     sha256: noticeFile ? createHash('sha256').update(noticeText).digest('hex') : null, declared: declaredVendors(noticeText) },
-  routes: [], hosts: {}, cookies: [], csp: null, permitted: null, permittedUndeclared: [], evaluation: null, verdict: 'BLOCKED', setupError: null,
+  routes: [], hosts: {}, cookies: [], csp: null, release: null, permitted: null, permittedUndeclared: [], evaluation: null, verdict: 'BLOCKED', setupError: null,
 };
 
 // ---- local static server ---------------------------------------------------
@@ -135,7 +135,10 @@ async function loadRoutes(origin) {
         const response = await page.goto(`${origin}${route}`, { waitUntil: 'load', timeout: 45_000 });
         entry.status = response?.status() ?? null;
         if (route === '/' && target === 'live') {
-          report.csp = { source: 'response header of / on the live site', value: (await response?.allHeaders())?.['content-security-policy'] ?? null };
+          const headers = (await response?.allHeaders()) ?? {};
+          report.csp = { source: 'response header of / on the live site', value: headers['content-security-policy'] ?? null };
+          // Hosting sets Last-Modified to the release time, which names the Deploy run that published it.
+          report.release = { lastModified: headers['last-modified'] ?? null, etag: headers.etag ?? null };
         }
         await page.waitForLoadState('networkidle', { timeout: 10_000 }).catch(() => undefined);
         await page.waitForTimeout(2_000);
@@ -168,6 +171,7 @@ function markdown() {
     `Origin: ${report.origin}. ${report.browser ?? 'Browser not started'}. Started ${report.startedAt}, finished ${report.finishedAt}.`, '',
     `Privacy notice: ${report.notice.published ? `configured at ${report.notice.configuredUrl}` : 'not published (UNIVERSITY_LINKS privacy notice URL is empty)'}; `
       + `notice file: ${report.notice.file ?? 'none'}; declared vendors: ${report.notice.declared.join(', ') || 'none'}.`, ''];
+  if (report.release) lines.push(`Release headers of /: Last-Modified ${report.release.lastModified ?? 'none'}, ETag ${report.release.etag ?? 'none'}.`, '');
   if (report.setupError) lines.push(`Setup: ${report.setupError}`, '');
   lines.push('| Route | Status | Final path | Error |', '|---|---|---|---|');
   for (const route of report.routes) lines.push(`| ${route.route} | ${route.status ?? '-'} | ${route.finalPath ?? '-'} | ${route.error ?? ''} |`);

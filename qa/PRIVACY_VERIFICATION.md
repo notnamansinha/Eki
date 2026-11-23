@@ -98,7 +98,7 @@ Inside the emulators the runner:
 
 ### 4.3 Hosts, live
 
-1. Run `npm run qa:privacy:hosts:live`. Expected: about 1 min, 7 page loads of `https://bustrack-be165.web.app`, and `artifacts/qa/privacy-hosts-live.md`. The runner does not sign in, type, click or submit anything. Requests that the pages make on their own, for example to Firebase, are recorded and allowed. Run it only against the public staging site.
+1. Run `npm run qa:privacy:hosts:live`. Expected: about 1 min, 7 page loads of `https://bustrack-be165.web.app`, and `artifacts/qa/privacy-hosts-live.md` with the `Last-Modified` and `ETag` headers of `/`, which identify the Hosting release. The runner does not sign in, type, click or submit anything. Requests that the pages make on their own, for example to Firebase, are recorded and allowed. Run it only against the public staging site.
 
 To compare with a published notice, save its text to a file and add `-- --notice <file>` to either host command. The report records the file's SHA-256 and the vendors it declares.
 
