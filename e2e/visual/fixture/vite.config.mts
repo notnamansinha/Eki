@@ -9,6 +9,9 @@ const auditState = local("../../production-audit/state.ts");
 export default defineConfig({
   root: local("."),
   publicDir: local("../../../frontend/public"),
+  // The passenger fixture starts at the same time with the default cache; a
+  // separate one keeps the two servers from rewriting each other's bundles.
+  cacheDir: local("../../../node_modules/.vite-visual-surface"),
   server: { host: "127.0.0.1", port: Number(process.env.EKI_VISUAL_SURFACE_PORT || 3142), strictPort: true },
   resolve: { alias: [
     { find: "@/hooks/useAuth", replacement: local("auth.ts") },
