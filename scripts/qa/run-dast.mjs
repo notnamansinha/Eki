@@ -165,7 +165,8 @@ async function withLocalBackend(role, work) {
   closeSync(log);
   const exit = new Promise(done => child.once('exit', code => done(code)));
   try {
-    const deadline = Date.now() + 30_000;
+    // A cold first start in a fresh checkout did not answer within 30 s on 2026-11-23.
+    const deadline = Date.now() + 60_000;
     let ready = false;
     while (!ready && Date.now() < deadline && child.exitCode === null) {
       try { ready = (await control('/evidence')).body?.fixtureProcessId === child.pid; } catch { /* starting */ }
