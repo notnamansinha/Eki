@@ -102,8 +102,11 @@ export function routeAvailability(buses: Record<string, Record<string, unknown>>
 }
 
 type RouteNode = { buses?: Record<string, Record<string, unknown>>; revision?: number; _workerGeneration?: number };
-/** The leader's copy of one route's public buses and revision, as last confirmed by the database. */
-type RouteView = { buses: Record<string, Record<string, unknown>>; revision: number };
+/**
+ * The leader's copy of one route's public buses and revision, as last confirmed
+ * by the database. `epoch` is the recovery pass in which the claim behind it began.
+ */
+type RouteView = { buses: Record<string, Record<string, unknown>>; revision: number; epoch: number };
 const isMap = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value);
 
 /**
@@ -155,6 +158,11 @@ export function startLiveBusProjection(): () => Promise<void> {
   const leafCapable = generation > 0 && process.env.LIVE_PROJECTION_WRITE_MODE?.trim().toLowerCase() !== "transaction";
   let leafRetryAt = 0;
   const routeViews = new LruCache<string, RouteView>(1000);
+  // Advanced as each recovery pass starts. A copy whose claim began earlier can
+  // miss an edit made without a revision, such as an erased bus or route, and a
+  // replay that matches such a copy would write nothing. Publications therefore
+  // claim each route afresh once per pass before comparing against it.
+  let viewEpoch = 0;
   let stopped = false;
   let initialized = false, readyPublished = false, readinessWrite: Promise<void> | null = null, stopPromise: Promise<void> | null = null;
   const report = (error: unknown) => recordBackgroundFailure("worker.liveProjection", "Public live projection", "[LiveProjection] Materialization/recovery failed:", error);
@@ -197,10 +205,13 @@ export function startLiveBusProjection(): () => Promise<void> {
    * only against the server's current value. Recovery runs beside publications
    * and must not replace a copy they may be changing, so it discards the copy
    * instead: the next publication claims afresh, which repairs a destination
-   * that changed without a revision.
+   * that changed without a revision. A copy is stamped with the pass in which
+   * its claim began, so one that began before a pass started is not reused by
+   * that pass's replay (see `viewEpoch`).
    */
   async function claimRoute(routeId: string, floor: number, adopt: boolean): Promise<{ view: RouteView | null; node: RouteNode | null }> {
     counters.routeClaims++;
+    const epoch = viewEpoch;
     const result = await workerRtdbTransaction(rtdb.ref(`publicRouteBuses/${projectionRouteKey(routeId)}`), current => {
       counters.transactionAttempts++;
       if (stopped) return;
@@ -211,7 +222,7 @@ export function startLiveBusProjection(): () => Promise<void> {
     });
     const node = result.snapshot.val() as RouteNode | null;
     const view = adopt && result.committed && !stopped && leafCapable && node?._workerGeneration === generation && typeof node.revision === "number"
-      ? { buses: { ...node.buses }, revision: node.revision } : null;
+      ? { buses: { ...node.buses }, revision: node.revision, epoch } : null;
     if (view) routeViews.set(routeId, view); else routeViews.delete(routeId);
     return { view, node };
   }
@@ -242,7 +253,9 @@ export function startLiveBusProjection(): () => Promise<void> {
     if (!leafCapable || performance.now() < leafRetryAt) return publishBusByTransaction(routeId, busKey, value);
     for (let attempt = 0; attempt < 2; attempt++) {
       let view = routeViews.get(routeId);
-      if (!view) {
+      // A copy from before the current recovery pass may still list a bus that
+      // was erased since; comparing a replay against it could skip the repair.
+      if (!view || view.epoch !== viewEpoch) {
         const claim = await claimRoute(routeId, 0, true);
         if (stopped) return null;
         // A newer generation owns the destination (or the claim could not
@@ -333,6 +346,9 @@ export function startLiveBusProjection(): () => Promise<void> {
     hasCapacity: () => !stopped && scheduler.snapshot().pendingKeys < 32,
     async readPage(cursor, limit) {
       assertWorkerLeadership();
+      // A new pass replays every source bus: refresh each route's copy before
+      // the first replay compares against it, so this pass repairs it.
+      if (!cursor) viewEpoch++;
       const position = cursor ? JSON.parse(cursor) : { phase: "live", key: "" };
       if (position.phase === "live") {
         let query = source.orderByKey();

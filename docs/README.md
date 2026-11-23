@@ -113,7 +113,7 @@ The register lists every controlled document by its source path. A mirror carrie
 | ID | Document | Version | Status | Last updated |
 |---|---|---|---|---|
 | EKI-SEC-001 | [Security Policy](../SECURITY.md) | 1.3 | Current | 2026-11-07 |
-| EKI-SEC-002 | [Security Architecture](security/SECURITY_ARCHITECTURE.md) | 5.0 | Current | 2026-11-21 |
+| EKI-SEC-002 | [Security Architecture](security/SECURITY_ARCHITECTURE.md) | 5.0 | Current | 2026-11-23 |
 | EKI-SEC-003 | [Browser API Security](security/BROWSER_API_SECURITY.md) | 3.1 | Current | 2026-11-07 |
 | EKI-SEC-004 | [Privileged Database Authorization](security/PRIVILEGED_DATABASE_AUTHORIZATION.md) | 1.1 | Current | 2026-11-07 |
 | EKI-SEC-005 | [Hardware Security Provisioning](security/HARDWARE_SECURITY_PROVISIONING.md) | 1.1 | Current | 2026-11-07 |
@@ -268,7 +268,7 @@ The register lists every controlled document by its source path. A mirror carrie
 | EKI-EVD-059 | [Webapp readiness: 9 October 2026](testing/WEBAPP_READINESS_2026_10_09.md) | 1.0 | Historical | 2026-10-09 |
 | EKI-EVD-060 | [Deterministic QA baseline and first implementation slice](../qa/BASELINE_2026_10_11.md) | 1.0 | Historical | 2026-10-11 |
 | EKI-EVD-061 | [Cloud Run staging latency: 2 November 2026](testing/CLOUD_RUN_LATENCY_2026_11_02.md) | 1.0 | Historical | 2026-11-03 |
-| EKI-EVD-062 | [Live projection leaf writes: 21 November 2026](testing/LIVE_PROJECTION_LEAF_WRITES_2026_11_21.md) | 1.0 | Historical | 2026-11-21 |
+| EKI-EVD-062 | [Live projection leaf writes: 21 November 2026](testing/LIVE_PROJECTION_LEAF_WRITES_2026_11_21.md) | 1.0 | Historical | 2026-11-23 |
 
 <!-- register:end -->
 

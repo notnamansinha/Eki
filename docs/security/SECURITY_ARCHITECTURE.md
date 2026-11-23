@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-SEC-002 | 5.0 | Current | 2026-11-21 |
+| EKI-SEC-002 | 5.0 | Current | 2026-11-23 |
 
 ## 1. Introduction
 
@@ -282,7 +282,7 @@ Firebase App Check is not used. The browser initializes no App Check provider an
 
 ### 5.3 Realtime Database rules
 
-`database.rules.json` denies reads and writes at the root, and no path allows a client write. The backend's Admin SDK bypasses the rules, except for the projection writer: a second Admin app whose auth override is `{uid: 'eki:live-projection-writer'}`. `publicRouteBuses/{routeId}` grants it a write only when the stored `_workerGeneration` is a number equal to the one written and the written `revision` is the stored one plus 1, so a former worker leader cannot overwrite its successor's projection. Ordinary sign-in cannot produce that uid; a custom token for it needs the project's service-account signing rights, which already amount to Admin access. See [live projection leaf writes](../testing/LIVE_PROJECTION_LEAF_WRITES_2026_11_21.md).
+`database.rules.json` denies reads and writes at the root, and no path allows a client write. The backend's Admin SDK bypasses the rules, except for the projection writer: a second Admin app whose auth override is `{uid: 'eki:live-projection-writer'}`. `publicRouteBuses/{routeId}` grants it a write only when the stored `_workerGeneration` is a number equal to the one written and the written `revision` is the stored one plus 1, so a former worker leader cannot overwrite its successor's projection. Its reads are not narrowed: as a signed-in `auth` it reads what any signed-in client reads (route buses, `activeRouteGeometry`, `liveRouteCatalog/values` and `clientProjectionStatus/public`), but not a route node or `activeBuses`. Ordinary sign-in cannot produce that uid; a custom token for it needs the project's service-account signing rights, which already amount to Admin access. See [live projection leaf writes](../testing/LIVE_PROJECTION_LEAF_WRITES_2026_11_21.md).
 
 | Path | Client read |
 |---|---|

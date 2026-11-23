@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-EVD-062 | 1.0 | Historical | 2026-11-21 |
+| EKI-EVD-062 | 1.0 | Historical | 2026-11-23 |
 
 ## 1. Purpose
 
@@ -16,7 +16,7 @@ After the change, the leader publishes one bus as a multi-path `update()` of onl
 
 | Part | Behaviour | Source |
 |---|---|---|
-| Route claim | A whole-node transaction, as before, stamps the leader's `_workerGeneration` and returns the node the leader diffs against. A publishing claim always commits, so the leader adopts only a node the server has confirmed. It runs once per route after election, after a denial, and after each 60 s recovery pass, which discards the leader's copy so that the next claim repairs edits made without a revision. In the emulator, a claim that writes back an unchanged node sends 0 bytes to listeners. | `claimRoute` |
+| Route claim | A whole-node transaction, as before, stamps the leader's `_workerGeneration` and returns the node the leader diffs against. A publishing claim always commits, so the leader adopts only a node the server has confirmed. It runs once per route after election and after a denial. Each 60 s recovery pass adds two more. The pass marks every copy stale when it starts, so its first replay on a route claims again and compares the source buses with the stored node. A bus or a whole route erased without a revision is therefore restored by that same pass, even when the bus sends nothing new. After the pass, the leader discards its copy, so the next publication claims again. In the emulator, a claim that writes back an unchanged node sends 0 bytes to listeners. | `claimRoute` |
 | Leaf write | Sent through a second Admin app whose `databaseAuthVariableOverride` is `{uid: 'eki:live-projection-writer'}`, so the security rules apply to it. The update carries `_workerGeneration` and `revision` (the confirmed revision plus 1). | `liveProjectionWriterRtdb` in `backend/src/lib/firebaseAdmin.ts`, `workerRtdbFencedUpdate` in `backend/src/lib/workerFence.ts` |
 | Stale-leader fence | `database.rules.json` accepts the update only when the caller has that identity, the stored `_workerGeneration` is a number equal to the one sent, and the sent revision is the stored revision plus 1. A successor's claim changes the stored generation, so every later write from the former leader is denied atomically at the destination. On a denial the leader claims again; a claim rejected by a newer generation stops the publication. | `database.rules.json`, `publishBus` |
 | Rules missing | Two denials in a row, the second straight after a confirmed claim, switch the leader to whole-route transactions for 5 min and log a warning. | `LEAF_WRITE_RETRY_MS` |
@@ -56,20 +56,32 @@ Bytes per fix (two publications), measured on 2026-11-21:
 - The backend's projection download fell from about `2.06 + 8.24 * n_r` KB per fix to 0.97 KB. Of the 10.3 KB at one bus, about 9.3 KB was the transaction downloading and echoing the route node.
 - The initial snapshot a listener receives on attach is unchanged: 1,684, 7,176 and 14,041 bytes for 1, 5 and 10 buses.
 
-The fence is covered by these emulator cases in the same file, run against the committed `database.rules.json` with the real Admin override:
+The fence and recovery are covered by these emulator cases in the same file, run against the committed `database.rules.json` with the real Admin override:
 
 | Case | Shows |
 |---|---|
-| `accepts a fenced leaf update only from the claimed generation at the next revision, under the committed rules` | A resent update, a skipped revision, a partial bus record, an update without `revision`, a lower or unclaimed generation, and the former leader after a successor's claim are all denied. The writer identity has no other read or write. |
+| `accepts a fenced leaf update only from the claimed generation at the next revision, under the committed rules` | A resent update, a skipped revision, a partial bus record, an update without `revision`, a lower or unclaimed generation, and the former leader after a successor's claim are all denied. The writer identity cannot write any other path, and it cannot read the route node or `activeBuses`. |
 | `stops a still-running former leader at the destination once its successor has claimed the route` | Two live publishers: the former leader's one attempt is denied, it then stops writing, and the route holds only the successor's state. |
+| `%s mode restores a stationary bus on the first recovery pass after %s was erased` | In both leaf and transaction modes, a bus whose public record, or whose whole route node, was erased without a revision is back after one recovery pass, while its source record is unchanged. Before each pass claimed its routes again, leaf mode needed a second pass, 60 s later. Run on 2026-11-23. |
 
 `backend/src/rulesIntegration.test.ts` shows that passenger, administrator and unauthenticated clients cannot write the projection, and that the writer uid gets only the fenced write.
+
+The rules grant the writer uid no write other than the fenced one. They do not limit its reads, however. The uid is a signed-in `auth`, so it can read every path open to any signed-in client:
+
+| Path | Contents |
+|---|---|
+| `publicRouteBuses/{routeId}/buses` | Route buses |
+| `activeRouteGeometry` | Active route geometry |
+| `liveRouteCatalog/values` | Catalog values |
+| `clientProjectionStatus/public` | Public readiness |
+
+It cannot read anything outside these four paths, such as the `publicRouteBuses` root, a route node, `activeBuses` or `liveRouteCatalog/revisions`. The same test checks each of these reads.
 
 ## 5. Limits
 
 - These are emulator measurements on loopback. They exclude TLS, which Firebase bills, and they are not production usage. Moving-bus measurements in production are still needed.
 - Only one bus moved. With every bus on a route moving, the passenger figure per second is `n_r * 1.15` KB.
-- Each route claim downloads the route node once, about `1.35 * n_r` KB. With leaf writes a claim follows each 60 s recovery pass, so it adds about `0.02 * n_r` KB/s per route, not per fix. The recovery pass itself is unchanged by this work.
+- Each route claim downloads the route node once, about `1.35 * n_r` KB. With leaf writes, each 60 s recovery pass adds up to two claims per route: one when the pass first replays the route, and one after the pass discards the leader's copy. Together they add about `0.045 * n_r` KB/s per route, not per fix. The rest of the recovery pass is unchanged by this work.
 - The backend figures cover the projection's own connections only. The trip-state engine's `activeBuses` listener and the backend's telemetry transactions are unchanged by this work and not measured here.
 - On a production RTDB instance the second connection carries only writes and their acknowledgements.
 - Rules evaluate the merged result of an update, so they cannot tell an omitted `_workerGeneration` from an unchanged one. The fence relies on `workerRtdbFencedUpdate` always writing the caller's own generation, as the whole-route transaction relied on `workerRtdbTransaction` stamping it. An update without the next `revision` is always denied.

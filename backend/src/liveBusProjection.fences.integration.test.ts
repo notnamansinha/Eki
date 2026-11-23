@@ -274,11 +274,13 @@ integration("R14 actual SDK publisher fences, recovery and listener isolation", 
     expect(claimed).toMatchObject({ _workerGeneration: 5, buses: { "node:busA_routeA": { lat: 23 } } });
     // The former leader's delayed write names the right next revision and is still refused at the destination.
     await expect(fenced(4, { revision: claimed.revision + 1, [lat]: 99 })).rejects.toThrow(/permission.denied/i);
-    // Outside the projection, and for any path without the fence leaves, the writer identity holds no grant.
+    // Outside the projection, and for any path without the fence leaves, the writer identity holds no write
+    // grant. Like any signed-in identity it reads route buses, but never the route node.
     await expect(fixture.writer!.ref(`${route}/${lat}`).set(99)).rejects.toThrow(/permission.denied/i);
     await expect(fixture.writer!.ref("activeBuses/busA_routeA/lat").set(99)).rejects.toThrow(/permission.denied/i);
     await expect(fixture.writer!.ref("liveRouteCatalog/values/route:routeA/active").set(99)).rejects.toThrow(/permission.denied/i);
     await expect(fixture.writer!.ref(route).get()).rejects.toThrow(/permission.denied/i);
+    expect((await fixture.writer!.ref(`${route}/buses`).get()).val()).toEqual(claimed.buses);
     expect(await read(route)).toEqual(claimed);
   }, 40_000);
 
@@ -303,6 +305,33 @@ integration("R14 actual SDK publisher fences, recovery and listener isolation", 
       expect(await read("publicRouteBuses/route:routeA")).toMatchObject({ _workerGeneration: 5, buses: { "node:busA_routeA": { seq: 3, lat: 23.003 } } });
       expect(getLiveBusProjectionStatus()).toMatchObject({ writeMode: "leaf", leafWriteDenials: 0, leafWriteFallbacks: 0 });
     } finally { await former(); }
+  }, 40_000);
+
+  it.each([
+    ["leaf", "its public bus"], ["leaf", "the whole route"],
+    ["transaction", "its public bus"], ["transaction", "the whole route"],
+  ] as const)("%s mode restores a stationary bus on the first recovery pass after %s was erased", async (mode, erased) => {
+    vi.stubEnv("LIVE_PROJECTION_WRITE_MODE", mode);
+    const bus = "publicRouteBuses/route:routeA/buses/node:busA_routeA";
+    await realtime.ref("activeBuses/busA_routeA").set(live());
+    await start(4); await idle();
+    // The startup pass ends with a claim; this fix leaves the leader a copy confirmed after it.
+    await realtime.ref("activeBuses/busA_routeA").update({ seq: 1, lat: 23.001, timestamp: Date.now() });
+    await eventually(async () => (await read(bus))?.seq === 1, "the fix publication"); await idle();
+    const published = await read(bus);
+    // Erased without a revision change, while the bus sends nothing new: only recovery can restore it.
+    await realtime.ref(erased === "the whole route" ? "publicRouteBuses/route:routeA" : bus).remove();
+    const passes = metrics().reconstructionReads;
+    // A source record that cannot be published requests a recovery pass, as the 60 s timer does,
+    // so the next pass starts now rather than up to a minute later.
+    await realtime.ref("activeBuses/unrouted").set({ busId: "busZ" });
+    // The pass replays source buses first and then rereads each route's revision floor.
+    await eventually(async () => metrics().reconstructionReads > passes, "the first recovery pass");
+    await eventually(async () => (await read(bus)) !== null, "the restored bus", 4000); await idle();
+    expect(metrics().reconstructionReads - passes).toBe(1);
+    expect(await read(bus)).toEqual(published);
+    expect(await read("publicRouteBuses/route:routeA")).toMatchObject({ _workerGeneration: 4 });
+    expect(getLiveBusProjectionStatus()).toMatchObject({ writeMode: mode, leafWriteFallbacks: 0 });
   }, 40_000);
 
   it("delivers a route listener only the changed leaves of a fix, whatever the number of buses on the route", async () => {

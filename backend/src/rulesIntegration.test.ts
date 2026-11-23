@@ -231,8 +231,15 @@ rulesDescribe("Firebase security rules integration", () => {
       for (const path of ["activeBuses/bus_1_route_1/lat", "liveRouteCatalog/values/route:route_1/active", "clientProjectionStatus/public/ready", "_userAuthorization/admin_1/role"]) {
         await assertFails(set(ref(writer.database(), path), 99));
       }
+      // Reads are not narrowed for this uid: as a signed-in identity it reads
+      // what every signed-in client reads, and nothing more.
+      for (const path of ["publicRouteBuses/route:route_1/buses", "activeRouteGeometry", "liveRouteCatalog/values", "clientProjectionStatus/public"]) {
+        await assertSucceeds(get(ref(writer.database(), path)));
+      }
       await assertFails(get(route(writer)));
-      await assertFails(get(ref(writer.database(), "activeBuses")));
+      for (const path of ["publicRouteBuses", "activeBuses", "liveRouteCatalog/revisions", "clientProjectionStatus", "_userAuthorization"]) {
+        await assertFails(get(ref(writer.database(), path)));
+      }
       const valid = { _workerGeneration: 7, revision: 2, [lat]: 23.5 };
       for (const other of [environment.authenticatedContext("route_viewer", { role: "passenger" }),
         environment.authenticatedContext("fleet_viewer", { role: "admin", admin: true, authorizationVersion: "current" }), environment.unauthenticatedContext()]) {

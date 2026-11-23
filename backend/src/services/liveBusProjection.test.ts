@@ -256,6 +256,25 @@ describe("public live projection", () => {
     expect(route().buses[node]).toEqual(publicLiveBus({ ...live(), lat: 25 }));
     expect(getLiveBusProjectionStatus()).toMatchObject({ leafWriteDenials: 2, leafWriteFallbacks: 0, routeClaims: 3, writeMode: "leaf" });
   });
+  it.each([
+    ["leaf", "its public bus"], ["leaf", "the whole route"],
+    ["transaction", "its public bus"], ["transaction", "the whole route"],
+  ])("%s mode restores a stationary bus on the first recovery pass after %s was erased", async (mode, erased) => {
+    if (mode === "transaction") vi.stubEnv("LIVE_PROJECTION_WRITE_MODE", "transaction");
+    start(4); await publish(live());
+    // The startup pass ends with a claim; the next fix leaves the leader a copy confirmed after it.
+    await vi.advanceTimersByTimeAsync(5000); await settle();
+    const latest = { ...live(), lat: 24 }; await publish(latest);
+    expect(route().buses[node]).toEqual(publicLiveBus(latest));
+    // Erased without a revision change, while the bus sends nothing new: only recovery can restore it.
+    if (erased === "the whole route") delete fixture.data.publicRouteBuses["route:route1"]; else delete route().buses[node];
+    const passes = (getLiveBusProjectionStatus() as unknown as Record<string, number>).reconstructionReads;
+    // The 60 s pass starts at 60 s and needs one 1 s tick per page; the next starts at 120 s.
+    await vi.advanceTimersByTimeAsync(60_000); await settle();
+    expect((getLiveBusProjectionStatus() as unknown as Record<string, number>).reconstructionReads - passes).toBe(1);
+    expect(route()).toMatchObject({ _workerGeneration: 4, buses: { [node]: publicLiveBus(latest) } });
+    expect(fixture.data.liveRouteCatalog.values["route:route1"]).toMatchObject({ active: 1 });
+  });
   it("keeps publishing through the fenced transaction where rules do not grant the leaf writer, then probes again", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     fixture.denyLeafWrites = true; start(4, 1_000_000); await publish(live());
