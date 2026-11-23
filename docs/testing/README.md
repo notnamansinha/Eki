@@ -116,6 +116,7 @@ CI success, a synthetic browser test, a stationary trace, a short moving trace a
 | EKI-EVD-059 | 2026-10-09 | [Webapp readiness, 9 October](WEBAPP_READINESS_2026_10_09.md) | Browser | Stationary passenger flow on localhost |
 | EKI-EVD-060 | 2026-10-11 | [Deterministic QA baseline](../../qa/BASELINE_2026_10_11.md) | Audit | First QA programme slice; the [QA programme](../../qa/README.md) describes the current state |
 | EKI-EVD-061 | 2026-11-03 | [Cloud Run staging latency, 2 November](CLOUD_RUN_LATENCY_2026_11_02.md) | Stationary physical | Run 2026-11-02 against the Cloud Run staging backend and the `asia-southeast1` RTDB, with Cloud Run request logs and a remote RTDB listener; no moving drive or browser |
+| EKI-EVD-063 | 2026-11-24 | [Load and fault drills, local, 24 November](LOAD_DRILLS_LOCAL_2026_11_24.md) | Synthetic | Bounded k6 profiles and Toxiproxy drills against one local backend process and the emulators; the deployed run was not made |
 
 The `assets/` folder holds images referenced by these records. `simulations/generate-gnss.mjs` is the GNSS profile generator: the backend GNSS property tests that `qa:gnss` runs import it and the acceptance catalog reads its profile list, so it is current code, not evidence.
 
