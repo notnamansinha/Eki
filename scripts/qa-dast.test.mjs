@@ -5,7 +5,8 @@ import { resolve } from 'node:path';
 import { repositoryRoot } from './qa/acceptance-catalog.mjs';
 import {
   LOCAL_DISABLED_RULES, LOCAL_PATH_VALUES, PROFILES, STAGING_MIN_TOKEN_LIFETIME_MS, STAGING_ORIGIN, STAGING_RULES, ZAP_IMAGE,
-  applyTriage, assertStagingRun, automationPlan, mergeAlerts, redact, redactLog, sanitizeZapReport, scopedContract, selectOperations,
+  CLOUD_RUN_NAME_CHARACTERS, HEX_DIGITS, applyTriage, assertStagingRun, automationPlan, canonicalCount, canonicalStatus, canonicalText,
+  mergeAlerts, redact, redactLog, sanitizeZapReport, scopedContract, selectOperations,
 } from './qa/dast-plan.mjs';
 import { dastTriage } from '../qa/dast-triage.mjs';
 
@@ -168,6 +169,21 @@ test('alerts merge across roles, and every Low or higher alert needs a dispositi
   assert.equal(regressed.untriaged, 1);
   assert.equal(regressed.alerts[0].fixedAlertReappeared, true);
   assert.throws(() => applyTriage(merged, [{ alertRef: '10021', profiles: ['local'], disposition: 'ignored', rationale: 'x' }], 'local'));
+});
+
+test('response values are rebuilt from fixed sets before they reach the evidence', () => {
+  assert.equal(canonicalStatus(200), 200);
+  assert.equal(canonicalStatus(599), 599);
+  for (const value of [99, 600, '200', 200.5, null, undefined]) assert.equal(canonicalStatus(value), null, String(value));
+  const sha = 'a'.repeat(40);
+  assert.equal(canonicalText(sha, HEX_DIGITS, 40), sha);
+  assert.equal(canonicalText('eki-backend-staging-00012-x7q', CLOUD_RUN_NAME_CHARACTERS, 63), 'eki-backend-staging-00012-x7q');
+  for (const value of ['A'.repeat(40), `${sha}0`, '', 'rev</script>', 'eki\nrevision', 42, null]) {
+    assert.equal(canonicalText(value, HEX_DIGITS + CLOUD_RUN_NAME_CHARACTERS, 40), null, JSON.stringify(value));
+  }
+  assert.equal(canonicalCount(0), 0);
+  assert.equal(canonicalCount(156), 156);
+  for (const value of [-1, 1.5, '3', Number.MAX_SAFE_INTEGER + 2, null]) assert.equal(canonicalCount(value), null, String(value));
 });
 
 test('the triage register is well formed', () => {

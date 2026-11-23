@@ -7,7 +7,8 @@ import { safetyPreflight } from './safety-preflight.mjs';
 import { removeGeneratedDemoConfig } from './emulator-environment.mjs';
 import {
   LOCAL_BACKEND_PORT, LOCAL_PATH_VALUES, STAGING_ORIGIN, ZAP_IMAGE,
-  applyTriage, assertStagingRun, automationPlan, mergeAlerts, profileFor, redact,
+  CLOUD_RUN_NAME_CHARACTERS, HEX_DIGITS, applyTriage, assertStagingRun, automationPlan, canonicalCount, canonicalStatus,
+  canonicalText, mergeAlerts, profileFor, redact,
   redactLog, riskCounts, sanitizeZapReport, scopedContract, selectOperations,
 } from './dast-plan.mjs';
 import { dastTriage } from '../../qa/dast-triage.mjs';
@@ -131,9 +132,11 @@ async function scanRole(role, authorization, pathValues) {
   return sanitized.alerts;
 }
 
+// Only canonical values from a response reach the report: the status from the
+// fixed list of codes, and body fields through canonicalText or canonicalCount.
 async function getJson(url, init = {}) {
   const response = await fetch(url, { ...init, signal: AbortSignal.timeout(10_000), redirect: 'error' });
-  return { status: response.status, body: await response.json().catch(() => null) };
+  return { status: canonicalStatus(response.status), body: await response.json().catch(() => null) };
 }
 
 // ---- local profile: the disposable emulator backend ----------------------
@@ -171,8 +174,10 @@ async function withLocalBackend(role, work) {
     if (!ready) throw new Error(`The disposable backend for ${role} did not start; see ${workDirectory}/backend-${role}.log`);
     const result = await work();
     const { body: state } = await control('/evidence');
-    const transport = { role, deniedConnections: state?.transport?.deniedConnections,
-      providerDeniedRequests: state?.providers?.deniedRequests, externalNetworkExecuted: state?.providers?.externalNetworkExecuted };
+    const executed = state?.providers?.externalNetworkExecuted;
+    const transport = { role, deniedConnections: canonicalCount(state?.transport?.deniedConnections),
+      providerDeniedRequests: canonicalCount(state?.providers?.deniedRequests),
+      externalNetworkExecuted: executed === false ? false : executed === true ? true : null };
     report.fixtureEvidence.push(transport);
     if (transport.deniedConnections !== 0 || transport.providerDeniedRequests !== 0 || transport.externalNetworkExecuted !== false) {
       throw new Error(`The ${role} scan made the backend attempt a non-loopback connection`);
@@ -240,7 +245,11 @@ async function readRelease(adminToken) {
   const deadline = Date.now() + 90_000;
   for (;;) {
     const { status, body } = await getJson(`${STAGING_ORIGIN}/api/health`, { headers: { Authorization: `Bearer ${adminToken}` } });
-    if (status === 200 && body?.release) return { sourceSha: body.release.sourceSha, service: body.release.service, revision: body.release.revision };
+    if (status === 200 && body?.release) {
+      return { sourceSha: canonicalText(body.release.sourceSha, HEX_DIGITS, 40),
+        service: canonicalText(body.release.service, CLOUD_RUN_NAME_CHARACTERS, 63),
+        revision: canonicalText(body.release.revision, CLOUD_RUN_NAME_CHARACTERS, 63) };
+    }
     // A cold instance answers 503 until its first Firestore and RTDB probes succeed.
     if (![502, 503, 504].includes(status) || Date.now() > deadline) throw new Error(`Admin health read failed with HTTP ${status}`);
     await new Promise(done => setTimeout(done, 5_000));

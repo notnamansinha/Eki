@@ -340,6 +340,32 @@ export function redact(value, { secrets = [], origin, label = '<target>', limit 
   return text.length > limit ? `${text.slice(0, limit)}...` : text;
 }
 
+// Values that a server returns are written to the evidence only after they are
+// rebuilt from these fixed sets, which validates them and ensures no response
+// byte reaches a file unchecked (CodeQL js/http-to-file-access).
+const HTTP_STATUS_CODES = Object.freeze(Array.from({ length: 500 }, (_, index) => index + 100));
+export const HEX_DIGITS = '0123456789abcdef';
+export const CLOUD_RUN_NAME_CHARACTERS = 'abcdefghijklmnopqrstuvwxyz0123456789-';
+
+/** The HTTP status code from the fixed list of 100 to 599, or null. */
+export function canonicalStatus(value) {
+  return HTTP_STATUS_CODES.find(code => code === value) ?? null;
+}
+
+/** `value` rebuilt from the characters of `alphabet`, or null when it has another character or is empty or too long. */
+export function canonicalText(value, alphabet, maxLength) {
+  if (typeof value !== 'string' || value.length === 0 || value.length > maxLength) return null;
+  const allowed = [...alphabet];
+  const rebuilt = [...value].map(character => allowed.find(candidate => candidate === character));
+  return rebuilt.every(character => character !== undefined) ? rebuilt.join('') : null;
+}
+
+/** A non-negative safe integer rebuilt from its digits, or null. */
+export function canonicalCount(value) {
+  if (!Number.isSafeInteger(value) || value < 0) return null;
+  return Number(canonicalText(String(value), '0123456789', 16));
+}
+
 /** A log with credentials removed and its lines kept. */
 export function redactLog(text, secrets = []) {
   let value = String(text ?? '');
