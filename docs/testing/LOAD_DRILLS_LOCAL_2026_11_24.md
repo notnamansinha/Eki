@@ -114,7 +114,7 @@ Later in run B the client path through Toxiproxy stopped answering for about 70 
 
 ### 6.2 Docker Desktop forwarding
 
-Every run saw short stalls of the client path through Docker Desktop's port forwarding, with the backend healthy: 2 probe timeouts in run A, 45 in run B, 4 in run C and none in run D. A separate 60 s check with a plain loopback server found that 11 of 454 requests from a container to `host.docker.internal`, each on a new connection, failed. The k6 profiles keep connections alive and saw no such failure outside run B's stalls. The harness therefore keeps prober connections alive, judges recovery on the first stable 15 s and reports later bad probes separately. A Linux host or a deployed target does not use this path.
+Every run saw short stalls of the client path through Docker Desktop's port forwarding, with the backend healthy: 2 probe timeouts in run A, 45 in run B, 4 in run C and none in run D. A separate 60 s check with a plain loopback server found that 11 of 454 requests from a container to `host.docker.internal`, each on a new connection, failed. The k6 profiles keep connections alive and saw no such failure outside run B's stalls. The harness therefore keeps prober connections alive, judges recovery on the first stable 15 s and reports later bad probes separately. A Linux host has neither forwarding hop; a deployed run from Docker Desktop uses only the published client port, not the container-to-host hop.
 
 ### 6.3 Comparison with other measurements
 
