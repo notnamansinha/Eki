@@ -61,16 +61,17 @@ export const DRILL_NAMES = Object.freeze(Object.keys(DRILLS));
 export const PROBE_BUDGET_MS = LIMITS.p95Ms;
 export const PROBE_TIMEOUT_MS = 5_000;
 // Each prober loop keeps one keep-alive connection and replaces it after this
-// many requests (about 5 s), so a toxic with a toxicity below 1 rolls per connection
-// about 18 times during a 30 s fault, while few connections are opened. On Docker Desktop
-// about 2 % of new connections from a container to host.docker.internal failed
-// in a 60 s check on 2026-11-24; keep-alive keeps that noise out of the drills.
-export const REQUESTS_PER_CONNECTION = 20;
-// Recovery is judged in windows of WINDOW_MS counted back from the end of the
-// observation. A window is clean when its share of bad probes is at most the
-// baseline's share, or MIN_TOLERANCE if that is larger, so that one dropped
-// connection does not hide a recovery. The clean windows at the end must
-// cover STABLE_MS.
+// many requests (about 2.5 s), so a toxic with a toxicity below 1, which
+// Toxiproxy draws per connection, reaches about 36 connections during a 30 s
+// fault, while few connections are opened. On Docker Desktop about 2 % of new
+// connections from a container to host.docker.internal failed in a 60 s check
+// on 2026-11-24; keep-alive keeps most of that noise out of the drills.
+export const REQUESTS_PER_CONNECTION = 10;
+// Recovery is judged in windows of WINDOW_MS from the removal of the fault. A
+// window is clean when its share of bad probes is at most the baseline's share,
+// or MIN_TOLERANCE if that is larger, so that one dropped connection does not
+// hide a recovery. The client recovered when STABLE_MS of consecutive clean
+// windows follow the removal.
 export const WINDOW_MS = 5_000;
 export const MIN_TOLERANCE = 0.02;
 export const STABLE_MS = 15_000;
@@ -286,12 +287,13 @@ const badShare = list => (list.length ? list.filter(sample => !sample.good).leng
  * Phase statistics, health degradation and recovery time of one drill. Sample
  * times are milliseconds from the drill start.
  *
- * The observation after the fault is removed is cut into `windowMs` windows,
- * counted back from `endMs`. The stable point is the start of the run of clean
- * windows at the end (a window is clean when its share of bad probes is within
- * the tolerance). The drill recovered when that run covers `stableMs`; the
- * recovery time runs from the removal of the fault to the end of the last bad
- * probe that started before the stable point. `/health` counts as degraded
+ * The observation after the fault is removed is cut into `windowMs` windows. A
+ * window is clean when it holds probes and its share of bad probes is within
+ * the tolerance. The client recovered at the start of the first run of clean
+ * windows that covers `stableMs`; the recovery time runs from the removal of
+ * the fault to the end of the last bad probe that started before that point.
+ * Bad probes after it are counted separately, so a later relapse or a stall of
+ * the client path stays visible without hiding the recovery. `/health` counts as degraded
  * only when it answered something other than 200; a transport failure is the
  * client path's, not the backend's. Samples with `route: 'direct'` bypassed
  * the proxy; they are summarized per phase as a control and do not enter the
@@ -312,14 +314,17 @@ export function analyzeDrill(allSamples, { faultStartMs, faultEndMs, endMs, wind
   const lastDegraded = degraded.at(-1);
   const healthRecovered = lastDegraded ? health.find(sample => sample.at > lastDegraded.at && sample.status === 200) : null;
   const after = phases.recovery;
-  let stableAt = null;
-  for (let end = endMs; end > faultEndMs; end -= windowMs) {
-    const start = Math.max(faultEndMs, end - windowMs);
-    const window = after.filter(sample => sample.at >= start && sample.at < end);
-    if (badShare(window) > tolerance) break;
-    stableAt = start;
+  const windows = [];
+  for (let start = faultEndMs; start + windowMs <= endMs; start += windowMs) {
+    const window = after.filter(sample => sample.at >= start && sample.at < start + windowMs);
+    windows.push({ start, clean: window.length > 0 && badShare(window) <= tolerance });
   }
-  const settled = stableAt !== null && endMs - stableAt >= stableMs && after.some(sample => sample.good && sample.at >= stableAt);
+  const needed = Math.ceil(stableMs / windowMs);
+  let stableAt = null;
+  for (let index = 0; index + needed <= windows.length && stableAt === null; index++) {
+    if (windows.slice(index, index + needed).every(window => window.clean)) stableAt = windows[index].start;
+  }
+  const settled = stableAt !== null;
   const recoveryMs = settled
     ? Math.max(0, ...after.filter(sample => !sample.good && sample.at < stableAt).map(sample => sample.at + sample.durationMs - faultEndMs))
     : null;
@@ -337,6 +342,7 @@ export function analyzeDrill(allSamples, { faultStartMs, faultEndMs, endMs, wind
     },
     recovered: settled,
     recoveryMs: recoveryMs === null ? null : rounded(recoveryMs, 0),
+    badAfterRecovery: settled ? after.filter(sample => !sample.good && sample.at >= stableAt).length : null,
   };
 }
 
@@ -557,11 +563,11 @@ export function renderMarkdown(report) {
           + `${Object.entries(stats.statuses).map(([key, value]) => `${key}: ${value}`).join(', ')} | ${direct ? `${direct.good}/${direct.requests}` : '-'} |`);
       }
     }
-    lines.push('', '| Drill | Fault | Fault observed | /health degraded probes | First degraded after fault start (ms) | /health recovered after removal (ms) | Recovered | Recovery time (ms) |', '|---|---|---|---|---|---|---|---|');
+    lines.push('', '| Drill | Fault | Fault observed | /health degraded probes | First degraded after fault start (ms) | /health recovered after removal (ms) | Recovered | Recovery time (ms) | Bad probes after recovery |', '|---|---|---|---|---|---|---|---|---|');
     for (const drill of report.drills) {
       const a = drill.analysis;
       lines.push(`| ${drill.drill} | ${drill.fault} | ${a ? (a.faultObserved ? 'yes' : 'NO') : '-'} | ${a?.health.degraded ?? '-'} | ${ms(a?.health.firstDegradedAfterFaultMs)} | `
-        + `${ms(a?.health.recoveredAfterFaultRemovedMs)} | ${a ? (a.recovered ? 'yes' : 'NO') : '-'} | ${ms(a?.recoveryMs)} |`);
+        + `${ms(a?.health.recoveredAfterFaultRemovedMs)} | ${a ? (a.recovered ? 'yes' : 'NO') : '-'} | ${ms(a?.recoveryMs)} | ${a?.badAfterRecovery ?? '-'} |`);
     }
   }
   if (report.resources) {

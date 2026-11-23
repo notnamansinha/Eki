@@ -226,9 +226,14 @@ test('one dropped connection after recovery is within tolerance, and a client tr
   assert.equal(result.recovered, true);
   assert.equal(result.recoveryMs, 0);
   assert.equal(result.health.degraded, 0);
-  const noisy = analyzeDrill(samples.map(item => (item.at >= 47_000 && item.at < 47_500 ? { ...item, good: false } : item)),
+  assert.equal(result.badAfterRecovery, 2, 'the dropped connection and the client-side /health timeout');
+  const relapse = analyzeDrill(samples.map(item => (item.at >= 47_000 && item.at < 47_500 ? { ...item, good: false } : item)),
     { faultStartMs: 10_000, faultEndMs: 20_000, endMs: 50_000 });
-  assert.equal(noisy.recovered, false, 'five bad probes in the last window are not noise');
+  assert.equal(relapse.recovered, true, 'a later stall does not undo a recovery');
+  assert.equal(relapse.badAfterRecovery, 7, 'but it stays visible');
+  const slow = analyzeDrill(samples.map(item => (item.at >= 20_000 && item.at < 38_000 ? { ...item, good: false } : item)),
+    { faultStartMs: 10_000, faultEndMs: 20_000, endMs: 50_000 });
+  assert.equal(slow.recovered, false, 'two clean windows are not 15 s of recovery');
   const controlled = analyzeDrill([...samples, ...[1000, 15_000, 48_000].map(at => ({ ...sample(at, true), route: 'direct', path: '/health' }))],
     { faultStartMs: 10_000, faultEndMs: 20_000, endMs: 50_000 });
   assert.deepEqual(controlled.phases, result.phases, 'direct control probes stay out of the client analysis');
@@ -302,8 +307,8 @@ test('logs and the report never carry a token, and the local report says it is b
     mode: 'local', sourceCommit: 'c'.repeat(40), dirty: false, verdict: 'WITHIN_THRESHOLDS', target: 'local', dryRun: false,
     scope: 'Bounded local run: not a capacity measurement and not a duration soak.', k6Version: 'v2.4.0', toxiproxyVersion: '2.13.0',
     profiles: [{ profile: 'load', peakVus: 20, summary: parseK6Summary(summary()) }],
-    drills: [{ drill: 'latency', fault: 'latency', analysis: analyzeDrill([0, 6000, 12_000, 20_000, 28_000].map(at => sample(at, at !== 6000)),
-      { faultStartMs: 5000, faultEndMs: 10_000, endMs: 30_000 }) }],
+    drills: [{ drill: 'latency', fault: 'latency', analysis: analyzeDrill([0, 6000, ...Array.from({ length: 20 }, (_, index) => 10_000 + index * 1000)]
+      .map(at => sample(at, at !== 6000)), { faultStartMs: 5000, faultEndMs: 10_000, endMs: 30_000 }) }],
     process: { started: 1, unexpectedExits: 0, expectedChanges: 0, health: { reads: 3, changes: [], revisions: [null] } },
     lease: { soak: leaseContinuity([{ at: 2000, lease: lease(1) }, { at: 3000, lease: lease(1) }]) }, resources: null,
   };

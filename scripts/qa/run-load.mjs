@@ -226,9 +226,11 @@ async function runDrill(name, settings, tokens) {
       }
     }
     stop = true;
+    const endMs = Date.now() - origin;
     await Promise.all(loops);
-    entry.observedS = Math.round((Date.now() - origin) / 1000);
-    entry.analysis = analyzeDrill(samples, { faultStartMs, faultEndMs, endMs: Date.now() - origin });
+    entry.observedS = Math.round(endMs / 1000);
+    entry.timeline = { faultStartMs, faultEndMs, endMs };
+    entry.analysis = analyzeDrill(samples, entry.timeline);
   } finally {
     stop = true;
     await Promise.allSettled(loops);
