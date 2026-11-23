@@ -24,6 +24,7 @@ This index lists the documents that define how Eki is tested and every dated evi
 | EKI-TST-011 | [Native firmware evidence](../../qa/NATIVE_EVIDENCE.md) | Run the native firmware evidence collector |
 | EKI-TST-012 | [Reviewed unit sub-oracles](../../qa/REVIEWED_UNIT_EVIDENCE.md) | Run the reviewed L1 unit selection |
 | EKI-TST-013 | [Scheduled reliability](../../qa/SCHEDULED_RELIABILITY.md) | Understand the nightly and weekly workflows |
+| EKI-TST-015 | [Load and fault drills](../../qa/LOAD_DRILLS.md) | Run the k6 profiles and Toxiproxy drills against the local backend or a deployed revision |
 
 Two machine-parsed files hold the acceptance requirements and their historical status. Do not change their table structure: `scripts/qa/acceptance-catalog.mjs` parses both.
 

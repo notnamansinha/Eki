@@ -42,6 +42,8 @@
     "qa:native": "node scripts/qa/run-native.mjs",
     "qa:unit:reviewed": "node scripts/qa/run-reviewed-unit.mjs",
     "qa:api": "npm run build --workspace=backend && node scripts/run-rules-emulator.mjs --api",
+    "qa:load": "npm run build --workspace=backend && node scripts/run-rules-emulator.mjs --load",
+    "qa:load:staging": "node scripts/qa/run-load.mjs --staging",
     "qa:mutation": "node scripts/qa/run-mutation.mjs",
     "qa:soak": "npm run build --workspace=backend && node scripts/qa/run-soak.mjs",
     "qa:weekly": "npm run qa:check && npm run qa:mutation && npm run qa:soak"

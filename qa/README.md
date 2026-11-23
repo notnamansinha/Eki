@@ -125,6 +125,7 @@ A passing preflight proves the configuration only. Runtime isolation comes from 
 | Native firmware | L1 | `npm run qa:native` | [Native firmware evidence](NATIVE_EVIDENCE.md) |
 | Emulator integration | L2 | `npm run test:rules` | [Emulator acceptance](EMULATOR_ACCEPTANCE.md) |
 | HTTP authorization | L2 | `npm run qa:api` | [HTTP authorization sweep](HTTP_AUTHORIZATION.md) |
+| Load and fault drills | L2 local, L4 deployed | `npm run qa:load`, `npm run qa:load:staging` | [Load and fault drills](LOAD_DRILLS.md) |
 | Browser | L3 | `npm run qa:browser` | [Browser acceptance](BROWSER_ACCEPTANCE.md) |
 | Ledger | All | `npm run qa:report` | [Execution ledger](EXECUTION_EVIDENCE.md) |
 | Scheduled campaigns | L1 to L3 | `npm run qa:nightly`, `npm run qa:weekly` | [Scheduled reliability](SCHEDULED_RELIABILITY.md) |
@@ -139,3 +140,4 @@ A passing preflight proves the configuration only. Runtime isolation comes from 
 - Declared tests are literal declarations, not runtime-expanded counts.
 - Database call candidates need review to identify actual writes.
 - No harness contacts real Google, Firebase or model services, and none moves a vehicle. L4 and L5 evidence comes only from the procedures in the [field acceptance package](FIELD_ACCEPTANCE.md).
+- `npm run qa:load:staging` is an exception: it sends bounded k6 traffic to one confirmed deployed backend and does not pass through the safety preflight ([load and fault drills](LOAD_DRILLS.md#62-deployed-run)).

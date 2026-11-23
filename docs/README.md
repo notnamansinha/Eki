@@ -202,6 +202,7 @@ The register lists every controlled document by its source path. A mirror carrie
 | EKI-TST-011 | [Native Firmware Evidence](../qa/NATIVE_EVIDENCE.md) | 1.1 | Current | 2026-11-07 |
 | EKI-TST-012 | [Reviewed Unit Sub-Oracles](../qa/REVIEWED_UNIT_EVIDENCE.md) | 1.1 | Current | 2026-11-07 |
 | EKI-TST-013 | [Scheduled Reliability Workflows](../qa/SCHEDULED_RELIABILITY.md) | 2.1 | Current | 2026-11-07 |
+| EKI-TST-015 | [Load and Fault Drills](../qa/LOAD_DRILLS.md) | 1.0 | Current | 2026-11-24 |
 
 ### 4.14 Evidence records (EVD)
 
