@@ -24,6 +24,7 @@ This index lists the documents that define how Eki is tested and every dated evi
 | EKI-TST-011 | [Native firmware evidence](../../qa/NATIVE_EVIDENCE.md) | Run the native firmware evidence collector |
 | EKI-TST-012 | [Reviewed unit sub-oracles](../../qa/REVIEWED_UNIT_EVIDENCE.md) | Run the reviewed L1 unit selection |
 | EKI-TST-013 | [Scheduled reliability](../../qa/SCHEDULED_RELIABILITY.md) | Understand the nightly and weekly workflows |
+| EKI-TST-017 | [Hosting cache and CDN matrix](../../qa/CACHE_MATRIX.md) | Check Hosting cache headers on a local replay or the staging site, and invalidation after a deploy |
 
 Two machine-parsed files hold the acceptance requirements and their historical status. Do not change their table structure: `scripts/qa/acceptance-catalog.mjs` parses both.
 
@@ -115,6 +116,7 @@ CI success, a synthetic browser test, a stationary trace, a short moving trace a
 | EKI-EVD-059 | 2026-10-09 | [Webapp readiness, 9 October](WEBAPP_READINESS_2026_10_09.md) | Browser | Stationary passenger flow on localhost |
 | EKI-EVD-060 | 2026-10-11 | [Deterministic QA baseline](../../qa/BASELINE_2026_10_11.md) | Audit | First QA programme slice; the [QA programme](../../qa/README.md) describes the current state |
 | EKI-EVD-061 | 2026-11-03 | [Cloud Run staging latency, 2 November](CLOUD_RUN_LATENCY_2026_11_02.md) | Stationary physical | Run 2026-11-02 against the Cloud Run staging backend and the `asia-southeast1` RTDB, with Cloud Run request logs and a remote RTDB listener; no moving drive or browser |
+| EKI-EVD-065 | 2026-11-24 | [Hosting cache matrix, 24 November](CACHE_MATRIX_2026_11_24.md) | Synthetic | Loopback replay of the export, plus read-only HTTP readings of the staging Hosting site serving `6c47e727`; invalidation after a deploy not yet observed (#504) |
 
 The `assets/` folder holds images referenced by these records. `simulations/generate-gnss.mjs` is the GNSS profile generator: the backend GNSS property tests that `qa:gnss` runs import it and the acceptance catalog reads its profile list, so it is current code, not evidence.
 

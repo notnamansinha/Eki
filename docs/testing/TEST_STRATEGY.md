@@ -169,6 +169,7 @@ The [QA programme](../../qa/README.md) describes the evidence model. Every runne
 | `npm run qa:report` | Ledger | Combines the six family reports into `artifacts/qa/execution-report.*` | [Execution ledger](../../qa/EXECUTION_EVIDENCE.md) |
 | `npm run qa:nightly` | Campaign | `qa:check`, then all six families through `scripts/qa/campaign.mjs`, then `campaign-report.mjs` | [Scheduled reliability](../../qa/SCHEDULED_RELIABILITY.md) |
 | `npm run qa:mutation`, `qa:soak`, `qa:weekly` | Campaign | Stryker mutation of `telemetryPayload.ts`; five admission-helper trials | [Scheduled reliability](../../qa/SCHEDULED_RELIABILITY.md) |
+| `npm run qa:cache`, `qa:cache:live`, `qa:cache:compare` | L0 local, L4 live | Hosting cache and CDN matrix derived from `firebase.json`: a loopback replay of `frontend/out`, at most 80 read-only GET requests to the staging Hosting site, and a before/after comparison of two live reports | [Hosting cache matrix](../../qa/CACHE_MATRIX.md) |
 
 `scripts/qa/campaign.mjs` refuses a dirty checkout. `npm run qa:report` blocks any family report from another commit or a dirty tree. `npm run build`, and therefore `npm run verify`, rewrites the Content-Security-Policy in the tracked `firebase.json` (`scripts/update-csp.mjs`); restore it with `git checkout -- firebase.json` before a QA run that must record a clean tree.
 
