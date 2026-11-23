@@ -37,7 +37,8 @@ The QA test maps (`qa/*-test-map.mjs`) and the execution ledger label every obse
 |---|---|---|
 | Node.js | 24 (CI version) | Every JavaScript suite |
 | npm dependencies | `npm ci` from `package-lock.json` | Every suite; Playwright `^1.64.1` and Stryker 10.1.1 are development dependencies in the root [`package.json`](../../package.json), and Vitest `^4.1.12` in the backend and frontend `package.json` files |
-| Java | 21 (CI version) | Firebase emulators: `test:rules`, `qa:browser`, `qa:api`, nightly emulator, browser and API campaigns |
+| Java | 21 (CI version) | Firebase emulators: `test:rules`, `qa:browser`, `qa:api`, `qa:dast`, nightly emulator, browser and API campaigns |
+| Docker | Docker Desktop or Docker Engine; image `zaproxy/zap-stable:2.17.0`, pinned by digest in [`scripts/qa/dast-plan.mjs`](../../scripts/qa/dast-plan.mjs) | `qa:dast`, `qa:dast:staging` |
 | Firebase CLI | 15.14.0, fetched by `npx --yes firebase-tools@15.14.0` inside `scripts/run-rules-emulator.mjs` | Emulator suites; no global install is needed |
 | Chromium for Playwright | `npx playwright install chromium` (CI adds `--with-deps`) | Every browser suite |
 | Python and PlatformIO | Python 3.12 in CI; `platformio==6.2.0`, pinned in [`hardware/requirements.txt`](../../hardware/requirements.txt) and installed with `pip install --requirement hardware/requirements.txt`. `qa:native` refuses any other PlatformIO version | Native firmware tests, firmware builds, `qa:native` |
@@ -165,6 +166,8 @@ The [QA programme](../../qa/README.md) describes the evidence model. Every runne
 | `npm run qa:native` | L1 | PlatformIO `native` environment with identity checks | [Native evidence](../../qa/NATIVE_EVIDENCE.md) |
 | `npm run test:rules` | L2 | Emulator integration suites | [Emulator acceptance](../../qa/EMULATOR_ACCEPTANCE.md) |
 | `npm run qa:api` | L2 | HTTP authorization sweep of every published operation | [HTTP authorization](../../qa/HTTP_AUTHORIZATION.md) |
+| `npm run qa:dast` | L2 | OWASP ZAP active scan of every published operation, per role, against the disposable backend (needs Docker) | [DAST and OpenAPI scans](../../qa/DAST.md) |
+| `npm run qa:dast:staging` | L4 | Bounded GET-only ZAP scan of the staging service with dedicated test accounts; `-- --dry-run` writes the plans only | [DAST and OpenAPI scans](../../qa/DAST.md) |
 | `npm run qa:browser` | L3 | Disposable browser acceptance; `qa:browser:providers` and `qa:browser:service` run narrow subsets | [Browser acceptance](../../qa/BROWSER_ACCEPTANCE.md) |
 | `npm run qa:report` | Ledger | Combines the six family reports into `artifacts/qa/execution-report.*` | [Execution ledger](../../qa/EXECUTION_EVIDENCE.md) |
 | `npm run qa:nightly` | Campaign | `qa:check`, then all six families through `scripts/qa/campaign.mjs`, then `campaign-report.mjs` | [Scheduled reliability](../../qa/SCHEDULED_RELIABILITY.md) |
