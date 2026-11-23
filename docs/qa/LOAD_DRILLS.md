@@ -118,7 +118,7 @@ The backend runs its background workers under one Firestore lease, `_worker_leas
 
 ### 5.3 Resources
 
-Every 5 s `scripts/qa/load-backend.mjs` appends the process's RSS, heap use, active libuv resources and socket handles to `backend-main-resources.jsonl`, and on Linux the number of open file descriptors. The report gives the first, last and largest value in the soak window and a least-squares slope per minute. There is no threshold: a 6 min window cannot show a slow leak. On a deployed target use the Cloud Run memory and instance metrics for the run window.
+Every 5 s a timer in `scripts/qa/load-backend.mjs` takes the process's RSS, heap use, active libuv resources and socket handles, and on Linux the number of open file descriptors, and appends them asynchronously to `backend-<process>-resources.jsonl`. The report gives the first, last and largest value in the soak window and a least-squares slope per minute. There is no threshold: a 6 min window cannot show a slow leak. A gap of more than 10 s between two samples means the backend's event loop stopped; the report counts these stalls for the soak and for the whole run. On a deployed target use the Cloud Run memory and instance metrics for the run window.
 
 ## 6. Procedure
 

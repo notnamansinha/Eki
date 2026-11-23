@@ -1,4 +1,5 @@
-import { appendFileSync, readdirSync } from 'node:fs';
+import { readdirSync } from 'node:fs';
+import { appendFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { dirname, relative, resolve, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -28,16 +29,21 @@ if (!isAbsolute(resourceLog) || fromEvidence.startsWith('..') || isAbsolute(from
   throw new Error('EKI_LOAD_RESOURCE_LOG must name a file under artifacts/qa');
 }
 
+// Asynchronous and serialized: a slow disk must never block the event loop of
+// the process under test. The sample is taken when the timer fires, so a gap
+// between samples means the event loop itself was blocked.
+let writing = Promise.resolve();
 function sample() {
   const memory = process.memoryUsage();
   const resources = process.getActiveResourcesInfo();
   let fds = null;
   try { fds = readdirSync('/proc/self/fd').length; } catch { /* only Linux exposes the descriptor table */ }
-  appendFileSync(resourceLog, JSON.stringify({
+  const line = JSON.stringify({
     at: Date.now(), pid: process.pid, rss: memory.rss, heapUsed: memory.heapUsed, heapTotal: memory.heapTotal,
     external: memory.external, activeResources: resources.length,
     sockets: resources.filter(type => /^(TCP|Pipe|UDP|TTY)/.test(type)).length, fds,
-  }) + '\n');
+  }) + '\n';
+  writing = writing.then(() => appendFile(resourceLog, line)).catch(() => { /* a lost sample shows as a gap */ });
 }
 sample();
 setInterval(sample, 5_000).unref();

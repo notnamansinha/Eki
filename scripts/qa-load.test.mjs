@@ -7,7 +7,7 @@ import {
   DRILLS, DRILL_NAMES, K6_IMAGE, PROFILE_ORDER, TOXIPROXY_IMAGE, analyzeDrill, assertDeployedRun, campaignSeconds,
   canonicalCount, canonicalId, canonicalStatus, detectProcessChanges, healthCounters, k6DockerArgs, k6Settings,
   leaseContinuity, parseK6Summary, parseLeaseDocument, parseResourceLog, probeOutcome, redactLog, renderMarkdown,
-  resourceGrowth, topology, verdictFor,
+  resourceGrowth, timerStalls, topology, verdictFor,
 } from './qa/load-plan.mjs';
 import {
   LIMITS, PROFILE_NAMES, classify, durationSeconds, optionsFor, parsePaths, peakVus, plannedSeconds, readSettings, scenarioFor,
@@ -288,6 +288,10 @@ test('resource growth is measured over the soak window only', () => {
   assert.equal(growth.heapUsed.growth, 6e6);
   assert.equal(growth.heapUsed.slopePerMinute, 2e6);
   assert.equal(growth.fds, null, 'no descriptor count off Linux');
+  assert.equal(growth.stalls.count, 3, 'one-minute gaps between 5 s timer samples are event-loop stalls');
+  const steady = Array.from({ length: 10 }, (_, index) => ({ at: index * 5000, pid: 1 }));
+  assert.deepEqual(timerStalls(steady), { count: 0, longestMs: 0, endedAt: [] });
+  assert.deepEqual(timerStalls([...steady, { at: 105_000, pid: 1 }]).longestMs, 60_000);
 });
 
 test('server values are rebuilt from fixed alphabets before they reach evidence', () => {

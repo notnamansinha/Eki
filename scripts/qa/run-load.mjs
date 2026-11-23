@@ -10,7 +10,7 @@ import {
   DRILLS, DRILL_NAMES, K6_IMAGE, LIMITER_COOLDOWN_S, LOCAL_ACCOUNTS, PEAK_PROFILES, PORTS, PROBE_TIMEOUT_MS, PROFILE_ORDER, REQUESTS_PER_CONNECTION,
   STABLE_MS, TOXIPROXY_IMAGE, analyzeDrill, assertDeployedRun, campaignSeconds, canonicalId, canonicalStatus,
   detectProcessChanges, healthCounters, k6DockerArgs, k6Settings, leaseContinuity, parseK6Summary, parseLeaseDocument,
-  parseResourceLog, probeOutcome, profileBounds, redactLog, renderMarkdown, resourceGrowth, selectNames, topology, verdictFor,
+  parseResourceLog, probeOutcome, profileBounds, redactLog, renderMarkdown, resourceGrowth, selectNames, timerStalls, topology, verdictFor,
 } from './load-plan.mjs';
 import { plannedSeconds } from '../../qa/k6/profiles.mjs';
 
@@ -57,7 +57,7 @@ const report = {
   target: mode === 'local' ? `Compiled backend on 127.0.0.1:${PORTS.backend} with disposable emulators (demo-eki-qa)` : null,
   scope: mode === 'local' ? LOCAL_SCOPE : STAGING_SCOPE,
   plannedSeconds: null, settings: null, bounds: null, drillPlans: null,
-  profiles: [], drills: [], resources: null, lease: null,
+  profiles: [], drills: [], resources: null, stalls: null, lease: null,
   process: { started: 0, unexpectedExits: mode === 'local' ? 0 : null, expectedChanges: 0, health: null },
   release: null, verdict: 'BLOCKED', setupError: null,
 };
@@ -421,7 +421,12 @@ async function runLocal() {
       dependencyDrill: windows.dependency ? leaseContinuity(inWindow(windows.dependency)) : null,
     };
     report.process.health = detectProcessChanges(sampler.healthReads);
-    if (windows.soak) report.resources = resourceGrowth(parseResourceLog(readFileSync(first.resourceLog, 'utf8')), windows.soak.from, windows.soak.to);
+    const resources = backends.flatMap(backend => (existsSync(backend.resourceLog) ? parseResourceLog(readFileSync(backend.resourceLog, 'utf8')) : []));
+    // Per process: the gap between two processes is the planned restart, not a stall.
+    const stalls = backends.map(backend => timerStalls(resources.filter(sample => sample.pid === backend.child.pid)));
+    report.stalls = { count: stalls.reduce((sum, item) => sum + item.count, 0), longestMs: Math.max(0, ...stalls.map(item => item.longestMs)),
+      endedAt: stalls.flatMap(item => item.endedAt) };
+    if (windows.soak) report.resources = resourceGrowth(resources.filter(sample => sample.pid === first.child.pid), windows.soak.from, windows.soak.to);
   }
 }
 

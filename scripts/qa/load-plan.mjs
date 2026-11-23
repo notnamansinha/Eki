@@ -481,9 +481,19 @@ export function resourceGrowth(samples, fromMs, toMs) {
     samples: window.length,
     spanMs: window.length ? window.at(-1).at - window[0].at : 0,
     pids: [...new Set(window.map(sample => sample.pid))].length,
+    // Samples come from a 5 s timer inside the backend; a longer gap means its event loop stopped.
+    stalls: timerStalls(window),
     rss: series(window, 'rss'), heapUsed: series(window, 'heapUsed'),
     activeResources: series(window, 'activeResources'), sockets: series(window, 'sockets'), fds: series(window, 'fds'),
   };
+}
+
+/** Gaps between consecutive resource samples longer than `thresholdMs` (the timer runs every 5 s). */
+export function timerStalls(samples, thresholdMs = 10_000) {
+  const gaps = samples.slice(1).map((sample, index) => ({ endedAt: sample.at, gapMs: sample.at - samples[index].at }))
+    .filter(gap => gap.gapMs > thresholdMs);
+  return { count: gaps.length, longestMs: gaps.length ? Math.max(...gaps.map(gap => gap.gapMs)) : 0,
+    endedAt: gaps.map(gap => new Date(gap.endedAt).toISOString()) };
 }
 
 /** Parses the backend's resource log, skipping lines that are not complete samples. */
@@ -575,7 +585,12 @@ export function renderMarkdown(report) {
     lines.push('', `Soak window resources (${r.samples} samples over ${Math.round(r.spanMs / 1000)} s, ${r.pids} process): `
       + `RSS ${mib(r.rss?.first)} to ${mib(r.rss?.last)} MiB (max ${mib(r.rss?.max)}), heap used ${mib(r.heapUsed?.first)} to ${mib(r.heapUsed?.last)} MiB `
       + `(slope ${mib(r.heapUsed?.slopePerMinute)} MiB/min), active resources ${r.activeResources?.first ?? '-'} to ${r.activeResources?.last ?? '-'}, `
-      + `sockets ${r.sockets?.first ?? '-'} to ${r.sockets?.last ?? '-'}, file descriptors ${r.fds ? `${r.fds.first} to ${r.fds.last}` : 'not available on this platform'}.`);
+      + `sockets ${r.sockets?.first ?? '-'} to ${r.sockets?.last ?? '-'}, file descriptors ${r.fds ? `${r.fds.first} to ${r.fds.last}` : 'not available on this platform'}. `
+      + `Backend timer stalls over 10 s: ${r.stalls?.count ?? '-'}${r.stalls?.count ? ` (longest ${Math.round(r.stalls.longestMs / 1000)} s)` : ''}.`);
+  }
+  if (report.stalls) {
+    lines.push('', `Backend timer stalls over 10 s across the run: ${report.stalls.count}${report.stalls.count
+      ? ` (longest ${Math.round(report.stalls.longestMs / 1000)} s, ending ${report.stalls.endedAt.join(', ')})` : ''}.`);
   }
   if (report.lease) {
     for (const [window, lease] of Object.entries(report.lease)) {
