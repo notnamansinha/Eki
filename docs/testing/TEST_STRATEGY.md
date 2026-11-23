@@ -166,6 +166,8 @@ The [QA programme](../../qa/README.md) describes the evidence model. Every runne
 | `npm run test:rules` | L2 | Emulator integration suites | [Emulator acceptance](../../qa/EMULATOR_ACCEPTANCE.md) |
 | `npm run qa:api` | L2 | HTTP authorization sweep of every published operation | [HTTP authorization](../../qa/HTTP_AUTHORIZATION.md) |
 | `npm run qa:browser` | L3 | Disposable browser acceptance; `qa:browser:providers` and `qa:browser:service` run narrow subsets | [Browser acceptance](../../qa/BROWSER_ACCEPTANCE.md) |
+| `npm run qa:privacy:deletion`, `qa:privacy:deletion:staging` | L2 local, L4 staging | Passenger account deletion checked store by store, a database sweep and a backend log scan; read-only on staging with a dedicated test account | [Privacy verification](../../qa/PRIVACY_VERIFICATION.md) |
+| `npm run qa:privacy:hosts`, `qa:privacy:hosts:live` | L3 local, L4 live | Request hosts of every public route, mapped to vendors and compared with the privacy notice | [Privacy verification](../../qa/PRIVACY_VERIFICATION.md) |
 | `npm run qa:report` | Ledger | Combines the six family reports into `artifacts/qa/execution-report.*` | [Execution ledger](../../qa/EXECUTION_EVIDENCE.md) |
 | `npm run qa:nightly` | Campaign | `qa:check`, then all six families through `scripts/qa/campaign.mjs`, then `campaign-report.mjs` | [Scheduled reliability](../../qa/SCHEDULED_RELIABILITY.md) |
 | `npm run qa:mutation`, `qa:soak`, `qa:weekly` | Campaign | Stryker mutation of `telemetryPayload.ts`; five admission-helper trials | [Scheduled reliability](../../qa/SCHEDULED_RELIABILITY.md) |

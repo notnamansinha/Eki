@@ -142,7 +142,7 @@ The register lists every controlled document by its source path. A mirror carrie
 | EKI-OPS-012 | [API Read Caching and Compatibility Retirement](operations/API_READS_AND_RETIREMENT.md) | 1.3 | Current | 2026-11-07 |
 | EKI-OPS-013 | [Browser Telemetry Trace](operations/BROWSER_TELEMETRY_TRACE.md) | 1.1 | Current | 2026-11-07 |
 | EKI-OPS-014 | [Matching and Stale Presence Scans](operations/MATCHING_AND_LIFECYCLE_SCANS.md) | 1.1 | Current | 2026-11-07 |
-| EKI-OPS-015 | [Passenger Account Deletion](operations/PRIVACY_DELETION.md) | 1.1 | Current | 2026-11-07 |
+| EKI-OPS-015 | [Passenger Account Deletion](operations/PRIVACY_DELETION.md) | 1.2 | Current | 2026-11-24 |
 | EKI-OPS-016 | [Realtime Transport Measurements](operations/REALTIME_TRANSPORT_MEASUREMENTS.md) | 1.1 | Current | 2026-11-07 |
 | EKI-OPS-017 | [Bounded Reconciliation](operations/RECONCILIATION.md) | 1.1 | Current | 2026-11-07 |
 | EKI-OPS-018 | [Live Reroute Retry Policy](operations/REROUTE_RETRY_POLICY.md) | 1.0 | Current | 2026-10-30 |
@@ -202,6 +202,7 @@ The register lists every controlled document by its source path. A mirror carrie
 | EKI-TST-011 | [Native Firmware Evidence](../qa/NATIVE_EVIDENCE.md) | 1.1 | Current | 2026-11-07 |
 | EKI-TST-012 | [Reviewed Unit Sub-Oracles](../qa/REVIEWED_UNIT_EVIDENCE.md) | 1.1 | Current | 2026-11-07 |
 | EKI-TST-013 | [Scheduled Reliability Workflows](../qa/SCHEDULED_RELIABILITY.md) | 2.1 | Current | 2026-11-07 |
+| EKI-TST-018 | [Privacy, Deletion and Sub-Processor Verification](../qa/PRIVACY_VERIFICATION.md) | 1.0 | Current | 2026-11-24 |
 
 ### 4.14 Evidence records (EVD)
 
