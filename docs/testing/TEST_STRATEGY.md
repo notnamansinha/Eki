@@ -163,6 +163,7 @@ The [QA programme](../../qa/README.md) describes the evidence model. Every runne
 | `npm run qa:gnss` | L1 | Deterministic GNSS payload and reducer properties (Vitest, one worker) | [GNSS properties](../../qa/GNSS_PROPERTIES.md) |
 | `npm run qa:unit:reviewed` | L1 | The reviewed backend and frontend file selection in `qa/reviewed-unit-test-map.mjs` | [Reviewed units](../../qa/REVIEWED_UNIT_EVIDENCE.md) |
 | `npm run qa:native` | L1 | PlatformIO `native` environment with identity checks | [Native evidence](../../qa/NATIVE_EVIDENCE.md) |
+| `npm run qa:observability` | L2 | OTLP traces, metrics, logs and redaction from the compiled backend to a loopback receiver; `qa:observability:relay` and `qa:observability:collector` cover a remote collector and the Collector configuration | [Observability drill](../../qa/OBSERVABILITY_DRILL.md) |
 | `npm run test:rules` | L2 | Emulator integration suites | [Emulator acceptance](../../qa/EMULATOR_ACCEPTANCE.md) |
 | `npm run qa:api` | L2 | HTTP authorization sweep of every published operation | [HTTP authorization](../../qa/HTTP_AUTHORIZATION.md) |
 | `npm run qa:browser` | L3 | Disposable browser acceptance; `qa:browser:providers` and `qa:browser:service` run narrow subsets | [Browser acceptance](../../qa/BROWSER_ACCEPTANCE.md) |
