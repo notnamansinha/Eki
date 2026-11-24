@@ -5,6 +5,7 @@ import { repositoryRoot } from './acceptance-catalog.mjs';
 import { sourceCensus } from './source-census.mjs';
 import { summarizeNative } from './native-evidence.mjs';
 import { safetyPreflight } from './safety-preflight.mjs';
+import { describeDirty, workingTreeState } from './working-tree.mjs';
 
 if (process.argv.length > 2) throw Error('Only the fixed native host target is permitted');
 safetyPreflight(process.env);
@@ -12,7 +13,7 @@ const directory = resolve(repositoryRoot, 'artifacts/qa'); mkdirSync(directory, 
 const rawPath = resolve(directory, 'native-platformio.json');
 for (const path of [rawPath, resolve(directory, 'native-junit.xml')]) rmSync(path, { force: true });
 const report = { schemaVersion: 1, sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repositoryRoot, encoding: 'utf8' }).trim(),
-  dirty: Boolean(execFileSync('git', ['status', '--porcelain', '--untracked-files=all'], { cwd: repositoryRoot, encoding: 'utf8' }).trim()),
+  ...workingTreeState(repositoryRoot),
   startedAt: new Date().toISOString(), workflowRunId: process.env.GITHUB_RUN_ID ?? null, level: 'L1',
   verdict: 'BLOCKED', physicalMotionExecuted: false, realProvidersExecuted: false, actualBoardExecuted: false,
   nativeTarget: 'native', node: process.version };
@@ -35,7 +36,7 @@ try {
 } catch (error) { report.evidenceError = error.message; }
 report.finishedAt = new Date().toISOString();
 writeFileSync(resolve(directory, 'native-report.json'), JSON.stringify(report, null, 2) + '\n');
-const markdown = `# Native firmware policy observations\n\nSource: ${report.sourceCommit}; dirty: ${report.dirty}; level L1; verdict: ${report.verdict}.\n\n`
+const markdown = `# Native firmware policy observations\n\nSource: ${report.sourceCommit}; dirty: ${describeDirty(report)}; level L1; verdict: ${report.verdict}.\n\n`
   + `Assertions: ${JSON.stringify(report.counts ?? {})}. ${report.evidenceError ?? ''}\n\n`
   + 'Only the native host target executed. No actual board, flash/OTA/provisioning, RF, power, clock or live-motion acceptance. Journal codec is an explicit deterministic stand-in, not AES-GCM evidence.\n';
 writeFileSync(resolve(directory, 'native-report.md'), markdown);

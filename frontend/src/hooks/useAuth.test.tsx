@@ -741,13 +741,18 @@ describe("cold open while the sign-in code is still downloading", () => {
     await waitFor(() => expect(loads).toBe(1));
     return hook;
   }
-  beforeEach(() => {
+  beforeEach(async () => {
     loads = 0; initAttempts = 0; pending = []; observers.clear();
     vi.spyOn(console, "error").mockImplementation(() => {});
     vi.doMock("@/lib/firebaseAuth", () => {
       loads++;
       return new Promise((resolve, reject) => { pending.push({ resolve, reject }); });
     });
+    // Vitest 5 registers a queued doMock while the next import runs, and an
+    // import started alongside it does not wait. useAuth loads firebase/auth
+    // and the sign-in code together, so register the mock here first with an
+    // import of a module that is already loaded.
+    await import("./useAuth");
     mocks.observe.mockImplementation((_auth, callback) => {
       observers.add(callback); mocks.callback = callback;
       return () => { observers.delete(callback); };

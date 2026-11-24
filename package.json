@@ -42,6 +42,8 @@
     "qa:native": "node scripts/qa/run-native.mjs",
     "qa:unit:reviewed": "node scripts/qa/run-reviewed-unit.mjs",
     "qa:api": "npm run build --workspace=backend && node scripts/run-rules-emulator.mjs --api",
+    "qa:dast": "npm run build --workspace=backend && node scripts/run-rules-emulator.mjs --dast",
+    "qa:dast:staging": "node scripts/qa/run-dast.mjs --staging",
     "qa:mutation": "node scripts/qa/run-mutation.mjs",
     "qa:soak": "npm run build --workspace=backend && node scripts/qa/run-soak.mjs",
     "qa:weekly": "npm run qa:check && npm run qa:mutation && npm run qa:soak"
@@ -76,6 +78,6 @@
     "concurrently": "^10.0.6",
     "fast-glob": "file:tools/next-lint-glob",
     "markdown-it": "15.0.3",
-    "parse5": "8.0.1"
+    "parse5": "8.1.1"
   }
 }
