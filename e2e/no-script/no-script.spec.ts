@@ -64,6 +64,10 @@ test("install page gives manual installation steps instead of checking the devic
   await expect(steps.getByRole("heading", { name: "Android" })).toBeVisible();
   await expect(steps).toContainText("Install app");
   await expect(steps.getByRole("heading", { name: "Computer" })).toBeVisible();
+  // Issue #516: the page is never a dead end, even without JavaScript.
+  const back = page.getByRole("link", { name: "Back to Eki" });
+  await expect(back).toBeVisible();
+  await expect(back).toHaveAttribute("href", "/");
   await expectNoHorizontalScroll(page);
 
   await page.screenshot({ path: testInfo.outputPath("install-no-script.png"), fullPage: true });

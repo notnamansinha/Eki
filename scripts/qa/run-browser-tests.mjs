@@ -8,12 +8,13 @@ import { removeGeneratedDemoConfig } from './emulator-environment.mjs';
 import { browserTestMap } from '../../qa/browser-test-map.mjs';
 import { classifyBrowserCase } from './browser-evidence.mjs';
 import { verifiedEmulatorTargets } from './evidence-inputs.mjs';
+import { describeDirty, workingTreeState } from './working-tree.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const directory = resolve(root, 'artifacts/qa'); mkdirSync(directory, { recursive: true });
 for (const path of ['browser-playwright.json', 'browser-progress.json', 'browser-junit.xml', 'browser-run.log', 'browser-results']) rmSync(resolve(directory, path), { force: true, recursive: true });
 const report = { sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim(),
-  dirty: Boolean(execFileSync('git', ['status', '--porcelain', '--untracked-files=all'], { cwd: root, encoding: 'utf8' }).trim()),
+  ...workingTreeState(root),
   startedAt: new Date().toISOString(), node: process.version, platform: process.platform,
   workflowRunId: process.env.GITHUB_RUN_ID ?? null, level: 'L3', verdict: 'BLOCKED',
   providers: 'synthetic map SDK and in-memory Routes/Places HTTP responses; real local Auth/Firestore/RTDB emulators', realProvidersExecuted: false, physicalMotionExecuted: false,
@@ -61,7 +62,7 @@ try {
 } catch (error) { report.setupError = error.message; console.error(`Browser QA blocked: ${error.message}`); }
 report.finishedAt = new Date().toISOString();
 writeFileSync(resolve(directory, 'browser-report.json'), JSON.stringify(report, null, 2) + '\n');
-const markdown = `# Disposable browser acceptance\n\nCommit: ${report.sourceCommit}; dirty: ${report.dirty}; scope: ${report.scope ?? 'setup blocked'}; verdict: ${report.verdict}.\n\nObserved test executions: ${JSON.stringify(report.counts ?? { blocked: 'setup unavailable' })}.\n\nActual passenger components, AuthProvider, database SDKs and backend bootstrap; loopback-only browser routes and backend Node transport guard. Maps/Places responses are synthetic and role verification uses Firebase Auth. No production Next export, real OAuth/Maps, physical motion or OS sandbox claim.\n\n${report.setupError ?? ''}\n`;
+const markdown = `# Disposable browser acceptance\n\nCommit: ${report.sourceCommit}; dirty: ${describeDirty(report)}; scope: ${report.scope ?? 'setup blocked'}; verdict: ${report.verdict}.\n\nObserved test executions: ${JSON.stringify(report.counts ?? { blocked: 'setup unavailable' })}.\n\nActual passenger components, AuthProvider, database SDKs and backend bootstrap; loopback-only browser routes and backend Node transport guard. Maps/Places responses are synthetic and role verification uses Firebase Auth. No production Next export, real OAuth/Maps, physical motion or OS sandbox claim.\n\n${report.setupError ?? ''}\n`;
 writeFileSync(resolve(directory, 'browser-report.md'), markdown);
 if (process.env.GITHUB_STEP_SUMMARY) writeFileSync(process.env.GITHUB_STEP_SUMMARY, markdown, { flag: 'a' });
 if (report.verdict !== 'GREEN_FOR_EXECUTED_BROWSER_SCOPE') process.exitCode = 1;

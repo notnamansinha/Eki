@@ -2,15 +2,15 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-OPS-010 | 4.0 | Current | 2026-11-07 |
+| EKI-OPS-010 | 5.0 | Current | 2026-11-21 |
 
 ## 1. Purpose
 
-This register lists the material risks that remain in Eki, each with the source evidence for its status and the condition that closes it. It was re-checked against `main` at `216abeff` on 2026-11-07. Physical and institutional acceptance work is defined in the [test strategy](../testing/TEST_STRATEGY.md) and the [deployment checklist](UNIVERSITY_DEPLOYMENT_CHECKLIST.md); the historical starting point is the [production readiness audit](PRODUCTION_READINESS_AUDIT.md).
+This register lists the material risks that remain in Eki, each with the source evidence for its status and the condition that closes it. It was re-checked against `main` at `216abeff` on 2026-11-07; OPS-04 was added against `a35e6d6c` on 2026-11-21. Physical and institutional acceptance work is defined in the [test strategy](../testing/TEST_STRATEGY.md) and the [deployment checklist](UNIVERSITY_DEPLOYMENT_CHECKLIST.md); the historical starting point is the [production readiness audit](PRODUCTION_READINESS_AUDIT.md).
 
 ### 1.1 Summary
 
-Of the ten risks, four are closed, two are open, and four have their code-side mitigation in place but wait on deployment, hardware or institutional evidence (status values are defined in Section 2). Five of the six remaining risks are rated High.
+Of the eleven risks, four are closed, one is accepted, two are open, and four have their code-side mitigation in place but wait on deployment, hardware or institutional evidence (status values are defined in Section 2). Five of the six open or gated risks are rated High.
 
 | Area | What is unfinished | Risks |
 |---|---|---|
@@ -18,6 +18,7 @@ Of the ten risks, four are closed, two are open, and four have their code-side m
 | Stop tracking | Stop arrival and route matching are validated on simulated rides only; a moving-bus field ride is still needed. | TRK-01 (High) |
 | Tracker firmware | Outage recovery, Secure Boot and signed updates are built but not proven on hardware, and one shared update image would give every tracker the same credentials. | FW-01, FW-02, FW-03 (High) |
 | Access control | A passenger can board by reporting a false location. | SEC-01 (Medium) |
+| Staging isolation | The staging host is the search-indexable public pilot, without access control, until the production project exists. | OPS-04 (Low, accepted) |
 
 ## 2. Status values
 
@@ -25,6 +26,7 @@ Of the ten risks, four are closed, two are open, and four have their code-side m
 |---|---|
 | Open | The repository or the deployment still exposes the risk |
 | External gate | The code-side mitigation is in place; closure needs deployment, hardware or institutional evidence |
+| Accepted | The owner accepts the risk for a stated scope until a stated exit condition. The entry names the owner, scope, reason and exit condition |
 | Closed | The remediation and its acceptance evidence are on `main` |
 
 ## 3. Register
@@ -41,6 +43,7 @@ Of the ten risks, four are closed, two are open, and four have their code-side m
 | SEC-03 | Ride operations accept stale administrator claims | Medium | Closed | Every administrator branch applies the `requireAdmin` policy; regression tests for revoked, legacy and partial tokens on each route |
 | FW-03 | OTA images carry device secrets but the backend serves one release | High | Open | Per-device releases, or credentials kept out of the update image |
 | OPS-03 | The `main` ruleset requires no status checks | Medium | Closed | Ruleset `Require verified changes on main` requires `web`, `backend-image`, `firmware`, `qa-evidence`, `Analyze javascript-typescript` and `Analyze python`, with branches up to date (GitHub API, read 2026-11-02) |
+| OPS-04 | The staging host is indexable and has no access control | Low | Accepted | Public-pilot exception until `eki-production` is provisioned; then the staging build sets `NEXT_PUBLIC_SITE_INDEXING` to `false` and staging gets access control |
 
 ### 3.1 SEC-01: passengers can join a ride without proof of presence
 
@@ -107,6 +110,16 @@ Of the ten risks, four are closed, two are open, and four have their code-side m
 - Open gate: add the Production verification jobs (`web`, `backend-image`, `firmware`, `qa-evidence`) and the CodeQL `analyze` jobs as required status checks, and record whether administrators keep bypass rights.
 - Closure (2026-11-02): a second ruleset, `Require verified changes on main` (`refs/heads/main`), requires `web`, `backend-image`, `firmware`, `qa-evidence`, `Analyze javascript-typescript` and `Analyze python`, with branches up to date before merging. Correction (2026-11-03): the two rulesets have different bypass lists. Ruleset `main` can be bypassed by the administrator role and the user `suryaraj09`; `Require verified changes on main` by the maintain role, the administrator role and `suryaraj09`, all with `bypass_mode: always` (GitHub API, read 2026-11-03). `suryaraj09` holds the write role, so a write collaborator can merge without an approving review or an up-to-date green run: #418, #426 and #428 merged that way on 2026-11-02, and #426 stopped every staging release until #434. Whether to keep that bypass is the repository owner's decision. Read again on 2026-11-07, both rulesets and their bypass lists are unchanged, and ruleset `main` excludes branches matching `refs/heads/dependabot/**/*` (GitHub API).
 
+### 3.11 OPS-04: the staging host is indexable without access control
+
+- Evidence: the `deploy-staging` job in `.github/workflows/deploy.yml` builds without `NEXT_PUBLIC_SITE_URL` and `NEXT_PUBLIC_SITE_INDEXING`, so the build takes the default origin `https://bustrack-be165.web.app` and leaves indexing on (`frontend/src/lib/siteMetadata.ts`). Read-only requests on 2026-11-21, against the Hosting release of `6c47e727` by Deploy run [44731924203](https://github.com/notnamansinha/Eki/actions/runs/44731924203), returned `robots.txt` with `Allow: /`, `Disallow` for `/admin`, `/passenger`, `/feedback` and `/api/`, and the sitemap URL; a `sitemap.xml` that lists `/` and `/install`; `<meta name="robots" content="index, follow">` on `/` and `/install` and `noindex, nofollow` on `/passenger` and `/admin`; and no `X-Robots-Tag` header on any of these responses. All four pages answer 200 without sign-in. The alias `https://bustrack-be165.firebaseapp.com` serves the same files, and its pages name the `web.app` canonical. The QA review of `88901592` reported this against its staging-isolation gate SEO-001, which requires noindex and access control on staging ([issue #502](https://github.com/notnamansinha/Eki/issues/502)).
+- Decision: taken in [issue #502](https://github.com/notnamansinha/Eki/issues/502) on 2026-11-21 as a public-pilot exception to SEO-001 and to the rule that non-production builds set `NEXT_PUBLIC_SITE_INDEXING=false` ([configuration](../CONFIGURATION.md#4-frontend-variables)). The owner accepts it by approving, as code owner, the pull request that adds this entry.
+- Scope: the Firebase Hosting site of `bustrack-be165` only, served as `https://bustrack-be165.web.app` and its alias `https://bustrack-be165.firebaseapp.com`. Every other non-production host must be built with `NEXT_PUBLIC_SITE_INDEXING=false`.
+- Reason: until `eki-production` exists, this host is the only live origin. Pilot passengers use it, and the landing page and the `/install` guide are meant to be found by search; PR #531 listed `/install` in the sitemap for that reason ([issue #516](https://github.com/notnamansinha/Eki/issues/516)). `robots.txt` asks crawlers not to fetch the protected routes, and their `noindex` metadata applies wherever a crawler does fetch them; a disallowed URL can still be listed without its content if another site links to it. Firebase Authentication, role claims and Security Rules, not a hidden host, protect the data.
+- Impact: search results lead to a host that is released automatically from every green push to `main`. Anyone who finds it can sign in, and a first sign-in creates a passenger profile ([configuration](../CONFIGURATION.md#8-local-authentication-setup)). When production launches, the indexed staging URLs have to leave the search indexes. The severity is Low because indexing exposes only pages that are public by design, the host uses the same Security Rules and backend checks that production will use, and SEC-01 covers the boarding risk whether or not the host is indexed.
+- Owner: the repository owner, the code owner in `.github/CODEOWNERS`, until the platform owner role in the [deployment checklist](UNIVERSITY_DEPLOYMENT_CHECKLIST.md#2-release-ownership) is filled by a named person.
+- Exit condition: when `eki-production` is provisioned, set `NEXT_PUBLIC_SITE_INDEXING: "false"` for the `deploy-staging` build and put the staging host behind access control. Make the flag change in the pull request that first names the production project in `.firebaserc`; in the same change, set the staging cell of the environment separation table to `false` and move this entry from Accepted to the status in Section 2 that fits what remains. Firebase Hosting has no built-in access control, so staging needs a mechanism that is not chosen yet, for example an authenticating proxy in front of Hosting or a private origin. The entry closes when the deployed host serves `Disallow: /`, an empty sitemap and `noindex` on every page, and refuses unauthenticated visitors. `scripts/staging-indexing-policy.test.mjs` fails while this entry, the staging build environment, that table cell and `.firebaserc` disagree.
+
 ## 4. Maintenance rule
 
-A pull request that changes the behaviour behind a risk updates its entry and attaches fresh evidence. A risk is closed only when the remediation and its acceptance evidence are on `main`; code on another branch does not close it. External gates stay open until their evidence is recorded in the deployment checklist and the release evidence.
+A pull request that changes the behaviour behind a risk updates its entry and attaches fresh evidence. A risk is closed only when the remediation and its acceptance evidence are on `main`; code on another branch does not close it. External gates stay open until their evidence is recorded in the deployment checklist and the release evidence. An accepted risk holds only within its recorded scope; once its exit condition is met, it is remediated and closed like an open risk.

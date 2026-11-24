@@ -195,7 +195,9 @@ jobs:
           const install = readFileSync('frontend/out/install.html', 'utf8');
           assert.equal(install.match(/<meta property="og:url" content="([^"]+)"/)[1], `${origin}/install`);
           assert(readFileSync('frontend/out/robots.txt', 'utf8').includes(`Sitemap: ${origin}/sitemap.xml`));
-          assert(readFileSync('frontend/out/sitemap.xml', 'utf8').includes(`<loc>${origin}/</loc>`));
+          const sitemap = readFileSync('frontend/out/sitemap.xml', 'utf8');
+          assert(sitemap.includes(`<loc>${origin}/</loc>`));
+          assert(sitemap.includes(`<loc>${origin}/install</loc>`));
           JS
       - name: Verify landing and install pages explain themselves without JavaScript
         run: npm run test:e2e:no-script
