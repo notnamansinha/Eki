@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-TST-016 | 1.0 | Current | 2026-11-24 |
+| EKI-TST-016 | 1.1 | Current | 2026-11-24 |
 
 ## 1. Purpose
 
@@ -81,7 +81,7 @@ Each session runs every script below. Use the screen reader's normal navigation 
 | SR-06 | Route schedules list and search | Open "Routes". Type part of a stop name in "Search routes or stops", then a word that matches nothing, then clear it. Open a schedule and go back. | Search box "Search routes or stops"; list "Published routes" with buttons "View schedule for <route>"; "No routes match your search." is reachable when nothing matches (record whether it is announced without moving there); the schedule heading takes focus on open and the route's button takes it back on return. |
 | SR-07 | Feedback form | Profile, "Send feedback". Type a comment, submit, then reopen and press Escape (two-finger scrub on iOS). | Dialog "Send feedback"; text box "Comments and suggestions"; the word count; "Submit feedback" reported as unavailable while empty; the result announced through the status region; focus stays inside the dialog and returns to "Send feedback" when it closes. |
 | SR-08 | Delete-account confirmation | Profile, "Delete account". Read the dialog, then choose "Cancel". | Dialog "Delete account?" with its description read on open; focus starts on "Cancel"; "Cancel" returns focus to "Delete account". Do not confirm. |
-| SR-09 | Admin vehicle create, edit and delete | Sign in as administrator, tab "Fleet & People". Fill "New vehicle Bus ID" and "New vehicle display name", tick a route, activate "Add new vehicle". Edit and then delete that vehicle with "Edit vehicle <name>" and "Delete vehicle <name>", confirming the deletion. Use a test vehicle ID that no tracker uses. | Tabs "Administration sections" with the selected tab reported; each field named as listed; validation errors and the result announced; the delete confirmation is a dialog with focus on "Cancel". Record whether voice control can activate the buttons by their visible text (Section 7). |
+| SR-09 | Admin vehicle create, edit and delete | Sign in as administrator, tab "Fleet & People". Fill "New vehicle Bus ID" and "New vehicle display name", tick a route, activate "Add Vehicle". Edit and then delete that vehicle with "Edit vehicle <name>" and "Delete vehicle <name>", confirming the deletion. Use a test vehicle ID that no tracker uses. | Tabs "Administration sections" with the selected tab reported; each field named as listed; validation errors and the result announced; the delete confirmation is a dialog with focus on "Cancel". Record whether voice control can activate the buttons by their visible text (Section 7). |
 | SR-10 | Admin route editor | Tab "Routes", "Add Route". Search with "Search for a stop" (each search is a billed Places request; keep to a few), add two stops, reorder with "Move stop <name> up" and "Move stop <name> down" and remove one with "Remove stop <name>". Select another tab, choose "Keep editing", then leave with "Cancel route editing". Do not save. | Each control named as listed; the new stop order is perceivable; selecting another tab with unsaved changes opens the dialog "Discard unsaved changes?" with "Keep editing" and "Discard changes". |
 | SR-11 | Admin feedback list and filters | Tab "Feedback". Use "Search feedback", "Feedback type" and "Feedback status". | The comboboxes report their selected option; the "Entries <n> of <m>" count updates after each filter (record whether the change is announced); each entry is one button. Record how long an entry's spoken name is (it contains the whole card). |
 
@@ -121,13 +121,13 @@ Store screenshots and recordings with the issue or in approved storage, not in t
 
 ## 7. Known items to confirm
 
-The visual baseline review on 2026-11-24 ([EKI-EVD-063](../docs/testing/VISUAL_BASELINE_REVIEW_2026_11_24.md)) found these in the emulated renders. Confirm or clear each on a real device or with a screen reader and record the result as a finding.
+The visual baseline review on 2026-11-24 ([EKI-EVD-063](../docs/testing/VISUAL_BASELINE_REVIEW_2026_11_24.md), findings F1 to F8) found these in the emulated renders. The first three (F1 to F3) are fixed in pull request [#562](https://github.com/notnamansinha/Eki/pull/562): confirm each fix on a real device or with voice control. Confirm or clear the others on a real device or with a screen reader. Record each result as a finding.
 
 | Item | Where | Check |
 |---|---|---|
-| The "Unreviewed" label overflows its summary card and squeezes its icon out at 412 CSS px, with Roboto as well as the stand-in font | Admin Feedback on a phone | DEV-05 |
-| The Live Ops summary labels fill their cells with no side padding at 1280 CSS px | Admin Live Ops on a desktop | DEV-05 on a tablet in landscape |
-| Accessible names that do not contain the visible label: "Add new vehicle" (visible "Add Vehicle"), "Add new operator" ("Add Operator"), "Collapse saved vehicles" ("Saved Vehicles"), "Collapse saved operators" ("Saved Operators"). WCAG 2.2 success criterion 2.5.3, Label in Name | Admin Fleet & People | SR-09 with voice control (Voice Control on iOS, Voice Access on Android) |
+| Fixed in #562 (F1): the "Unreviewed" label overflowed its summary card and squeezed its icon out at 412 CSS px. On phones the icon now sits above the label and keeps its size. Confirm that no summary label is clipped at the largest text size | Admin Feedback on a phone | DEV-05 |
+| Fixed in #562 (F2): the Live Ops summary labels filled their cells with no side padding at 1280 CSS px. The cells now have side padding, and the labels are centred and no longer upper case, so "Direction" fits a padded cell. Confirm that no label touches a cell border at the largest text size | Admin Live Ops on a desktop | DEV-05 on a tablet in landscape |
+| Fixed in #562 (F3): four accessible names did not contain the visible label (WCAG 2.2 success criterion 2.5.3, Label in Name). They are now "Add Vehicle", "Add Operator", "Saved Vehicles <count>" and "Saved Operators <count>", and the two list toggles report expanded or collapsed. Confirm that voice control activates each one by its visible text | Admin Fleet & People | SR-09 with voice control (Voice Control on iOS, Voice Access on Android) |
 | The lost-signal message is in two status regions | Passenger tracking | SR-04 |
 | Each feedback entry is a single button whose name is the whole card | Admin Feedback | SR-11 |
 | Route cards are buttons that contain headings | Passenger Live routes | SR-02 |
