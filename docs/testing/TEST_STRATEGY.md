@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-TST-002 | 3.2 | Current | 2026-11-11 |
+| EKI-TST-002 | 3.3 | Current | 2026-11-21 |
 
 ## 1. Purpose and scope
 
@@ -37,7 +37,8 @@ The QA test maps (`qa/*-test-map.mjs`) and the execution ledger label every obse
 |---|---|---|
 | Node.js | 24 (CI version) | Every JavaScript suite |
 | npm dependencies | `npm ci` from `package-lock.json` | Every suite; Playwright `^1.64.1` and Stryker 10.1.1 are development dependencies in the root [`package.json`](../../package.json), and Vitest `^4.1.12` in the backend and frontend `package.json` files |
-| Java | 21 (CI version) | Firebase emulators: `test:rules`, `qa:browser`, `qa:api`, nightly emulator, browser and API campaigns |
+| Java | 21 (CI version) | Firebase emulators: `test:rules`, `qa:browser`, `qa:api`, `qa:dast`, nightly emulator, browser and API campaigns |
+| Docker | Docker Desktop or Docker Engine; image `zaproxy/zap-stable:2.17.0`, pinned by digest in [`scripts/qa/dast-plan.mjs`](../../scripts/qa/dast-plan.mjs) | `qa:dast`, `qa:dast:staging` |
 | Firebase CLI | 15.14.0, fetched by `npx --yes firebase-tools@15.14.0` inside `scripts/run-rules-emulator.mjs` | Emulator suites; no global install is needed |
 | Chromium for Playwright | `npx playwright install chromium` (CI adds `--with-deps`) | Every browser suite |
 | Python and PlatformIO | Python 3.12 in CI; `platformio==6.2.0`, pinned in [`hardware/requirements.txt`](../../hardware/requirements.txt) and installed with `pip install --requirement hardware/requirements.txt`. `qa:native` refuses any other PlatformIO version | Native firmware tests, firmware builds, `qa:native` |
@@ -165,13 +166,15 @@ The [QA programme](../../qa/README.md) describes the evidence model. Every runne
 | `npm run qa:native` | L1 | PlatformIO `native` environment with identity checks | [Native evidence](../../qa/NATIVE_EVIDENCE.md) |
 | `npm run test:rules` | L2 | Emulator integration suites | [Emulator acceptance](../../qa/EMULATOR_ACCEPTANCE.md) |
 | `npm run qa:api` | L2 | HTTP authorization sweep of every published operation | [HTTP authorization](../../qa/HTTP_AUTHORIZATION.md) |
+| `npm run qa:dast` | L2 | OWASP ZAP active scan of every published operation, per role, against the disposable backend (needs Docker) | [DAST and OpenAPI scans](../../qa/DAST.md) |
+| `npm run qa:dast:staging` | L4 | Bounded GET-only ZAP scan of the staging service with dedicated test accounts; `-- --dry-run` writes the plans only | [DAST and OpenAPI scans](../../qa/DAST.md) |
 | `npm run qa:browser` | L3 | Disposable browser acceptance; `qa:browser:providers` and `qa:browser:service` run narrow subsets | [Browser acceptance](../../qa/BROWSER_ACCEPTANCE.md) |
 | `npm run qa:report` | Ledger | Combines the six family reports into `artifacts/qa/execution-report.*` | [Execution ledger](../../qa/EXECUTION_EVIDENCE.md) |
 | `npm run qa:nightly` | Campaign | `qa:check`, then all six families through `scripts/qa/campaign.mjs`, then `campaign-report.mjs` | [Scheduled reliability](../../qa/SCHEDULED_RELIABILITY.md) |
 | `npm run qa:mutation`, `qa:soak`, `qa:weekly` | Campaign | Stryker mutation of `telemetryPayload.ts`; five admission-helper trials | [Scheduled reliability](../../qa/SCHEDULED_RELIABILITY.md) |
 | `npm run qa:cache`, `qa:cache:live`, `qa:cache:compare` | L0 local, L4 live | Hosting cache and CDN matrix derived from `firebase.json`: a loopback replay of `frontend/out`, at most 80 read-only GET requests to the staging Hosting site, and a before/after comparison of two live reports | [Hosting cache matrix](../../qa/CACHE_MATRIX.md) |
 
-`scripts/qa/campaign.mjs` refuses a dirty checkout. `npm run qa:report` blocks any family report from another commit or a dirty tree. `npm run build`, and therefore `npm run verify`, rewrites the Content-Security-Policy in the tracked `firebase.json` (`scripts/update-csp.mjs`); restore it with `git checkout -- firebase.json` before a QA run that must record a clean tree.
+`scripts/qa/campaign.mjs` refuses a dirty checkout. `npm run qa:report` blocks any family report from another commit or a dirty tree. Every runner decides "dirty" in one place, `scripts/qa/working-tree.mjs`: any staged, modified, deleted or untracked path counts, with one exception. `npm run build`, and therefore `npm run verify`, rewrites the inline-script hashes of the Content-Security-Policy in the tracked `firebase.json` (`scripts/update-csp.mjs`). When those hashes are the only change, the file is unstaged and the hashes match the current `frontend/out`, the report records `dirty: false` and `ignoredChanges: ["firebase.json (generated CSP hashes)"]`. Any other change to `firebase.json` still counts as dirty, including the backend origin or RTDB host that a filled `frontend/.env.local` writes into the policy, a formatting change, and hashes that the current export did not produce. For those, restore the file with `git checkout -- firebase.json` before a QA run that must record a clean tree.
 
 ### 4.7 Windows release QA
 
@@ -180,19 +183,18 @@ Issue #500 recorded Windows release runs that could not be repeated. This is the
 ```powershell
 npm ci
 npm run qa:check
-npm run qa:unit:reviewed      # and qa:soak: record clean-tree gates before any build
+npm run qa:unit:reviewed      # and qa:soak
 npm run test:rules
 npm run qa:browser
-npm run build                 # the default Turbopack build; rewrites firebase.json
-git checkout -- firebase.json # unless the change is meant to alter inline scripts
+npm run build                 # the default Turbopack build; rewrites the CSP hashes in firebase.json
 npm run verify:web-backend-contract   # with the target backend's NEXT_PUBLIC_BACKEND_URL
 ```
 
 - **Build.** `npm run build` (Turbopack) is the canonical build; a Webpack build is not release evidence. On 2026-11-11 a clean `npm ci` at `aff5b30d` built and exported with Turbopack on Windows 11 (Node 24.14.0, npm 11.9.0) from a path containing a space and an apostrophe, so the earlier "cannot resolve `next/package.json`" failure did not reproduce. If it returns, record the full `next build` output and the lockfiles in the parent directories, and do not substitute a Webpack export.
 - **Emulator runner.** `scripts/run-rules-emulator.mjs` runs `firebase-tools` through `node <npx-cli.js>` so that the `node "<script>"` argument of `emulators:exec` stays one argument. It uses the `npx-cli.js` of the npm that started it (`npm_execpath`), then the one next to `node.exe`. It no longer falls back to `npx.cmd` in a shell, which split that argument and made `firebase emulators:exec` fail with "Too many arguments"; when neither entry exists it stops and says so. Start the emulator suites with `npm run`.
 - **Browser acceptance.** Run `playwright.emulator.config.ts` only through `npm run qa:browser`. A direct `npx playwright test --config playwright.emulator.config.ts` has no emulators and no demo environment; the backend fixture stops with an error that names `npm run qa:browser`. Each fixture server has 90 s to start, because the first Vite start after `npm ci` and a backend fixture started while the emulators were still warming each took more than 30 s on a loaded Windows host.
-- **Skipped is not passed.** A check that did not run must not be recorded as a pass. The web and backend contract prints `SKIPPED (not verified)` when no backend URL is configured, and `npm run verify:web-backend-contract` fails in that case.
-- **Clean tree.** Run gates that record a clean tree (`qa:soak`, `qa:unit:reviewed`, the emulator families and `qa:report`) before `npm run build`, or restore `firebase.json` first (Section 4.6).
+- **Skipped is not passed.** A check that did not run must not be recorded as a pass. The web and backend contract prints `SKIPPED (not verified)` when no backend URL is configured, and `npm run verify:web-backend-contract` fails in that case. Every failure, including an unknown argument and a missing URL with `EKI_STRICT_PRODUCTION_BUILD=true`, prints one line that starts with `Web/backend contract: FAILED` and exits 1, without a stack trace.
+- **Clean tree.** The gates that record a clean tree (`qa:soak`, `qa:unit:reviewed`, the emulator families and `qa:report`) can run before or after `npm run build`. The hashes the build regenerates in `firebase.json` are recorded as `ignoredChanges`, not as a dirty tree. A build with a filled `frontend/.env.local` also writes local origins into the policy and leaves the tree dirty; restore `firebase.json` before those gates (Section 4.6).
 - **Frontend Vitest.** A worker that does not start ("Timeout waiting for worker to respond") fails the whole run even when every test passed. Rerun the named file alone and record both results; the flake is tracked in issue #499.
 
 ## 5. Choosing checks for a change

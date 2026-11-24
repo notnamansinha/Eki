@@ -8,6 +8,7 @@ import { promisify } from "node:util";
 import {
   assertWebBackendContract,
   connectSourcesFromCsp,
+  contractFailureLine,
   verifyBackendAvailability,
 } from "./verify-web-backend-contract.mjs";
 
@@ -164,6 +165,40 @@ describe("web/backend contract CLI resolves the URL the way next build does", ()
     const result = await runVerifier({ csp: "connect-src 'self';", args: ["--allow-skip"] });
     assert.notEqual(result.code, 0, result.output);
     assert.match(result.output, /Unknown argument/);
+  });
+
+  // Each failure prints one "Web/backend contract: FAILED" line and no stack trace.
+  for (const [name, run, reason] of [
+    ["an unknown argument", { csp: "connect-src 'self';", args: ["--bogus"] }, /Unknown argument\(s\): --bogus/],
+    ["a strict production build without a backend URL", { csp: "connect-src 'self';", shell: { EKI_STRICT_PRODUCTION_BUILD: "true" } },
+      /NEXT_PUBLIC_BACKEND_URL is required/],
+    ["a backend origin missing from connect-src", { csp: "connect-src 'self';", shell: { NEXT_PUBLIC_BACKEND_URL: "https://api.test" } },
+      /missing from CSP connect-src/],
+    ["a runtime smoke check without a frontend origin", { csp: "connect-src 'self' https://api.test;",
+      shell: { NEXT_PUBLIC_BACKEND_URL: "https://api.test", EKI_RUNTIME_SMOKE: "1", EKI_FRONTEND_ORIGIN: "" } }, /EKI_FRONTEND_ORIGIN/],
+  ]) {
+    it(`reports ${name} as one FAILED line, not a stack trace`, async () => {
+      const result = await runVerifier(run);
+      assert.equal(result.code, 1, result.output);
+      const lines = result.output.split(/\r?\n/).filter((line) => line.includes("Web/backend contract"));
+      assert.equal(lines.length, 1, result.output);
+      assert.match(lines[0], /^Web\/backend contract: FAILED: /);
+      assert.match(lines[0], reason);
+      assert.doesNotMatch(result.output, /^\s+at |file:\/\/|^\w*Error: /m, "no stack trace");
+    });
+  }
+
+  it("names the cause of a failure on the same line", () => {
+    const error = new TypeError("fetch failed", { cause: new Error("connect ECONNREFUSED 127.0.0.1:9") });
+    assert.equal(contractFailureLine(error), "Web/backend contract: FAILED: fetch failed (connect ECONNREFUSED 127.0.0.1:9)");
+    assert.equal(contractFailureLine(new Error("plain")), "Web/backend contract: FAILED: plain");
+    // A refused connection: fetch's cause is an AggregateError without a message of its own.
+    const refused = new AggregateError([new Error("connect ECONNREFUSED ::1:4000"), new Error("connect ECONNREFUSED 127.0.0.1:4000")], "");
+    refused.code = "ECONNREFUSED";
+    assert.equal(contractFailureLine(new TypeError("fetch failed", { cause: refused })),
+      "Web/backend contract: FAILED: fetch failed (connect ECONNREFUSED ::1:4000; connect ECONNREFUSED 127.0.0.1:4000)");
+    assert.equal(contractFailureLine(new TypeError("fetch failed", { cause: Object.assign(new AggregateError([], ""), { code: "ECONNREFUSED" }) })),
+      "Web/backend contract: FAILED: fetch failed (ECONNREFUSED)");
   });
 
   it("keeps the explicit npm verifier script strict", async () => {
