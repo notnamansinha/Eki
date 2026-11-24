@@ -6,6 +6,7 @@ import { readFile, readdir, stat } from 'node:fs/promises';
 import { extname, join, normalize, resolve } from 'node:path';
 import { chromium } from '@playwright/test';
 import { repositoryRoot } from './acceptance-catalog.mjs';
+import { describeDirty, workingTreeState } from './working-tree.mjs';
 import { inlineScriptHashes } from '../inline-script-hashes.mjs';
 import {
   LIVE_ORIGIN, PUBLIC_ROUTES, configuredNoticeUrl, cspHostSources, declaredVendors, evaluateDisclosure, vendorForCspHost,
@@ -41,7 +42,7 @@ const noticeFile = noticeIndex === -1 ? null : resolve(args[2]);
 const noticeText = noticeFile ? readFileSync(noticeFile, 'utf8') : '';
 const report = {
   schemaVersion: 1, target, sourceCommit: git(['rev-parse', 'HEAD']),
-  dirty: Boolean(git(['status', '--porcelain', '--untracked-files=all'])),
+  ...workingTreeState(repositoryRoot),
   startedAt: new Date().toISOString(), finishedAt: null, node: process.version, platform: process.platform,
   browser: null, origin: target === 'live' ? LIVE_ORIGIN : `http://127.0.0.1:${port}`,
   notice: { configuredUrl, published: configuredUrl !== '', file: noticeFile ? 'provided' : null,
@@ -167,7 +168,7 @@ function permittedVendors(cspValue) {
 
 function markdown() {
   const lines = [`# Privacy host check: ${target}`, '',
-    `Source ${report.sourceCommit}; dirty: ${report.dirty}; verdict: ${report.verdict}.`, '',
+    `Source ${report.sourceCommit}; dirty: ${describeDirty(report)}; verdict: ${report.verdict}.`, '',
     `Origin: ${report.origin}. ${report.browser ?? 'Browser not started'}. Started ${report.startedAt}, finished ${report.finishedAt}.`, '',
     `Privacy notice: ${report.notice.published ? `configured at ${report.notice.configuredUrl}` : 'not published (UNIVERSITY_LINKS privacy notice URL is empty)'}; `
       + `notice file: ${report.notice.file ?? 'none'}; declared vendors: ${report.notice.declared.join(', ') || 'none'}.`, ''];

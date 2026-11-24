@@ -5,6 +5,7 @@ import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { repositoryRoot } from './acceptance-catalog.mjs';
+import { describeDirty, workingTreeState } from './working-tree.mjs';
 import { safetyPreflight } from './safety-preflight.mjs';
 import { removeGeneratedDemoConfig } from './emulator-environment.mjs';
 import {
@@ -44,7 +45,7 @@ const recordedError = value => { const text = String(value ?? ''); return /^[\w 
 
 const report = {
   schemaVersion: 1, profile, dryRun, sourceCommit: git(['rev-parse', 'HEAD']),
-  dirty: Boolean(git(['status', '--porcelain', '--untracked-files=all'])),
+  ...workingTreeState(repositoryRoot),
   startedAt: new Date().toISOString(), finishedAt: null, node: process.version, platform: process.platform,
   firebaseTools: profile === 'local' ? '15.14.0' : null, target: null, release: null,
   inventory: PASSENGER_STORES.map(({ id, store, match, handling, finding }) => ({ id, store, match, handling, finding: finding ?? null })),
@@ -385,7 +386,7 @@ async function runStaging() {
 
 function markdown() {
   const lines = [`# Privacy deletion verification: ${profile}`, '',
-    `Source ${report.sourceCommit}; dirty: ${report.dirty}; verdict: ${report.verdict}. Started ${report.startedAt}, finished ${report.finishedAt}.`, '',
+    `Source ${report.sourceCommit}; dirty: ${describeDirty(report)}; verdict: ${report.verdict}. Started ${report.startedAt}, finished ${report.finishedAt}.`, '',
     `Target: ${report.target ?? 'not reached'}.`, ''];
   if (report.release) lines.push(`Expected revision ${report.release.expectedRevision}; serving before ${report.release.before ?? 'not read'}, after ${report.release.after ?? 'not read'}.`, '');
   if (report.setupError) lines.push(`Setup: ${report.setupError}`, '');
