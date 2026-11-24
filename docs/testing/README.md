@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-TST-001 | 1.3 | Current | 2026-11-21 |
+| EKI-TST-001 | 1.4 | Current | 2026-11-24 |
 
 ## 1. Purpose
 
@@ -24,6 +24,7 @@ This index lists the documents that define how Eki is tested and every dated evi
 | EKI-TST-011 | [Native firmware evidence](../../qa/NATIVE_EVIDENCE.md) | Run the native firmware evidence collector |
 | EKI-TST-012 | [Reviewed unit sub-oracles](../../qa/REVIEWED_UNIT_EVIDENCE.md) | Run the reviewed L1 unit selection |
 | EKI-TST-013 | [Scheduled reliability](../../qa/SCHEDULED_RELIABILITY.md) | Understand the nightly and weekly workflows |
+| EKI-TST-014 | [DAST and OpenAPI scans](../../qa/DAST.md) | Run the bounded ZAP scans against the local backend or the staging service |
 
 Two machine-parsed files hold the acceptance requirements and their historical status. Do not change their table structure: `scripts/qa/acceptance-catalog.mjs` parses both.
 
@@ -96,7 +97,7 @@ CI success, a synthetic browser test, a stationary trace, a short moving trace a
 | EKI-EVD-040 | 2026-10-15 | [PR #323 interaction and retirement review](PR_323_INTERACTION_REVIEW.md) | Audit | |
 | EKI-EVD-041 | 2026-10-18 | [PR #336 review follow-up](PR_336_REVIEW_VERIFICATION.md) | Audit | Stop radius superseded by EVD-032 |
 | EKI-EVD-042 | 2026-10-15 | [QA audit report, 15 October](QA_AUDIT_2026_10_15.md) | Browser | Localhost audit of the passenger account deletion branch |
-| EKI-EVD-043 | 2026-10-08 | [R14 live projection](R14_LIVE_PROJECTION.md) | Synthetic | Emulator transaction and payload measurements; the write path and byte figures are replaced by EVD-062 |
+| EKI-EVD-043 | 2026-10-08 | [R14 live projection](R14_LIVE_PROJECTION.md) | Synthetic | Emulator transaction and payload measurements; the write path and byte figures are replaced by EVD-063 |
 | EKI-EVD-044 | 2026-10-07 | [R31 moderation and instrumentation profile](R31_PROFILE.md) | Synthetic | Data: [baseline](R31_baseline_node24.json), [final](R31_final_node24.json) |
 | EKI-EVD-045 | 2026-10-04 | [Realtime transport evidence audit](REALTIME_TRANSPORT_EVIDENCE_AUDIT.md) | Audit | Review of captures, 2026-10-01 |
 | EKI-EVD-046 | 2026-10-04 | [Reroute latency simulation](REROUTE_SIMULATION_RESULTS.md) | Synthetic | Run 2026-09-10; not field latency |
@@ -115,7 +116,8 @@ CI success, a synthetic browser test, a stationary trace, a short moving trace a
 | EKI-EVD-059 | 2026-10-09 | [Webapp readiness, 9 October](WEBAPP_READINESS_2026_10_09.md) | Browser | Stationary passenger flow on localhost |
 | EKI-EVD-060 | 2026-10-11 | [Deterministic QA baseline](../../qa/BASELINE_2026_10_11.md) | Audit | First QA programme slice; the [QA programme](../../qa/README.md) describes the current state |
 | EKI-EVD-061 | 2026-11-03 | [Cloud Run staging latency, 2 November](CLOUD_RUN_LATENCY_2026_11_02.md) | Stationary physical | Run 2026-11-02 against the Cloud Run staging backend and the `asia-southeast1` RTDB, with Cloud Run request logs and a remote RTDB listener; no moving drive or browser |
-| EKI-EVD-062 | 2026-11-21 | [Live projection leaf writes](LIVE_PROJECTION_LEAF_WRITES_2026_11_21.md) | Synthetic | Emulator listener and backend download per fix, whole-route transactions against per-bus leaf writes; replaces the EVD-043 byte figures |
+| EKI-EVD-062 | 2026-11-23 | [DAST local scan, 23 November](DAST_LOCAL_2026_11_23.md) | Synthetic | OWASP ZAP local profile against the disposable backend; two High false positives triaged; the staging profile was not run |
+| EKI-EVD-063 | 2026-11-21 | [Live projection leaf writes](LIVE_PROJECTION_LEAF_WRITES_2026_11_21.md) | Synthetic | Emulator listener and backend download per fix, whole-route transactions against per-bus leaf writes; replaces the EVD-043 byte figures |
 
 The `assets/` folder holds images referenced by these records. `simulations/generate-gnss.mjs` is the GNSS profile generator: the backend GNSS property tests that `qa:gnss` runs import it and the acceptance catalog reads its profile list, so it is current code, not evidence.
 

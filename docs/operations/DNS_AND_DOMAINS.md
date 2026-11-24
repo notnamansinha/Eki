@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-OPS-002 | 1.2 | Current | 2026-11-07 |
+| EKI-OPS-002 | 1.3 | Current | 2026-11-21 |
 
 ## 1. Purpose
 
@@ -24,13 +24,13 @@ A custom domain changes three build or runtime values, each in a different place
 | `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN` | Frontend build | Host of the Firebase Auth helper (`/__/auth/`) |
 | `CORS_ORIGIN` | Backend `.env`, or `deploy/cloud-run/staging.service.yaml` for the staging service | Comma-separated frontend origins that may call the API |
 
-`NEXT_PUBLIC_SITE_INDEXING=false` keeps a test or preview build out of search indexes. All three frontend values are compiled into the static export, so a change needs a rebuild and redeploy. Variable details are in [configuration](../CONFIGURATION.md).
+`NEXT_PUBLIC_SITE_INDEXING=false` keeps a test or preview build out of search indexes. The staging host `https://bustrack-be165.web.app` is the exception until `eki-production` is provisioned ([OPS-04](ARCHITECTURE_RISK_REGISTER.md#311-ops-04-the-staging-host-is-indexable-without-access-control)). All three frontend values are compiled into the static export, so a change needs a rebuild and redeploy. Variable details are in [configuration](../CONFIGURATION.md).
 
 ## 3. Connect a custom frontend domain
 
 1. In the Firebase console, open Hosting for the project and add the custom domain. Expected: the console lists the DNS records to create.
 2. At the DNS provider, create exactly those records: a TXT record that proves ownership and A records (AAAA as well in advanced setup) that point to Hosting. Remove existing A, AAAA or CNAME records for that name that point elsewhere [1]. Expected: after propagation the console shows the domain as connected and issues a certificate.
-3. Add `NEXT_PUBLIC_SITE_URL: https://<frontend-host>` to the `env` of the `npm run build:production` step in the Deploy job that publishes that host (`deploy-staging` or `deploy-production` in `.github/workflows/deploy.yml`) through a pull request; neither job passes it. Set the `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN` secret as described in Section 4. Expected: after the next Deploy run, the page's canonical link uses the custom host.
+3. Add `NEXT_PUBLIC_SITE_URL: https://<frontend-host>` to the `env` of the `npm run build:production` step in the Deploy job that publishes that host (`deploy-staging` or `deploy-production` in `.github/workflows/deploy.yml`) through a pull request; neither job passes it. Set the `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN` secret as described in Section 4. Expected: after the next Deploy run, the page's canonical link uses the custom host. While [OPS-04](ARCHITECTURE_RISK_REGISTER.md#311-ops-04-the-staging-host-is-indexable-without-access-control) is accepted, a custom host for `deploy-staging` must also be added to its scope; `scripts/staging-indexing-policy.test.mjs` fails until it is.
 4. Add `https://<frontend-host>` to `CORS_ORIGIN` on the backend and restart it. For the staging service, change `deploy/cloud-run/staging.service.yaml` through a pull request, then dispatch Deploy from `main` with `environment: staging` and `deploy_backend: true`. Keep the `web.app` origin as well: on such a dispatch the staging release check sends `Origin: https://bustrack-be165.web.app` and fails without it.
 5. Add the host to the HTTP referrer restrictions of the Firebase browser API key and of the Maps browser key, which belongs to the Google Cloud project `bustrack-501917` ([CI, deployment and releases](CI_CD_AND_RELEASES.md#53-environments-secrets-and-variables)). Expected: maps load on the custom host.
 

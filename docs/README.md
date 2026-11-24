@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-GEN-002 | 1.7 | Current | 2026-11-21 |
+| EKI-GEN-002 | 1.8 | Current | 2026-11-24 |
 
 ## 1. Purpose
 
@@ -51,7 +51,7 @@ The register lists every controlled document by its source path. A mirror carrie
 | ID | Document | Version | Status | Last updated |
 |---|---|---|---|---|
 | EKI-GEN-001 | [Eki Campus Bus Tracking](../README.md) | 1.3 | Current | 2026-11-07 |
-| EKI-GEN-002 | [Eki Documentation Index](README.md) | 1.7 | Current | 2026-11-21 |
+| EKI-GEN-002 | [Eki Documentation Index](README.md) | 1.8 | Current | 2026-11-24 |
 | EKI-GEN-003 | [Eki Documentation Standard](DOCUMENTATION_STANDARD.md) | 1.3 | Current | 2026-11-09 |
 | EKI-GEN-004 | [Getting Started with Eki](GETTING_STARTED.md) | 2.3 | Current | 2026-11-08 |
 | EKI-GEN-005 | [Eki Configuration Reference](CONFIGURATION.md) | 2.0 | Current | 2026-11-21 |
@@ -189,7 +189,7 @@ The register lists every controlled document by its source path. A mirror carrie
 
 | ID | Document | Version | Status | Last updated |
 |---|---|---|---|---|
-| EKI-TST-001 | [Eki Testing and Evidence Index](testing/README.md) | 1.3 | Current | 2026-11-21 |
+| EKI-TST-001 | [Eki Testing and Evidence Index](testing/README.md) | 1.4 | Current | 2026-11-24 |
 | EKI-TST-002 | [Eki Test Strategy](testing/TEST_STRATEGY.md) | 3.3 | Current | 2026-11-21 |
 | EKI-TST-003 | [Eki QA Programme](../qa/README.md) | 1.1 | Current | 2026-11-07 |
 | EKI-TST-004 | [Disposable Browser Acceptance](../qa/BROWSER_ACCEPTANCE.md) | 1.1 | Current | 2026-11-07 |
@@ -202,6 +202,7 @@ The register lists every controlled document by its source path. A mirror carrie
 | EKI-TST-011 | [Native Firmware Evidence](../qa/NATIVE_EVIDENCE.md) | 1.1 | Current | 2026-11-07 |
 | EKI-TST-012 | [Reviewed Unit Sub-Oracles](../qa/REVIEWED_UNIT_EVIDENCE.md) | 1.1 | Current | 2026-11-07 |
 | EKI-TST-013 | [Scheduled Reliability Workflows](../qa/SCHEDULED_RELIABILITY.md) | 2.1 | Current | 2026-11-07 |
+| EKI-TST-014 | [Bounded DAST and OpenAPI Scans](../qa/DAST.md) | 1.0 | Current | 2026-11-23 |
 
 ### 4.14 Evidence records (EVD)
 
@@ -268,7 +269,8 @@ The register lists every controlled document by its source path. A mirror carrie
 | EKI-EVD-059 | [Webapp readiness: 9 October 2026](testing/WEBAPP_READINESS_2026_10_09.md) | 1.0 | Historical | 2026-10-09 |
 | EKI-EVD-060 | [Deterministic QA baseline and first implementation slice](../qa/BASELINE_2026_10_11.md) | 1.0 | Historical | 2026-10-11 |
 | EKI-EVD-061 | [Cloud Run staging latency: 2 November 2026](testing/CLOUD_RUN_LATENCY_2026_11_02.md) | 1.0 | Historical | 2026-11-03 |
-| EKI-EVD-062 | [Live projection leaf writes: 21 November 2026](testing/LIVE_PROJECTION_LEAF_WRITES_2026_11_21.md) | 1.0 | Historical | 2026-11-23 |
+| EKI-EVD-062 | [DAST local scan: 23 November 2026](testing/DAST_LOCAL_2026_11_23.md) | 1.0 | Historical | 2026-11-23 |
+| EKI-EVD-063 | [Live projection leaf writes: 21 November 2026](testing/LIVE_PROJECTION_LEAF_WRITES_2026_11_21.md) | 1.0 | Historical | 2026-11-23 |
 
 <!-- register:end -->
 
