@@ -184,6 +184,7 @@ The register lists every controlled document by its source path. A mirror carrie
 | EKI-PKG-010 | [Production Audit Browser Fixture](../e2e/production-audit/README.md) | 1.1 | Current | 2026-11-07 |
 | EKI-PKG-011 | [Live Google Maps Check](../e2e/routing/live-maps/README.md) | 1.2 | Current | 2026-11-03 |
 | EKI-PKG-012 | [Next Lint Directory Matching Adapter](../tools/next-lint-glob/README.md) | 1.0 | Current | 2026-10-30 |
+| EKI-PKG-013 | [Demo Ride Browser Fixture](../e2e/demo-ride/README.md) | 1.0 | Current | 2026-11-25 |
 
 ### 4.13 Testing and QA programme (TST)
 

@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-GEN-005 | 1.8 | Current | 2026-11-21 |
+| EKI-GEN-005 | 1.9 | Current | 2026-11-25 |
 
 ## 1. Purpose
 
@@ -149,6 +149,7 @@ All frontend variables are `NEXT_PUBLIC_*` values: Next.js compiles them into th
 | `NEXT_PUBLIC_SITE_INDEXING` | No | Enabled | `false` disables search indexing and sitemap discovery; any other value enables them. Use `false` for every non-production build except the staging host, which stays indexable as the public pilot until the production project exists ([OPS-04](operations/ARCHITECTURE_RISK_REGISTER.md#311-ops-04-the-staging-host-is-indexable-without-access-control)). | `src/lib/siteMetadata.ts` |
 | `NEXT_PUBLIC_SERVICE_TIME_ZONE` | No | `Asia/Kolkata` | IANA time zone for ride history timestamps. | `src/components/admin/RideHistoryPanel.tsx` |
 | `NEXT_PUBLIC_PASSENGER_BUS_START_TIME` | No | `8:00 am` | Service start time shown to passengers when no bus is running and the admin setting is empty. | `src/config/passenger.ts` |
+| `NEXT_PUBLIC_DEMO_RIDE` | No | Enabled | `false` hides the demo ride from Live routes; any other value shows it. The demo ride is a scripted bus simulated in the browser, marked "Not a real bus", that never contacts Firebase or the backend ([SRS FR-PAS-059](requirements/SOFTWARE_REQUIREMENTS_SPECIFICATION.md#325-boarding)). | `src/lib/demoRide.ts` |
 | `NEXT_PUBLIC_BUS_EXPIRY_MS` | No | `300000` | How long a silent bus stays on the passenger map and route list; Live Ops never removes it. The passenger "Live tracking lost" threshold is the smaller of 30 s and half this value; "Updates delayed" is the smaller of 12 s and that threshold. | `src/lib/liveBusFreshness.ts` |
 | `NEXT_PUBLIC_BUILD_VERSION` | No | Empty | Build label that the passenger **Profile** footer shows as `build <value>`; the footer omits it when empty. No workflow sets it. | `src/config/university.ts`, `src/components/passenger/AccountTab.tsx` |
 | `NEXT_PUBLIC_BUILD_DATE` | No | Empty | Build date that the same footer shows after the build label; omitted when empty. No workflow sets it. | `src/config/university.ts`, `src/components/passenger/AccountTab.tsx` |

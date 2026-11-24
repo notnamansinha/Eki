@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-TST-002 | 3.3 | Current | 2026-11-21 |
+| EKI-TST-002 | 3.4 | Current | 2026-11-25 |
 
 ## 1. Purpose and scope
 
@@ -124,17 +124,18 @@ Every configuration except the default and the live Maps check starts its own se
 
 | Configuration | Command | Specs | Server | Projects (viewport, CSS px) | In CI |
 |---|---|---|---|---|---|
-| `playwright.config.ts` | `npm run test:e2e` | All of `e2e/` except admin-access, routing, passenger-layout, production-audit and no-script | None; `EKI_E2E_BASE_URL`, default `http://127.0.0.1:3000` | mobile 360 x 800, desktop 1280 x 800 | No |
+| `playwright.config.ts` | `npm run test:e2e` | All of `e2e/` except admin-access, routing, passenger-layout, production-audit, no-script and demo-ride | None; `EKI_E2E_BASE_URL`, default `http://127.0.0.1:3000` | mobile 360 x 800, desktop 1280 x 800 | No |
 | `playwright.admin-access.config.ts` | `npm run test:e2e:admin` | `e2e/admin-access.spec.ts`, `e2e/admin-access/*.spec.ts` | Admin fixture, port 3105 | mobile 390 x 844, desktop 1280 x 800 | Yes |
 | `playwright.passenger-layout.config.ts` | `npx playwright test --config playwright.passenger-layout.config.ts` | `e2e/passenger-layout/` | Passenger fixture, `EKI_QA_PORT` or 3100 | narrow 360 x 800, mobile 390 x 844 and reported-phone 440 x 956 (these three with touch), short-desktop 1280 x 585, desktop 1280 x 800 | Yes |
 | `playwright.passenger-progress.config.ts` | `npx playwright test --config playwright.passenger-progress.config.ts` | `e2e/passenger-progress/` | Progress fixture, port 3127 | mobile 390 x 844, desktop 1280 x 800 | Yes |
+| `playwright.demo-ride.config.ts` | `npx playwright test --config playwright.demo-ride.config.ts` | `e2e/demo-ride/`: the demo ride in Live routes and a whole ride through the Thumb drawer stop picker, on the page clock | Demo ride fixture, `EKI_DEMO_PORT` or 3131 | mobile 390 x 844 with touch, desktop 1280 x 800 | Yes |
 | `playwright.production-audit.config.ts` | `npx playwright test --config playwright.production-audit.config.ts` | `e2e/production-audit/` | Audit fixture, port 3123 | narrow 360 x 800, mobile 390 x 844, desktop 1280 x 800 | Yes |
 | `playwright.no-script.config.ts` | `npm run test:e2e:no-script` | `e2e/no-script/`: `/` and `/install` with JavaScript disabled show their static fallbacks and hide the loading placeholders; with JavaScript enabled the fallbacks stay out of the page | Built export from `frontend/out` with the `firebase.json` security headers (`e2e/no-script/serve-export.mjs`), `EKI_NOSCRIPT_PORT` or 3129 | android-small 360 x 800 and android (Pixel 7) with touch, desktop 1280 x 800 | Yes, after `build:production` |
 | `playwright.emulator.config.ts` | `npm run qa:browser` (never directly) | `e2e/emulator-acceptance.spec.ts` | Compiled backend 3116, frontend 3115, control 3117, with emulators | mobile 390 x 844, desktop 1280 x 800; one worker, no retries | Yes |
 | `playwright.routing.config.ts` | `npx playwright test --config playwright.routing.config.ts` | `e2e/routing/marker.spec.ts` | Routing fixture, port 3162 | Desktop Chrome default (1280 x 720) | No |
 | `playwright.routing.maps.config.ts` | Manual; see [live Maps check](../../e2e/routing/live-maps/README.md) | `e2e/routing/live-maps/in-app.spec.ts` | Live Maps fixture, port 3163 | 1920 x 1080; one test at 360 x 800 with touch | No |
 
-Fixture guides: [admin access](../../e2e/admin-access/README.md), [passenger UI](../../e2e/fixtures/README.md), [moving marker](../../e2e/motion/README.md), [production audit](../../e2e/production-audit/README.md), [live Maps](../../e2e/routing/live-maps/README.md), [disposable browser acceptance](../../qa/BROWSER_ACCEPTANCE.md).
+Fixture guides: [admin access](../../e2e/admin-access/README.md), [passenger UI](../../e2e/fixtures/README.md), [demo ride](../../e2e/demo-ride/README.md), [moving marker](../../e2e/motion/README.md), [production audit](../../e2e/production-audit/README.md), [live Maps](../../e2e/routing/live-maps/README.md), [disposable browser acceptance](../../qa/BROWSER_ACCEPTANCE.md).
 
 Two traps in the default configuration:
 
@@ -218,7 +219,7 @@ Run `npm run verify` for every code change, then add the checks for the area cha
 
 | Workflow (file) | Trigger | Jobs and checks |
 |---|---|---|
-| Production verification (`ci.yml`) | Every push and pull request | `web`: `qa:check`; `qa:budget` on pull requests; `qa:catalog`; `qa:gnss`; `qa:unit:reviewed`; `verify:rtdb-instance`; `verify:openapi`; `lint`; `npm test`; emulator suites; admission benchmark; admin-access, passenger-layout, passenger-progress and production-audit Playwright suites; `qa:browser`; `qa:api`; `build:production` with placeholder values and exported origin checks; the no-script Playwright suite on that export; `npm audit --omit=dev --omit=optional`; full `npm audit`; CycloneDX SBOM |
+| Production verification (`ci.yml`) | Every push and pull request | `web`: `qa:check`; `qa:budget` on pull requests; `qa:catalog`; `qa:gnss`; `qa:unit:reviewed`; `verify:rtdb-instance`; `verify:openapi`; `lint`; `npm test`; emulator suites; admission benchmark; admin-access, passenger-layout, passenger-progress, demo-ride and production-audit Playwright suites; `qa:browser`; `qa:api`; `build:production` with placeholder values and exported origin checks; the no-script Playwright suite on that export; `npm audit --omit=dev --omit=optional`; full `npm audit`; CycloneDX SBOM |
 | | | `backend-image`: builds `backend/Dockerfile`, checks `/health` returns 503 `degraded` and `/live` returns 200 `alive` with placeholder configuration and that the image health check probes `/live`, Trivy scan that fails on fixable critical and high findings |
 | | | `firmware`: installs `hardware/requirements.txt`, secure-fleet configuration check, `qa:native`, host protocol tests, builds of `esp32dev` and `esp32dev-quiet` with a check that trace strings are absent from the quiet image, a check that the SNTP guard is linked, builds of `esp32dev-journal` and `esp32dev-secure` with an ephemeral signing key, signed-image tamper test |
 | | | `qa-evidence`: after `web` and `firmware`, even when they fail, runs `qa:report` on their artifacts |
