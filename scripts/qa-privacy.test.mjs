@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { repositoryRoot } from './qa/acceptance-catalog.mjs';
 import {
@@ -15,10 +15,10 @@ import {
 
 const read = path => readFileSync(resolve(repositoryRoot, path), 'utf8');
 function sources(directory) {
-  return readdirSync(directory).flatMap(name => {
-    const path = join(directory, name);
-    if (statSync(path).isDirectory()) return ['node_modules', 'test-support'].includes(name) ? [] : sources(path);
-    return /\.(ts|tsx)$/.test(name) && !/\.test\.tsx?$/.test(name) ? [{ path, text: readFileSync(path, 'utf8') }] : [];
+  return readdirSync(directory, { withFileTypes: true }).flatMap(entry => {
+    const path = join(directory, entry.name);
+    if (entry.isDirectory()) return ['node_modules', 'test-support'].includes(entry.name) ? [] : sources(path);
+    return /\.(ts|tsx)$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name) ? [{ path, text: readFileSync(path, 'utf8') }] : [];
   });
 }
 
@@ -180,6 +180,10 @@ test('the serving revision is the one that takes all traffic', () => {
     trafficStatuses: [{ type: 'TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST', percent: 100 }] }), 'eki-backend-staging-00010-abc');
   assert.equal(servingRevision({ trafficStatuses: [{ revision: 'a', percent: 50 }, { revision: 'b', percent: 50 }] }), null);
   assert.equal(servingRevision({}), null);
+  // Evidence records only a well-formed revision name, never other response text.
+  for (const revision of ['Eki-Backend', 'eki-backend-staging-00012-x7q\nforged line', 'eki-backend-', 'a'.repeat(64)]) {
+    assert.equal(servingRevision({ trafficStatuses: [{ revision, percent: 100 }] }), null, JSON.stringify(revision));
+  }
 });
 
 test('request hosts map to vendors, and every host the committed CSP permits has a vendor', () => {
@@ -195,9 +199,9 @@ test('request hosts map to vendors, and every host the committed CSP permits has
   for (const host of ['www.google-analytics.com', 'connect.facebook.net', 'web.app.evil.example', 'googleapis.com.evil.example']) assert.equal(vendorForHost(host), null, host);
   const hosting = JSON.parse(read('firebase.json')).hosting;
   const csp = hosting.headers.find(rule => rule.source === '**').headers.find(header => header.key === 'Content-Security-Policy').value;
-  const hosts = [...new Set(Object.values(cspHostSources(csp)).flat())];
-  assert(hosts.includes('maps.googleapis.com') && hosts.includes('*.firebaseio.com'));
-  assert.deepEqual(hosts.filter(host => !vendorForCspHost(host)), [], 'a new CSP host needs a VENDORS entry');
+  const hosts = new Set(Object.values(cspHostSources(csp)).flat());
+  assert(hosts.has('maps.googleapis.com') && hosts.has('*.firebaseio.com'));
+  assert.deepEqual([...hosts].filter(host => !vendorForCspHost(host)), [], 'a new CSP host needs a VENDORS entry');
   assert.equal(new Set(VENDORS.map(vendor => vendor.id)).size, VENDORS.length);
 });
 

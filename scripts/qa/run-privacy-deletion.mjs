@@ -38,6 +38,9 @@ const reportBase = resolve(evidenceDirectory, `privacy-deletion-${profile}-repor
 const require = createRequire(resolve(repositoryRoot, 'backend/package.json'));
 const git = gitArgs => execFileSync('git', gitArgs, { cwd: repositoryRoot, encoding: 'utf8' }).trim();
 const sleep = ms => new Promise(done => setTimeout(done, ms));
+// The evidence never copies response text: a status or error message is recorded only in its expected shape.
+const recordedStatus = value => { const text = String(value); return /^[1-5][0-9]{2}$/.test(text) ? Number(text) : null; };
+const recordedError = value => { const text = String(value ?? ''); return /^[\w .,:'-]{1,120}$/.test(text) ? text : null; };
 
 const report = {
   schemaVersion: 1, profile, dryRun, sourceCommit: git(['rev-parse', 'HEAD']),
@@ -110,8 +113,9 @@ async function http(method, url, { token, body } = {}) {
   return { status: response.status, body: json };
 }
 async function expectStatus(label, expected, result) {
-  if (!expected.includes(result.status)) throw new Error(`${label} returned HTTP ${result.status}${result.body?.error ? ` (${result.body.error})` : ''}`);
-  return result.body;
+  if (expected.includes(result.status)) return result.body;
+  const error = recordedError(result.body?.error);
+  throw new Error(`${label} returned HTTP ${recordedStatus(result.status) ?? 'other'}${error ? ` (${error})` : ''}`);
 }
 
 async function signIn(email) {
@@ -287,7 +291,7 @@ async function runInside() {
     // Section 3.4 of PRIVACY_DELETION.md: a still-valid ID token cannot recreate the profile.
     for (const account of accounts) {
       const result = await http('POST', `${BACKEND}/api/users/bootstrap`, { token: account.idToken });
-      report.accessChecks.push({ name: `${account.label} bootstrap with the pre-deletion token`, expected: 401, status: result.status, passed: result.status === 401 });
+      report.accessChecks.push({ name: `${account.label} bootstrap with the pre-deletion token`, expected: 401, status: recordedStatus(result.status), passed: result.status === 401 });
     }
     for (const account of accounts) account.after = await observe(sdk, account.uid);
     const markers = mergeMarkers(accounts);
@@ -342,7 +346,7 @@ async function runStaging() {
   const readRevision = async () => {
     const { access_token: token } = await credential.getAccessToken();
     const response = await fetch(`https://run.googleapis.com/v2/${STAGING_SERVICE}`, { headers: { Authorization: `Bearer ${token}` }, redirect: 'error', signal: AbortSignal.timeout(15_000) });
-    if (!response.ok) throw new Error(`Cloud Run service read failed with HTTP ${response.status}`);
+    if (!response.ok) throw new Error(`Cloud Run service read failed with HTTP ${recordedStatus(response.status) ?? 'other'}`);
     return servingRevision(await response.json());
   };
   const readers = {

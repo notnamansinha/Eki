@@ -341,5 +341,7 @@ export function servingRevision(service) {
   const full = statuses.filter(status => status.percent === 100);
   if (full.length !== 1) return null;
   const name = full[0].revision || (full[0].type === 'TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST' ? service.latestReadyRevision : '');
-  return typeof name === 'string' && name ? name.split('/').at(-1) : null;
+  const revision = typeof name === 'string' ? name.split('/').at(-1) : '';
+  // A Cloud Run revision name (RFC 1035 label), so the evidence never records other response text.
+  return /^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(revision) ? revision : null;
 }
