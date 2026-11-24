@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-CST-001 | 2.4 | Current | 2026-11-07 |
+| EKI-CST-001 | 2.5 | Current | 2026-11-24 |
 
 ## 1. Purpose and scope
 
@@ -201,7 +201,8 @@ Usage that scales with the fleet and with passengers:
 | Ride start and completion | About 10 reads and 10 writes per ride | `backend/src/services/rideSessionStart.ts:326-430`, `backend/src/services/tripStateEngine.ts:1132-1176` |
 | Each lifecycle change (stop reached, activation, delay) | About 4 reads and 3 writes | `backend/src/services/tripStateEngine.ts:465-478,710-762` |
 | Passenger app open: settings listener, user document, `routes` collection listener (one read per route), stored geometry, and the route schedule listener when the passenger opens the Routes tab | `R + 4` reads (upper bound: the Routes tab opened on every app open) | `frontend/src/hooks/useSettings.ts:68`, `frontend/src/hooks/useAuth.ts:293`, `frontend/src/hooks/useRoutes.ts:51`, `backend/src/services/routeGeometryReads.ts:22-24`, `frontend/src/hooks/usePassengerRouteConfig.ts:47` |
-| Ride chat opened | Up to 200 reads, then 1 per message | `frontend/src/components/shared/MessagingPanel.tsx:96-101` |
+| Ride chat opened by an administrator | Up to 200 reads per opening, then 1 per message while open | `frontend/src/components/shared/MessagingPanel.tsx:72-102`, `frontend/src/lib/rideChatMessages.ts:10-16` |
+| Passenger chat unread listener, for the whole joined ride | Up to 200 reads when the ride is joined or the page reloads during it (1 for an empty chat), then 1 per message. Opening the chat shares this listener's watch target and reads nothing more | `frontend/src/hooks/useRideChatUnread.ts:72-86`, `frontend/src/components/passenger/PassengerWorkspace.tsx:487-490` |
 | Feedback submitted: one transaction over the feedback, cooldown and profile documents | 3 reads and 2 writes | `frontend/src/lib/feedbackStore.ts:76-104` |
 | Admin dashboard day: drivers (up to 250), buses, bus locations and routes, ride history (2 x 100), feedback (up to 200), authorization check per admin request | About 1,000 reads per admin per day (assumption) | `frontend/src/hooks/useDrivers.ts:48-51`, `frontend/src/hooks/useBuses.ts:16`, `frontend/src/hooks/useRoutes.ts:51`, `frontend/src/components/admin/RideHistoryPanel.tsx:202-220`, `frontend/src/lib/feedbackStore.ts:120`, `backend/src/services/userAuthorization.ts:22-26` |
 | Live Ops `bus_locations` listener: 1 read per bus lifecycle change while a dashboard is open | Up to `A * B * r_b * L` reads per day (upper bound: every dashboard open during every change) | `frontend/src/hooks/useBusLocations.ts:15`, `frontend/src/components/admin/DashboardPanel.tsx:620`, `backend/src/services/tripStateEngine.ts:463-472` |

@@ -125,5 +125,9 @@ export function useLiveRouteCatalog() {
     available: buses.filter(bus => bus.routeId === routeId && !bus.sessionId && isPassengerBusSelectable(bus, now)).length, freshestAt: Date.now() }])), projectionReady: scenario !== "projection-unready", catalogReady: scenario !== "catalog-denied", error: scenario === "catalog-denied" ? "QA synthetic route catalog PERMISSION_DENIED. Retry after checking permissions." : scenario === "projection-unready" ? "QA synthetic projection unavailable: worker backfill/schema is not ready." : null, retry: () => setScenario("two-routes") };
 }
 export function getJoinedRideStatus(sessionId: string) { return Promise.resolve({ sessionId, busId: "qa-bus", routeId: route.id, status: "completed" }); }
+// The synthetic account is already verified, so the auth gate is always open.
 export function getAuthVerificationGeneration() { return 1; }
+export async function waitForAuth() {}
+// Chat is a placeholder panel here, so nothing is ever unread.
+export function useRideChatUnread() { return 0; }
 export function invalidateLiveBusCache() { setScenario(scenario === "detail-denied" ? "two-routes" : scenario); }
