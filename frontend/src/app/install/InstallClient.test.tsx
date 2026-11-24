@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { renderToString } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { detectInstallPlatform } from "@/lib/installPlatform";
 import InstallClient from "./InstallClient";
@@ -8,8 +9,18 @@ const IPHONE_SAFARI = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) Ap
 const IPHONE_CHROME = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/120.0 Mobile/15E148 Safari/604.1";
 const IPHONE_WEBVIEW = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148";
 const ANDROID = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chrome/120.0 Mobile Safari/537.36";
+const WINDOWS_CHROME = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36";
 
-afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+/** jsdom has no Clipboard API; install one whose writeText the test controls. */
+function stubClipboard(writeText: ReturnType<typeof vi.fn>) {
+  Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+}
+
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+  Reflect.deleteProperty(navigator, "clipboard");
+});
 
 describe("detectInstallPlatform", () => {
   it("classifies devices", () => {
@@ -64,5 +75,81 @@ describe("InstallClient", () => {
     expect(screen.queryByText(/Eki is installed/)).toBeNull();
     window.dispatchEvent(new Event("appinstalled"));
     expect(await screen.findByText(/Eki is installed/)).toBeTruthy();
+  });
+
+  // Issue #516: the desktop branch used to hold one sentence and nothing focusable.
+  describe("on a computer", () => {
+    it("offers Copy link and a link back to the landing page", () => {
+      setup(WINDOWS_CHROME);
+      render(<InstallClient />);
+      expect(screen.getByText("Open this link on your phone to install Eki.")).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Copy link" })).toBeTruthy();
+      expect(screen.getByRole("link", { name: "Back to Eki" }).getAttribute("href")).toBe("/");
+    });
+
+    it("copies the page address and confirms it", async () => {
+      setup(WINDOWS_CHROME);
+      const writeText = vi.fn().mockResolvedValue(undefined);
+      stubClipboard(writeText);
+      render(<InstallClient />);
+      fireEvent.click(screen.getByRole("button", { name: "Copy link" }));
+      expect(await screen.findByRole("button", { name: "Link copied" })).toBeTruthy();
+      expect(writeText).toHaveBeenCalledWith(window.location.href);
+    });
+
+    it("never claims success when the clipboard write is refused", async () => {
+      setup(WINDOWS_CHROME);
+      const writeText = vi.fn().mockRejectedValue(new DOMException("Write permission denied.", "NotAllowedError"));
+      stubClipboard(writeText);
+      render(<InstallClient />);
+      // act() settles the rejected write and any state update it causes.
+      await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Copy link" })); });
+      expect(writeText).toHaveBeenCalledTimes(1);
+      expect(screen.getByRole("button", { name: "Copy link" })).toBeTruthy();
+      expect(screen.queryByText("Link copied")).toBeNull();
+    });
+
+    it("keeps working when the browser has no Clipboard API", async () => {
+      setup(WINDOWS_CHROME);
+      render(<InstallClient />);
+      await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Copy link" })); });
+      expect(screen.getByRole("button", { name: "Copy link" })).toBeTruthy();
+      expect(screen.queryByText("Link copied")).toBeNull();
+    });
+
+    it("drops an earlier confirmation when a later copy fails", async () => {
+      setup(WINDOWS_CHROME);
+      const writeText = vi.fn().mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error("blocked"));
+      stubClipboard(writeText);
+      render(<InstallClient />);
+      fireEvent.click(screen.getByRole("button", { name: "Copy link" }));
+      fireEvent.click(await screen.findByRole("button", { name: "Link copied" }));
+      expect(await screen.findByRole("button", { name: "Copy link" })).toBeTruthy();
+      expect(writeText).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  it("links back to the landing page on every branch, and offers Copy link only where it helps", () => {
+    for (const [userAgent, copy] of [[IPHONE_SAFARI, false], [IPHONE_CHROME, true], [ANDROID, false], [WINDOWS_CHROME, true]] as const) {
+      setup(userAgent);
+      render(<InstallClient />);
+      expect(screen.getByRole("link", { name: "Back to Eki" }).getAttribute("href")).toBe("/");
+      expect(screen.queryAllByRole("button", { name: "Copy link" })).toHaveLength(copy ? 1 : 0);
+      cleanup();
+      vi.restoreAllMocks();
+    }
+    // Installed (standalone display mode).
+    setup(ANDROID);
+    window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as unknown as typeof window.matchMedia;
+    render(<InstallClient />);
+    expect(screen.getByText(/Eki is installed/)).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Back to Eki" }).getAttribute("href")).toBe("/");
+  });
+
+  it("server-renders the link back, so it works before hydration and without JavaScript", () => {
+    const html = renderToString(<InstallClient />);
+    expect(html).toContain("Checking your device…");
+    expect(html).toMatch(/<a [^>]*href="\/"[^>]*>Back to Eki<\/a>/);
+    expect(html).not.toContain("Copy link");
   });
 });

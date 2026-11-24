@@ -3,11 +3,12 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { repositoryRoot } from './acceptance-catalog.mjs';
 import { safetyPreflight } from './safety-preflight.mjs';
+import { describeDirty, workingTreeState } from './working-tree.mjs';
 
 if (process.argv.length > 2) throw Error('Soak uses a fixed five-trial budget');
 safetyPreflight(process.env);
 const sourceCommit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repositoryRoot, encoding: 'utf8' }).trim();
-const dirty = Boolean(execFileSync('git', ['status', '--porcelain', '--untracked-files=all'], { cwd: repositoryRoot, encoding: 'utf8' }).trim());
+const { dirty, ignoredChanges } = workingTreeState(repositoryRoot);
 const startedAt = new Date().toISOString(); const trials = [];
 for (let index = 0; index < 5; index++) {
   const start = performance.now();
@@ -22,14 +23,14 @@ for (let index = 0; index < 5; index++) {
   if (!accepted) break;
 }
 const accepted = !dirty && trials.length === 5 && trials.every(item => item.accepted);
-const report = { schemaVersion: 1, sourceCommit, dirty, startedAt, finishedAt: new Date().toISOString(),
+const report = { schemaVersion: 1, sourceCommit, dirty, ignoredChanges, startedAt, finishedAt: new Date().toISOString(),
   workflowRunId: process.env.GITHUB_RUN_ID ?? null, node: process.version,
   accepted, trials, totalSubmissions: trials.reduce((sum, item) => sum + (item.observation?.rounds?.at(-1)?.submissions ?? 0), 0),
   scope: 'Synthetic stalled-dependency production admission helpers, recovery and FIFO. Five independent processes, not a duration soak or fleet latency benchmark.',
   realProvidersExecuted: false, physicalMotionExecuted: false };
 const directory = resolve(repositoryRoot, 'artifacts/qa'); mkdirSync(directory, { recursive: true });
 writeFileSync(resolve(directory, 'soak-report.json'), JSON.stringify(report, null, 2) + '\n');
-const markdown = `# Bounded admission campaign\n\nSource: ${sourceCommit}; dirty: ${dirty}; trials: ${trials.length}/5; accepted: ${accepted}.\n\n`
+const markdown = `# Bounded admission campaign\n\nSource: ${sourceCommit}; dirty: ${describeDirty({ dirty, ignoredChanges })}; trials: ${trials.length}/5; accepted: ${accepted}.\n\n`
   + `Total synthetic submissions: ${report.totalSubmissions}; measured trial durations (ms): ${trials.map(item => Math.round(item.durationMs)).join(', ')}.\n\n${report.scope}\n`;
 writeFileSync(resolve(directory, 'soak-report.md'), markdown);
 if (process.env.GITHUB_STEP_SUMMARY) writeFileSync(process.env.GITHUB_STEP_SUMMARY, markdown, { flag: 'a' });

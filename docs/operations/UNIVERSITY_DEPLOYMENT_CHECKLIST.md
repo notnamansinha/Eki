@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-OPS-006 | 1.4 | Current | 2026-11-07 |
+| EKI-OPS-006 | 1.5 | Current | 2026-11-21 |
 
 ## 1. Purpose
 
@@ -43,7 +43,8 @@ Each item is complete only when its evidence is recorded in the release evidence
 - [ ] If the production project ID differs from `eki-production`, change the workflow's project and frontend origin through a reviewed pull request.
 - [ ] Map the `rtdb` deploy target to the production RTDB instance in `.firebaserc`, which maps it for `bustrack-be165` only. Without the mapping `deploy-production` stops at its first check (`node scripts/verify-rtdb-deploy-target.mjs --project eki-production`).
 - [ ] Deploy the production backend before the first production dispatch. `deploy-production` always runs `npm run verify:web-backend-contract` against its `NEXT_PUBLIC_BACKEND_URL` and stops unless `/health` reports `ok` and CORS allows `https://eki-production.web.app`.
-- [ ] Add `NEXT_PUBLIC_SITE_URL` (and `NEXT_PUBLIC_SITE_INDEXING` for non-production builds) to the Deploy build step; neither Deploy job passes them.
+- [ ] Add `NEXT_PUBLIC_SITE_URL` with the production origin to the `deploy-production` build step. Neither Deploy job passes it, so a production build would name `https://bustrack-be165.web.app` as its canonical origin.
+- [ ] End the staging public-pilot exception [OPS-04](ARCHITECTURE_RISK_REGISTER.md#311-ops-04-the-staging-host-is-indexable-without-access-control) when `eki-production` is provisioned. In the pull request that first names the production project in `.firebaserc`, set `NEXT_PUBLIC_SITE_INDEXING: "false"` for the `deploy-staging` build, set the staging cell of the [environment separation table](../CONFIGURATION.md#9-environment-separation) to `false`, and move OPS-04 out of Accepted. Put the staging host behind access control, record that it serves `Disallow: /`, an empty sitemap and `noindex` on every page and refuses unauthenticated visitors, and close OPS-04. `scripts/staging-indexing-policy.test.mjs` fails while `.firebaserc` names another project and OPS-04 is still Accepted.
 - [x] Require the Production verification jobs as status checks: the ruleset `Require verified changes on main` requires them and both CodeQL jobs, with branches up to date; the maintain and administrator roles and the account `suryaraj09` keep bypass rights, and the owner decides whether to keep that bypass ([OPS-03](ARCHITECTURE_RISK_REGISTER.md#310-ops-03-the-main-ruleset-requires-no-status-checks), GitHub API, read 2026-11-07).
 - [x] Record a green nightly and a green weekly QA run on `main`, which the scheduled workflows test: every scheduled nightly run from 2026-10-30 to 2026-11-07 (UTC) and the scheduled weekly run of 2026-10-31 passed ([OPS-02](ARCHITECTURE_RISK_REGISTER.md#36-ops-02-scheduled-qa-runs-no-suites), GitHub Actions history, read 2026-11-07).
 - [ ] Confirm that a green push to `main` deploys to staging and that staging checks (Hosting headers, sign-in, role checks, rules) pass before any production dispatch. A push releases Hosting, rules and indexes only; the Deploy workflow changes the staging backend only on a dispatch with `deploy_backend: true` ([CI, deployment and releases](CI_CD_AND_RELEASES.md#51-triggers-and-conditions)).

@@ -42,6 +42,8 @@
     "qa:native": "node scripts/qa/run-native.mjs",
     "qa:unit:reviewed": "node scripts/qa/run-reviewed-unit.mjs",
     "qa:api": "npm run build --workspace=backend && node scripts/run-rules-emulator.mjs --api",
+    "qa:dast": "npm run build --workspace=backend && node scripts/run-rules-emulator.mjs --dast",
+    "qa:dast:staging": "node scripts/qa/run-dast.mjs --staging",
     "qa:observability": "npm run build --workspace=backend && node scripts/run-rules-emulator.mjs --observability",
     "qa:observability:relay": "npm run build --workspace=backend && node scripts/qa/run-observability-drill.mjs --relay",
     "qa:observability:collector": "node scripts/qa/replay-otel-collector.mjs",
