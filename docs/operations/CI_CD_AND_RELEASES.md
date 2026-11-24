@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-OPS-001 | 5.0 | Current | 2026-11-21 |
+| EKI-OPS-001 | 5.0 | Current | 2026-11-24 |
 
 ## 1. Purpose
 
@@ -127,7 +127,9 @@ Step 4 makes a production release, and a staging dispatch that deploys the backe
 | `NEXT_PUBLIC_FIREBASE_API_KEY`, `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN`, `NEXT_PUBLIC_FIREBASE_DATABASE_URL`, `NEXT_PUBLIC_FIREBASE_PROJECT_ID`, `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET`, `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID`, `NEXT_PUBLIC_FIREBASE_APP_ID`, `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`, `NEXT_PUBLIC_GOOGLE_MAP_ID`, `NEXT_PUBLIC_BACKEND_URL` | Environment secrets | Steps 2 to 4; `NEXT_PUBLIC_FIREBASE_DATABASE_URL` also in the RTDB check of `deploy-backend-staging` | Values compiled into the static frontend |
 | `RTDB_EXPECTED_REGION` | Environment variable | Step 2; the RTDB check in `deploy-backend-staging` | Expected RTDB region. Set to `asia-southeast1` in the `staging` environment on 2026-11-02. Every release fails when it is unset; the CI preflight, which runs without `--require-region`, compares only the instances. |
 
-The workflow passes no other build variables. `NEXT_PUBLIC_SITE_URL` and `NEXT_PUBLIC_SITE_INDEXING` are therefore unset in deployed builds: canonical and social URLs fall back to `https://bustrack-be165.web.app` and indexing is enabled. A custom domain or a production build needs those two values added to the workflow ([DNS and domains](DNS_AND_DOMAINS.md)). The meaning of each variable is in [configuration](../CONFIGURATION.md).
+The workflow passes no other build variables. `NEXT_PUBLIC_SITE_URL` and `NEXT_PUBLIC_SITE_INDEXING` are therefore unset in deployed builds: canonical and social URLs fall back to `https://bustrack-be165.web.app` and indexing is enabled. A custom domain or a production build needs `NEXT_PUBLIC_SITE_URL` added to the workflow ([DNS and domains](DNS_AND_DOMAINS.md)); `deploy-staging` gets `NEXT_PUBLIC_SITE_INDEXING: "false"` when OPS-04 ends (below). The meaning of each variable is in [configuration](../CONFIGURATION.md).
+
+An indexable staging host is a recorded public-pilot exception ([OPS-04](ARCHITECTURE_RISK_REGISTER.md#311-ops-04-the-staging-host-is-indexable-without-access-control)). When `eki-production` is provisioned, `deploy-staging` sets `NEXT_PUBLIC_SITE_INDEXING: "false"` for its build and staging gets access control. `scripts/staging-indexing-policy.test.mjs` fails when the staging build environment (workflow, job and step `env`), the OPS-04 entry, the staging cell of the [environment separation table](../CONFIGURATION.md#9-environment-separation) and `.firebaserc` disagree: OPS-04 stays Accepted exactly as long as the staging build leaves indexing on, and naming any project other than `bustrack-be165` in `.firebaserc` (Firebase `demo-*` emulator projects aside) while OPS-04 is still Accepted fails.
 
 Browser values become public after bundling. Restrict the Firebase and Maps browser keys by referrer and API. The Maps browser key (`NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`, project `bustrack-501917`) accepts only the referrers `https://bustrack-be165.web.app/*`, `https://bustrack-be165.firebaseapp.com/*`, `http://localhost:3000/*` and `http://localhost:3001/*`, and only the Maps JavaScript API. The backend uses a separate server key ([configuration](../CONFIGURATION.md)).
 
@@ -175,6 +177,7 @@ These GitHub settings are not stored in the repository. They were read through t
 | `scripts/verify-web-backend-contract.test.mjs` | The CSP check of step 3 and the live readiness, CORS and preflight checks of step 4, including the retry window |
 | `scripts/disable-appcheck-enforcement.test.mjs` | The App Check change of step 5 and the token exchange that steps 5 and 6 use |
 | `scripts/publish-backend-image-workflow.test.mjs` | Publish backend image (Section 7.3) |
+| `scripts/staging-indexing-policy.test.mjs` | The staging indexing exception [OPS-04](ARCHITECTURE_RISK_REGISTER.md#311-ops-04-the-staging-host-is-indexable-without-access-control): it stays Accepted exactly while the `deploy-staging` build leaves indexing on, its scope names the origin that build serves, the staging cell of the environment separation table agrees with the build, and naming another project in `.firebaserc` ends it |
 
 ## 6. Scheduled QA (`deep-qa.yml`, `weekly-reliability.yml`)
 

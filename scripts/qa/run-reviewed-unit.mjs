@@ -7,12 +7,13 @@ import { repositoryRoot } from './acceptance-catalog.mjs';
 import { safetyPreflight } from './safety-preflight.mjs';
 import { summarizeVitest } from './run-gnss.mjs';
 import { reviewedUnitFiles, reviewedUnitTestMap } from '../../qa/reviewed-unit-test-map.mjs';
+import { describeDirty, workingTreeState } from './working-tree.mjs';
 
 if (process.argv.length > 2) throw Error('Reviewed unit evidence uses fixed source-attributed files');
 safetyPreflight(process.env);
 const directory = resolve(repositoryRoot, 'artifacts/qa'); mkdirSync(directory, { recursive: true });
 const report = { schemaVersion: 1, sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repositoryRoot, encoding: 'utf8' }).trim(),
-  dirty: Boolean(execFileSync('git', ['status', '--porcelain', '--untracked-files=all'], { cwd: repositoryRoot, encoding: 'utf8' }).trim()),
+  ...workingTreeState(repositoryRoot),
   startedAt: new Date().toISOString(), workflowRunId: process.env.GITHUB_RUN_ID ?? null, level: 'L1',
   verdict: 'BLOCKED', realProvidersExecuted: false, physicalMotionExecuted: false, node: process.version,
   scope: 'Reviewed backend/frontend pure, mocked, loopback Express and React/jsdom files only. Route HTTP responses use real handlers; SDK/datastores/GPS and component HTTP/selected children are mocked. Real SDK authentication, persistence and complete browser acceptance remain separate.' };
@@ -55,7 +56,7 @@ try {
 } catch (error) { report.evidenceError = error.message; }
 report.finishedAt = new Date().toISOString();
 writeFileSync(resolve(directory, 'reviewedUnit-report.json'), JSON.stringify(report, null, 2) + '\n');
-const markdown = `# Reviewed unit execution observations\n\nSource: ${report.sourceCommit}; dirty: ${report.dirty}; level L1; verdict: ${report.verdict}.\n\n`
+const markdown = `# Reviewed unit execution observations\n\nSource: ${report.sourceCommit}; dirty: ${describeDirty(report)}; level L1; verdict: ${report.verdict}.\n\n`
   + `Assertions: ${JSON.stringify(report.counts ?? {})}; reviewed workspace files: ${executions.reduce((sum, item) => sum + item.files.length, 0)}.\n\n`
   + `${report.scope}\n${report.evidenceError ?? ''}\n`;
 writeFileSync(resolve(directory, 'reviewedUnit-report.md'), markdown);

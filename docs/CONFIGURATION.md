@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-GEN-005 | 1.7 | Current | 2026-11-11 |
+| EKI-GEN-005 | 1.8 | Current | 2026-11-21 |
 
 ## 1. Purpose
 
@@ -146,7 +146,7 @@ All frontend variables are `NEXT_PUBLIC_*` values: Next.js compiles them into th
 | `NEXT_PUBLIC_GOOGLE_MAP_ID` | Yes | Empty | Cloud map ID used for map styling and advanced markers. | `src/config/maps.ts` |
 | `NEXT_PUBLIC_BACKEND_URL` | Yes | None | Backend origin for all HTTP commands, without a path or query. HTTP is accepted only for `localhost`, `127.0.0.1` and `[::1]`. The build writes this origin into the Hosting CSP `connect-src`. | `src/lib/apiClient.ts` and callers, `scripts/update-csp.mjs` |
 | `NEXT_PUBLIC_SITE_URL` | No | `https://bustrack-be165.web.app` | Canonical origin for metadata, `robots.txt` and the sitemap. Must be an origin without path, query, fragment or credentials. HTTP is accepted only for `localhost`, `127.0.0.1` and `[::1]` outside production builds. | `src/lib/siteMetadata.ts` |
-| `NEXT_PUBLIC_SITE_INDEXING` | No | Enabled | `false` disables search indexing and sitemap discovery; any other value enables them. Use `false` for preview and staging builds. | `src/lib/siteMetadata.ts` |
+| `NEXT_PUBLIC_SITE_INDEXING` | No | Enabled | `false` disables search indexing and sitemap discovery; any other value enables them. Use `false` for every non-production build except the staging host, which stays indexable as the public pilot until the production project exists ([OPS-04](operations/ARCHITECTURE_RISK_REGISTER.md#311-ops-04-the-staging-host-is-indexable-without-access-control)). | `src/lib/siteMetadata.ts` |
 | `NEXT_PUBLIC_SERVICE_TIME_ZONE` | No | `Asia/Kolkata` | IANA time zone for ride history timestamps. | `src/components/admin/RideHistoryPanel.tsx` |
 | `NEXT_PUBLIC_PASSENGER_BUS_START_TIME` | No | `8:00 am` | Service start time shown to passengers when no bus is running and the admin setting is empty. | `src/config/passenger.ts` |
 | `NEXT_PUBLIC_BUS_EXPIRY_MS` | No | `300000` | How long a silent bus stays on the passenger map and route list; Live Ops never removes it. The passenger "Live tracking lost" threshold is the smaller of 30 s and half this value; "Updates delayed" is the smaller of 12 s and that threshold. | `src/lib/liveBusFreshness.ts` |
@@ -250,7 +250,7 @@ When sign-in or a protected view fails, check in this order: both apps use the s
 | `NODE_ENV` | `development` | `production` | `production` |
 | `CORS_ORIGIN` | Local frontend origin | Exact staging origins | Exact approved origins |
 | `RETENTION_SWEEPER_ENABLED` | `false` | `true` with an approved test schedule | `true` with approved retention periods |
-| `NEXT_PUBLIC_SITE_INDEXING` | Not relevant | `false` | `true` |
+| `NEXT_PUBLIC_SITE_INDEXING` | Not relevant | Unset, so indexing is on: public-pilot exception [OPS-04](operations/ARCHITECTURE_RISK_REGISTER.md#311-ops-04-the-staging-host-is-indexable-without-access-control) until `eki-production` is provisioned, then `false` | Unset or `true`, so indexing is on |
 | Firmware | `esp32dev` build | Signed `esp32dev-secure` build after acceptance | Signed, protected per-device artifact |
 
 After a configuration change, confirm that each value belongs to the intended environment, restart the affected service, check `/health`, and sign in again. For a frontend release, run `npm run build:production`. For a device change, follow the post-flash checks in the [hardware guide](../hardware/README.md).
