@@ -5,6 +5,7 @@ import { resolve } from 'node:path';
 import { repositoryRoot } from './acceptance-catalog.mjs';
 import { safetyPreflight } from './safety-preflight.mjs';
 import { removeGeneratedDemoConfig } from './emulator-environment.mjs';
+import { describeDirty, workingTreeState } from './working-tree.mjs';
 import {
   LOCAL_BACKEND_PORT, LOCAL_PATH_VALUES, STAGING_ORIGIN, ZAP_IMAGE,
   CLOUD_RUN_NAME_CHARACTERS, HEX_DIGITS, applyTriage, assertStagingRun, automationPlan, canonicalCount, canonicalStatus,
@@ -12,7 +13,6 @@ import {
   redactLog, riskCounts, sanitizeZapReport, scopedContract, selectOperations,
 } from './dast-plan.mjs';
 import { dastTriage } from '../../qa/dast-triage.mjs';
-import { describeDirty, workingTreeState } from './working-tree.mjs';
 
 /**
  * Bounded OWASP ZAP scans of the Eki HTTP API (qa/DAST.md).
@@ -42,10 +42,10 @@ rmSync(workDirectory, { recursive: true, force: true });
 mkdirSync(workDirectory, { recursive: true });
 
 const git = gitArgs => execFileSync('git', gitArgs, { cwd: repositoryRoot, encoding: 'utf8' }).trim();
-const { dirty, ignoredChanges } = workingTreeState(repositoryRoot);
 const report = {
   schemaVersion: 1, profile: profileName, dryRun,
-  sourceCommit: git(['rev-parse', 'HEAD']), dirty, ignoredChanges,
+  sourceCommit: git(['rev-parse', 'HEAD']),
+  ...workingTreeState(repositoryRoot),
   startedAt: new Date().toISOString(), finishedAt: null,
   workflowRunId: process.env.GITHUB_RUN_ID ?? null, node: process.version, platform: process.platform,
   zapImage: ZAP_IMAGE, zapVersion: null,
