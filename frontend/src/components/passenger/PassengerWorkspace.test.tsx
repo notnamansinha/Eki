@@ -536,6 +536,29 @@ describe("passenger live data permission denial", () => {
       expect(screen.queryByText(/Check your connection\./)).toBeNull();
     } finally { catalog.mockRestore(); resume.mockRestore(); }
   });
+  it("keeps a route's denial through a retry's network error until that route delivers again", async () => {
+    setScenario("forward");
+    const original = fixtures.subscribeLiveBusChangesByRoute;
+    let fail: ((error: Error) => void) | undefined;
+    const detail = vi.spyOn(fixtures, "subscribeLiveBusChangesByRoute").mockImplementation((routeId, listener, error) => {
+      fail = error;
+      return original(routeId, listener, error);
+    });
+    try {
+      render(<PassengerWorkspace />); const user = userEvent.setup();
+      await user.click(await screen.findByRole("button", { name: "Track QA route" }));
+      await waitFor(() => expect(fail).toBeDefined());
+      act(() => fail!(Object.assign(new Error("permission_denied at /publicRouteBuses"), { code: "PERMISSION_DENIED" })));
+      // The live store's retry then fails for another reason.
+      act(() => fail!(new Error("Network request failed")));
+      expect(screen.getByText("Live bus data is unavailable.")).toBeTruthy();
+      expect(screen.getAllByText(/This is not a connection problem/).length).toBeGreaterThan(0);
+      expect(screen.queryByText("Check your connection, then try again.")).toBeNull();
+      act(() => setScenario("forward"));
+      await waitFor(() => expect(screen.queryByText("Live bus data is unavailable.")).toBeNull());
+      expect(screen.queryByText(/This is not a connection problem/)).toBeNull();
+    } finally { detail.mockRestore(); }
+  });
   it("tells riders a denied route detail read is not a connection problem", async () => {
     setScenario("forward");
     const detail = vi.spyOn(fixtures, "subscribeLiveBusChangesByRoute").mockImplementation((_routeId, _listener, error) => {

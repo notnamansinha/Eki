@@ -371,7 +371,10 @@ export default function PassengerWorkspace() {
         if (!current()) return;
         authoritative.delete(routeId);
         const denied = isPermissionDeniedError(error);
-        markRouteDenied(routeId, denied);
+        // The store retries failed listeners; a later non-permission error is
+        // not evidence that access returned. Only an authoritative delivery
+        // from this route clears its denial.
+        if (denied) markRouteDenied(routeId, true);
         setDetailDataError(denied
           ? "Live bus data could not be loaded: access to live data was denied."
           : `Live bus data could not be loaded. ${error.message}. Retry after checking your connection.`);
