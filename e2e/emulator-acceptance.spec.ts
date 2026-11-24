@@ -14,11 +14,21 @@ const select = async (page: Page, name: string, option: string) => {
   await picker.click();
   await page.getByRole('option', { name: option, exact: true }).click();
 };
+// The From → To bar opens the route timeline as the picker; passed stops fold behind "N passed stops".
+const choose = async (page: Page, option: string) => {
+  const target = page.getByRole('option', { name: option, exact: true });
+  if (!(await target.isVisible())) await page.getByRole('button', { name: /^\d+ passed stops?$/ }).click();
+  await target.click();
+};
 const prepareBoarding = async (page: Page) => {
   await page.getByRole('button', { name: 'Track Synthetic route', exact: true }).click();
-  await select(page, 'Boarding stop', 'Synthetic origin');
-  await select(page, 'Destination station', 'Synthetic end');
+  await page.getByRole('combobox', { name: 'Boarding stop', exact: true }).click();
+  await choose(page, 'Synthetic origin');
+  // The list moves straight on to the destination, then the bar slides into the drawer with Board.
+  await choose(page, 'Synthetic end');
+  await expect(page.getByRole('button', { name: 'Board', exact: true })).toBeVisible();
 };
+const onBoard = (page: Page) => page.getByRole('group', { name: 'Your trip', exact: true }).getByText('On board', { exact: true });
 const board = async (page: Page) => {
   await prepareBoarding(page);
   const boardButton = page.getByRole('button', { name: 'Board', exact: true });
@@ -27,7 +37,7 @@ const board = async (page: Page) => {
     return element.contains(document.elementFromPoint(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2));
   })).toBe(true);
   await page.getByRole('button', { name: 'Board', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'On board', exact: true })).toBeVisible();
+  await expect(onBoard(page)).toBeVisible();
 };
 
 test.beforeEach(async ({ context, request, browser }, testInfo) => {
@@ -204,7 +214,7 @@ test('boards through real auth API and persistence then restores one membership 
   expect(before.passengers.qa_passenger).toMatchObject({ userId: 'qa_passenger', boardingStopId: 'origin', alightingStopId: 'end' });
   await page.reload();
   await expect(page.getByLabel('Verified fixture account')).toHaveText('qa_passenger');
-  await expect(page.getByRole('button', { name: 'On board', exact: true })).toBeVisible();
+  await expect(onBoard(page)).toBeVisible();
   expect((await evidence(request)).passengers.qa_passenger.joinedAt).toEqual(before.passengers.qa_passenger.joinedAt);
 });
 
@@ -215,7 +225,7 @@ test('boards without requesting a code and records one authenticated passenger',
   const submitted = page.waitForRequest(req => req.url().endsWith('/api/sessions/qa_session/join') && req.method() === 'POST');
   await page.getByRole('button', { name: 'Board', exact: true }).click();
   expect((await submitted).postDataJSON()).not.toHaveProperty('boardingCode');
-  await expect(page.getByRole('button', { name: 'On board', exact: true })).toBeVisible();
+  await expect(onBoard(page)).toBeVisible();
   expect((await evidence(request)).passengerIds).toEqual(['qa_passenger']);
   await page.screenshot({ path: info.outputPath('passenger-board-without-code.png'), fullPage: true });
 });
@@ -226,7 +236,7 @@ test('rejects distant geolocation without a manifest or optimistic success', asy
   await page.getByRole('button', { name: 'Board', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('near the bus');
   expect((await evidence(request)).passengerIds).toEqual([]);
-  await expect(page.getByRole('button', { name: 'On board', exact: true })).toHaveCount(0);
+  await expect(onBoard(page)).toHaveCount(0);
 });
 
 test('chat reconciles a lost acknowledgement into one durable message and listener delivery', async ({ page, request }) => {
