@@ -195,10 +195,10 @@ export default function PassengerBoardingView({
   const boardDisabled = joinState === "joining" || joinState === "joined" || !stopsChosen || Boolean(boardingBlockedReason);
   const boardLabel = joinState === "joining" ? "Checking…" : joinState === "joined" ? "On board" : "Board";
   // Beside the docked Board: progress while joining, else the location notice
-  // until the first join. A paused-tracking reason is already in the header,
-  // so the rail gives it to Board as its description instead.
+  // until the first join, even while paused (FR-PAS-053). The paused reason is
+  // already in the header, so the rail adds it to Board's description.
   const railNote = joinState === "joining" ? JOINING_NOTICE
-    : joinState === "joined" || hasJoined || boardingBlockedReason ? undefined : LOCATION_NOTICE;
+    : joinState === "joined" || hasJoined ? undefined : LOCATION_NOTICE;
 
   const joinRide = async () => {
     // State updates are batched; a ref closes the same-render double-click gap.

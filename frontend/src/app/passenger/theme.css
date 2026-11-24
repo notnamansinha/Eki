@@ -847,9 +847,10 @@
 .pp-trip-header { --pp-trip-lead: 2.75rem; --pp-trip-gap: 0.5rem; }
 .pp-trip { position: relative; }
 .pp-trip-card { position: relative; transform-origin: left top; }
-.pp-trip-status { display: flex; min-width: 0; align-items: baseline; gap: 0.375rem; padding: 0.625rem 0.875rem 0.125rem; }
-.pp-trip-status > .pp-status-title { flex: none; font-size: 0.75rem; }
-.pp-trip-progress { min-width: 0; overflow: hidden; color: var(--text-primary); font-size: 0.75rem; text-overflow: ellipsis; white-space: nowrap; }
+/* A long status ("· Updates delayed · 14 s ago") wraps in a narrow card; the progress part keeps its ellipsis. */
+.pp-trip-status { display: flex; min-width: 0; flex-wrap: wrap; align-items: baseline; column-gap: 0.375rem; padding: 0.625rem 0.875rem 0.125rem; }
+.pp-trip-status > .pp-status-title { min-width: 0; flex: 0 1 auto; font-size: 0.75rem; overflow-wrap: anywhere; }
+.pp-trip-progress { min-width: 0; flex: 1 1 6rem; overflow: hidden; color: var(--text-primary); font-size: 0.75rem; text-overflow: ellipsis; white-space: nowrap; }
 .pp-trip-progress::before { margin-right: 0.375rem; color: var(--text-tertiary); content: "·"; }
 .pp-trip-rows { position: relative; padding: 0 0.25rem 0.25rem; }
 .pp-trip-divider { display: block; margin-left: 2.75rem; border-top: 0.5px solid var(--hairline); }
@@ -911,6 +912,7 @@
 .pp-trip[data-docked] { margin-bottom: -0.5rem; }
 /* The ride status stays in the accessibility tree while it leaves the screen. */
 .pp-trip[data-docked] .pp-trip-status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); visibility: visible; white-space: nowrap; }
+.pp-trip[data-docked] .pp-trip-status > * { flex: none; }
 .pp-trip:not([data-docked]) .pp-trip-card[data-reopened] { animation: pp-trip-card-in 0.32s cubic-bezier(0.2, 0.8, 0.2, 1); }
 .pp-trip-dock {
   position: absolute;

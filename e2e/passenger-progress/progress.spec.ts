@@ -167,7 +167,8 @@ test("field ride 29 Oct 2026: A marked at A, B at B, GNSS loss and silence shown
   // The header explains the loss; the disabled Board names the reason to assistive technology.
   const board = page.getByRole("button", { name: "Board", exact: true });
   await expect(board).toBeDisabled();
-  await expect(board).toHaveAccessibleDescription("Boarding resumes when live tracking returns.");
+  await expect(board).toHaveAccessibleDescription(/Boarding resumes when live tracking returns\./);
+  await expect(page.getByText("Boarding shares your location once to check that you are at the stop.")).toBeVisible();
   await expect(page.getByRole("button", { name: "Back to home", exact: true }).locator("..")
     .getByRole("paragraph").filter({ hasText: /^GPS signal lost$/ })).toBeVisible();
   await expect(page.getByTitle(/GPS signal lost, last known location/)).toBeVisible();

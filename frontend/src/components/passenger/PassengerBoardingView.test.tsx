@@ -198,9 +198,9 @@ describe("passenger boarding workflow", () => {
     view.rerender(<PassengerBoardingView {...props} boardingBlockedReason="Boarding resumes when live tracking returns." />);
     const board = screen.getByRole("button", { name: "Board" });
     expect(board).toHaveProperty("disabled", true);
-    // The header already explains the pause; the rail gives Board the reason as its description.
+    // The location notice stays beside Board; the paused reason joins its description.
     expect(board.getAttribute("aria-describedby")!.split(" ").map(id => document.getElementById(id)?.textContent))
-      .toEqual(["Boarding resumes when live tracking returns."]);
+      .toEqual(["Boarding shares your location once to check that you are at the stop.", "Boarding resumes when live tracking returns."]);
   });
   it("aborts an in-flight join when the boarding view unmounts", async () => {
     const fetchMock = vi.fn((_url, options) => new Promise((_resolve, reject) => options.signal.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")))));
