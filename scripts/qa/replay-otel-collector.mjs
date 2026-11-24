@@ -3,7 +3,8 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { repositoryRoot } from './acceptance-catalog.mjs';
 import {
-  checkSelectors, dashboardSelectors, flattenLogs, flattenMetrics, flattenSpans, metricCatalogFromExport, prometheusName, seriesNames,
+  SIGNALS, canonicalTraceId, checkSelectors, dashboardSelectors, flattenLogs, flattenMetrics, flattenSpans, metricCatalogFromExport,
+  printableText, prometheusName, seriesNames,
 } from './observability-drill.mjs';
 
 /**
@@ -81,7 +82,8 @@ try {
   if (!phases.every(existsSync)) throw new Error('Run npm run qa:observability first; artifacts/qa/observability/*-otlp.json is missing');
   const payloads = phases.flatMap(path => JSON.parse(readFileSync(path, 'utf8')));
   const drill = JSON.parse(readFileSync(resolve(evidence, 'observability-report.json'), 'utf8'));
-  const traceIds = drill.phases.find(phase => phase.phase === 'always').requests.map(request => request.traceId).filter(Boolean);
+  // Trace IDs from the drill report enter Jaeger URLs only as valid W3C IDs rebuilt from hex.
+  const traceIds = drill.phases.find(phase => phase.phase === 'always').requests.map(request => canonicalTraceId(request.traceId)).filter(Boolean);
   if (docker(['version', '--format', '{{.Server.Version}}']).status !== 0) throw new Error('Docker is not running');
 
   const overlay = resolve(workDirectory, 'prometheus-overlay.yaml');
@@ -99,8 +101,13 @@ try {
     COLLECTOR_IMAGE, '--config=/etc/otelcol/config.yaml', '--config=/etc/otelcol/overlay.yaml'], { env: { ...process.env, MSYS_NO_PATHCONV: '1' } });
   if (collector.status !== 0) throw new Error(`The Collector did not start: ${collector.stderr.slice(0, 200)}`);
 
-  const post = (signal, body) => fetch(`http://127.0.0.1:${PORTS.otlp}/v1/${signal}`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body, signal: AbortSignal.timeout(10_000) }).then(response => response.status, () => null);
+  // The path segment comes from the fixed signal list, never from the payload file.
+  const post = (signal, body) => {
+    const known = SIGNALS.find(item => item === signal);
+    if (!known) return Promise.resolve(null);
+    return fetch(`http://127.0.0.1:${PORTS.otlp}/v1/${known}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body, signal: AbortSignal.timeout(10_000) }).then(response => response.status, () => null);
+  };
   const ready = Date.now() + 60_000;
   while (await post('traces', '{"resourceSpans":[]}') !== 200) {
     if (Date.now() > ready) throw new Error('The Collector did not accept OTLP/HTTP within 60 s');
@@ -147,7 +154,7 @@ try {
 
   // Prometheus names from the Collector's translator against this harness's.
   const scrape = await fetch(`http://127.0.0.1:${PORTS.prometheus}/metrics`, { signal: AbortSignal.timeout(10_000) }).then(response => response.text());
-  writeFileSync(resolve(workDirectory, 'prometheus.txt'), scrape);
+  writeFileSync(resolve(workDirectory, 'prometheus.txt'), printableText(scrape));
   const exposition = parseExposition(scrape);
   const instruments = metricCatalogFromExport(flattenMetrics(payloads));
   const mismatched = instruments.filter(item => !exposition.types.has(prometheusName(item))).map(item => `${item.scope}:${item.name} -> ${prometheusName(item)}`);

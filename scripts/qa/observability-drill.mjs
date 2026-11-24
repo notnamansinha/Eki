@@ -267,6 +267,43 @@ export function redact(text, values) {
     .replace(/\bBearer\s+\S+/gi, 'Bearer [REDACTED]');
 }
 
+// Values that a server or an earlier run's file supplies reach the evidence,
+// or a request URL, only after they are rebuilt from these fixed sets. That
+// validates them and keeps unchecked bytes out (CodeQL js/http-to-file-access
+// and js/file-access-to-http).
+const HTTP_STATUS_CODES = Object.freeze(Array.from({ length: 500 }, (_, index) => index + 100));
+export const HEX_DIGITS = '0123456789abcdef';
+const PRINTABLE = Object.freeze(['\t', '\n', ...Array.from({ length: 95 }, (_, index) => String.fromCharCode(32 + index))]);
+
+/** The HTTP status code from the fixed list of 100 to 599, or null. */
+export function canonicalStatus(value) {
+  return HTTP_STATUS_CODES.find(code => code === value) ?? null;
+}
+
+/** `value` rebuilt from the characters of `alphabet`, or null when it has another character or is empty or too long. */
+export function canonicalText(value, alphabet, maxLength) {
+  if (typeof value !== 'string' || value.length === 0 || value.length > maxLength) return null;
+  const allowed = [...alphabet];
+  const rebuilt = [...value].map(character => allowed.find(candidate => candidate === character));
+  return rebuilt.every(character => character !== undefined) ? rebuilt.join('') : null;
+}
+
+/** A non-negative safe integer rebuilt from its digits, or null. */
+export function canonicalCount(value) {
+  if (!Number.isSafeInteger(value) || value < 0) return null;
+  return Number(canonicalText(String(value), '0123456789', 16));
+}
+
+/** A valid W3C trace ID rebuilt from lowercase hex digits, or null. */
+export function canonicalTraceId(value) {
+  return isTraceId(value) ? canonicalText(value, HEX_DIGITS, 32) : null;
+}
+
+/** `text` rebuilt from printable ASCII, tab and newline; any other character becomes `?`. */
+export function printableText(text) {
+  return [...String(text)].map(character => PRINTABLE.find(candidate => candidate === character) ?? '?').join('');
+}
+
 /**
  * Whether `kept` of `sent` independent root traces is consistent with ratio
  * `p`: a two-sided normal-approximation band at z (3.29 is 99.9 %).
@@ -549,7 +586,8 @@ export async function relayPayload(payload, { relay, canaries, fetchImpl = fetch
       method: 'POST', headers: { ...relay.headers, 'Content-Type': 'application/json' }, body: payload.text,
       redirect: 'error', signal: AbortSignal.timeout(timeoutMs),
     });
-    return { signal: payload.signal, forwarded: true, status: response.status, accepted: response.status >= 200 && response.status < 300 };
+    const status = canonicalStatus(response.status);
+    return { signal: payload.signal, forwarded: true, status, accepted: status !== null && status >= 200 && status < 300 };
   } catch (error) {
     return { signal: payload.signal, forwarded: false, reason: 'NETWORK_ERROR', error: String(error?.name ?? 'Error').slice(0, 40) };
   }

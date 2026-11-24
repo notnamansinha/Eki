@@ -1,15 +1,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { join, relative, resolve } from 'node:path';
 import { gzipSync } from 'node:zlib';
 import { repositoryRoot } from './qa/acceptance-catalog.mjs';
 import {
-  BACKEND_SCOPE, HTTP_SCOPE, SDK_DEFAULT_BOUNDS,
-  assertRelayRun, checkSelectors, createOtlpReceiver, dashboardSelectors, familyCollisions, flattenLogs, flattenMetrics, flattenSpans,
+  BACKEND_SCOPE, HEX_DIGITS, HTTP_SCOPE, SDK_DEFAULT_BOUNDS,
+  assertRelayRun, canonicalCount, canonicalStatus, canonicalText, canonicalTraceId, checkSelectors, createOtlpReceiver, dashboardSelectors, familyCollisions, flattenLogs, flattenMetrics, flattenSpans,
   histogramBuckets, latestSeries, metricCatalogFromSource, parseOtlpHeaders, prometheusName, redact, relayPayload, requestTraces,
-  ruleSelectors, samplingBand, scanCanaries, selectorsOf, structuredLines, totalsBy,
+  printableText, ruleSelectors, samplingBand, scanCanaries, selectorsOf, structuredLines, totalsBy,
 } from './qa/observability-drill.mjs';
 
 const { load } = createRequire(resolve(repositoryRoot, 'backend/package.json'))('js-yaml');
@@ -169,24 +169,27 @@ test('alerting and recording rules are read like dashboard targets', () => {
 
 // The hermetic CI check: every metric a committed dashboard or rule file
 // queries must be produced by an instrument declared in backend/src.
+// Directory entries carry their type, so no file is checked and then read.
 function backendSources(directory = resolve(repositoryRoot, 'backend/src')) {
-  return readdirSync(directory).flatMap(entry => {
-    const path = join(directory, entry);
-    if (statSync(path).isDirectory()) return backendSources(path);
-    return /\.ts$/.test(entry) && !/\.test\.ts$/.test(entry) ? [{ path: relative(repositoryRoot, path).replaceAll('\\', '/'), text: readFileSync(path, 'utf8') }] : [];
+  return readdirSync(directory, { withFileTypes: true }).flatMap(entry => {
+    const path = join(directory, entry.name);
+    if (entry.isDirectory()) return backendSources(path);
+    return entry.isFile() && /\.ts$/.test(entry.name) && !/\.test\.ts$/.test(entry.name)
+      ? [{ path: relative(repositoryRoot, path).replaceAll('\\', '/'), text: readFileSync(path, 'utf8') }] : [];
   });
 }
 
 function observabilitySelectors(directory = resolve(repositoryRoot, 'observability')) {
-  return readdirSync(directory).flatMap(entry => {
-    const path = join(directory, entry);
+  return readdirSync(directory, { withFileTypes: true }).flatMap(entry => {
+    const path = join(directory, entry.name);
     const file = relative(repositoryRoot, path).replaceAll('\\', '/');
-    if (statSync(path).isDirectory()) return observabilitySelectors(path);
-    if (/\.json$/.test(entry)) {
+    if (entry.isDirectory()) return observabilitySelectors(path);
+    if (!entry.isFile()) return [];
+    if (/\.json$/.test(entry.name)) {
       const document = JSON.parse(readFileSync(path, 'utf8'));
       return document.panels ? dashboardSelectors(document, file) : [];
     }
-    if (/\.ya?ml$/.test(entry)) {
+    if (/\.ya?ml$/.test(entry.name)) {
       const document = load(readFileSync(path, 'utf8'));
       return document?.groups ? ruleSelectors(document, file) : [];
     }
@@ -253,4 +256,23 @@ test('the relay never forwards a payload holding a canary and posts clean ones o
   assert.equal(calls[0].init.redirect, 'error');
   const failed = await relayPayload({ signal: 'metrics', text: '{}' }, { relay, canaries, fetchImpl: async () => { throw new TypeError('fetch failed: Basic c2VjcmV0'); } });
   assert.deepEqual(failed, { signal: 'metrics', forwarded: false, reason: 'NETWORK_ERROR', error: 'TypeError' }, 'error text, which may echo a header, is not kept');
+  const odd = await relayPayload({ signal: 'logs', text: '{}' }, { relay, canaries, fetchImpl: async () => ({ status: '200' }) });
+  assert.deepEqual(odd, { signal: 'logs', forwarded: true, status: null, accepted: false }, 'a status outside the fixed list is not kept or accepted');
+});
+
+test('server and file values are rebuilt from fixed sets before they reach the evidence or a request URL', () => {
+  assert.equal(canonicalStatus(200), 200);
+  assert.equal(canonicalStatus(599), 599);
+  for (const value of [99, 600, '200', 200.5, null, undefined]) assert.equal(canonicalStatus(value), null, String(value));
+  assert.equal(canonicalText('abc123', HEX_DIGITS, 8), 'abc123');
+  for (const value of ['ABC', 'abc1234567', '', 'ab\nc', 42, null]) assert.equal(canonicalText(value, HEX_DIGITS, 8), null, JSON.stringify(value));
+  assert.equal(canonicalCount(0), 0);
+  assert.equal(canonicalCount(156), 156);
+  for (const value of [-1, 1.5, '3', Number.MAX_SAFE_INTEGER + 2, null, undefined]) assert.equal(canonicalCount(value), null, String(value));
+  assert.equal(canonicalTraceId(traceA), traceA);
+  for (const value of ['0'.repeat(32), traceA.toUpperCase(), traceA.slice(1), `${traceA}0`, `../${traceA.slice(3)}`, null]) {
+    assert.equal(canonicalTraceId(value), null, String(value));
+  }
+  assert.equal(printableText('# TYPE x counter\nx{a="b"}\t1\n'), '# TYPE x counter\nx{a="b"}\t1\n');
+  assert.equal(printableText('x\u001b[31m\ré\u{1F600}'), 'x?[31m???');
 });

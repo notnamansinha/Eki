@@ -7,7 +7,7 @@ import { safetyPreflight } from './safety-preflight.mjs';
 import { removeGeneratedDemoConfig } from './emulator-environment.mjs';
 import {
   BACKEND_SCOPE, DEFAULT_RECEIVER_PORT, HTTP_SCOPE, SERVICE_NAME, STATUS_ERROR,
-  assertRelayRun, checkSelectors, createOtlpReceiver, dashboardSelectors, familyCollisions, flattenLogs, flattenMetrics,
+  assertRelayRun, canonicalCount, canonicalStatus, checkSelectors, createOtlpReceiver, dashboardSelectors, familyCollisions, flattenLogs, flattenMetrics,
   flattenSpans, histogramBuckets, latestSeries, metricCatalogFromExport, metricCatalogFromSource, redact, relayPayload, requestTraces, samplingBand,
   sameCounts, scanCanaries, serverSpans, statusCounts, structuredLines, totalsBy, traceparent,
 } from './observability-drill.mjs';
@@ -128,9 +128,11 @@ mkdirSync(workDirectory, { recursive: true });
 const sleep = ms => new Promise(done => setTimeout(done, ms));
 const hex = bytes => randomBytes(bytes).toString('hex');
 
+// Only canonical values from a response reach the report: the status from the
+// fixed list of codes, and body fields through canonicalCount.
 async function getJson(url, init = {}) {
   const response = await fetch(url, { ...init, signal: AbortSignal.timeout(10_000), redirect: 'error' });
-  return { status: response.status, body: await response.json().catch(() => null) };
+  return { status: canonicalStatus(response.status), body: await response.json().catch(() => null) };
 }
 const control = (path, method = 'GET') => getJson(`${CONTROL}${path}`, { method, headers: { 'User-Agent': 'eki-observability-drill-control' } });
 
@@ -279,7 +281,7 @@ async function runPhase(phase, receiver, relayState) {
       let status = 'error';
       try {
         const response = await fetch(`${BACKEND}${path}`, { method: item.method, headers, body, signal: AbortSignal.timeout(15_000), redirect: 'error' });
-        status = response.status;
+        status = canonicalStatus(response.status) ?? 'error';
         await response.arrayBuffer();
       } catch { /* recorded as error */ }
       lastRequestAt = Date.now();
@@ -303,8 +305,10 @@ async function runPhase(phase, receiver, relayState) {
     while (!receiver.payloads.some(payload => payload.signal === 'metrics' && payload.receivedAt > lastRequestAt) && Date.now() < exportDeadline) await sleep(250);
     entry.observations.periodicMetricExportAfterLastRequest = receiver.payloads.some(payload => payload.signal === 'metrics' && payload.receivedAt > lastRequestAt);
     const { body: state } = await control('/evidence');
-    transport = { deniedConnections: state?.transport?.deniedConnections ?? null,
-      providerDeniedRequests: state?.providers?.deniedRequests ?? null, externalNetworkExecuted: state?.providers?.externalNetworkExecuted ?? null };
+    const executed = state?.providers?.externalNetworkExecuted;
+    transport = { deniedConnections: canonicalCount(state?.transport?.deniedConnections),
+      providerDeniedRequests: canonicalCount(state?.providers?.deniedRequests),
+      externalNetworkExecuted: executed === false ? false : executed === true ? true : null };
   } finally {
     entry.backendExitCode = await backend.stop();
     await sleep(500);
