@@ -38,7 +38,7 @@ async function main() {
   const result = spawnSync(process.execPath, ['scripts/qa/execution-report.mjs'], { cwd: repositoryRoot, encoding: 'utf8', timeout: 60_000, maxBuffer: 4 * 1024 * 1024 });
   process.stdout.write(result.stdout ?? ''); process.stderr.write(result.stderr ?? '');
   const accepted = result.status === 0 && suites.every(item => !item.reasons.length);
-  const report = { sourceCommit: catalog.sourceCommit, dirty: catalog.dirty, generatedAt: new Date().toISOString(), accepted, suites,
+  const report = { sourceCommit: catalog.sourceCommit, dirty: catalog.dirty, ignoredChanges: catalog.ignoredChanges ?? [], generatedAt: new Date().toISOString(), accepted, suites,
     executionReportExitCode: result.status, softwareRelease: 'NOT_RELEASE_READY', vehicleFieldDeployment: 'NOT_VERIFIED' };
   writeFileSync(resolve(directory, 'campaign-summary.json'), JSON.stringify(report, null, 2) + '\n');
   const markdown = `# Nightly campaign observations\n\nSource: ${catalog.sourceCommit}; required recorded campaigns: ${accepted ? 'PASS' : 'BLOCKED'}.\n\n`

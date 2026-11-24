@@ -3,13 +3,14 @@ import { mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { repositoryRoot } from './acceptance-catalog.mjs';
 import { safetyPreflight } from './safety-preflight.mjs';
+import { describeDirty, workingTreeState } from './working-tree.mjs';
 
 if (process.argv.length > 2) throw Error('Mutation targets the reviewed pure payload module only');
 safetyPreflight(process.env);
 const directory = resolve(repositoryRoot, 'artifacts/qa'); mkdirSync(directory, { recursive: true });
 const rawPath = resolve(directory, 'mutation/report.json'); rmSync(rawPath, { force: true });
 const sourceCommit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repositoryRoot, encoding: 'utf8' }).trim();
-const dirty = Boolean(execFileSync('git', ['status', '--porcelain', '--untracked-files=all'], { cwd: repositoryRoot, encoding: 'utf8' }).trim());
+const { dirty, ignoredChanges } = workingTreeState(repositoryRoot);
 const startedAt = new Date().toISOString();
 const child = spawnSync(process.execPath, ['node_modules/@stryker-mutator/core/bin/stryker.js', 'run', 'qa/stryker.config.mjs'],
   { cwd: repositoryRoot, encoding: 'utf8', timeout: 600_000, maxBuffer: 12 * 1024 * 1024 });
@@ -27,7 +28,7 @@ const observedTests = Object.values(raw?.testFiles ?? {}).reduce((sum, file) => 
 const valid = mutants.length > 0 && mutants.every(item => statuses.includes(item.status))
   && new Set(mutants.map(item => `${item.path}|${item.id}`)).size === mutants.length && selectionObserved && observedTests >= 31;
 const accepted = child.status === 0 && valid && !dirty && counts.Pending === 0;
-const report = { schemaVersion: 1, sourceCommit, dirty, startedAt, finishedAt: new Date().toISOString(),
+const report = { schemaVersion: 1, sourceCommit, dirty, ignoredChanges, startedAt, finishedAt: new Date().toISOString(),
   workflowRunId: process.env.GITHUB_RUN_ID ?? null, node: process.version, runnerExitCode: child.status,
   runnerError: child.error?.code ?? null, baselineObserved: accepted,
   verdict: accepted ? 'MUTATION_BASELINE_OBSERVED' : 'BLOCKED', mutants: mutants.length, counts, testFiles, selectionObserved, observedTests,
@@ -35,7 +36,7 @@ const report = { schemaVersion: 1, sourceCommit, dirty, startedAt, finishedAt: n
   scope: 'Pure telemetry payload validator only; survivors require review. No complete feature or fleet acceptance.',
   realProvidersExecuted: false, physicalMotionExecuted: false };
 writeFileSync(resolve(directory, 'mutation-report.json'), JSON.stringify(report, null, 2) + '\n');
-const markdown = `# Selective mutation baseline\n\nSource: ${sourceCommit}; dirty: ${dirty}; verdict: ${report.verdict}.\n\nMutants: ${mutants.length}; ${JSON.stringify(counts)}.\n\n${report.scope}\n`;
+const markdown = `# Selective mutation baseline\n\nSource: ${sourceCommit}; dirty: ${describeDirty({ dirty, ignoredChanges })}; verdict: ${report.verdict}.\n\nMutants: ${mutants.length}; ${JSON.stringify(counts)}.\n\n${report.scope}\n`;
 writeFileSync(resolve(directory, 'mutation-report.md'), markdown);
 if (process.env.GITHUB_STEP_SUMMARY) writeFileSync(process.env.GITHUB_STEP_SUMMARY, markdown, { flag: 'a' });
 if (!accepted) process.exitCode = 1;
