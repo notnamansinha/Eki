@@ -12,6 +12,7 @@ import {
   redactLog, riskCounts, sanitizeZapReport, scopedContract, selectOperations,
 } from './dast-plan.mjs';
 import { dastTriage } from '../../qa/dast-triage.mjs';
+import { describeDirty, workingTreeState } from './working-tree.mjs';
 
 /**
  * Bounded OWASP ZAP scans of the Eki HTTP API (qa/DAST.md).
@@ -41,10 +42,10 @@ rmSync(workDirectory, { recursive: true, force: true });
 mkdirSync(workDirectory, { recursive: true });
 
 const git = gitArgs => execFileSync('git', gitArgs, { cwd: repositoryRoot, encoding: 'utf8' }).trim();
+const { dirty, ignoredChanges } = workingTreeState(repositoryRoot);
 const report = {
   schemaVersion: 1, profile: profileName, dryRun,
-  sourceCommit: git(['rev-parse', 'HEAD']),
-  dirty: Boolean(git(['status', '--porcelain', '--untracked-files=all'])),
+  sourceCommit: git(['rev-parse', 'HEAD']), dirty, ignoredChanges,
   startedAt: new Date().toISOString(), finishedAt: null,
   workflowRunId: process.env.GITHUB_RUN_ID ?? null, node: process.version, platform: process.platform,
   zapImage: ZAP_IMAGE, zapVersion: null,
@@ -285,7 +286,7 @@ async function runStaging() {
 
 function markdown() {
   const lines = [`# DAST ${profileName} scan`, '',
-    `Source ${report.sourceCommit}; dirty: ${report.dirty}; verdict: ${report.verdict}.`, '',
+    `Source ${report.sourceCommit}; dirty: ${describeDirty(report)}; verdict: ${report.verdict}.`, '',
     `Target: ${report.target}. ZAP ${report.zapVersion ?? 'not run'} (${report.zapImage}).`, ''];
   if (report.release) {
     lines.push(`Serving revision: ${report.release.before?.revision} built from ${report.release.before?.sourceSha}; `
