@@ -45,7 +45,15 @@ export async function open(page: Page, url: string) {
   await page.addStyleTag({ content: FONT_STAND_INS });
 }
 
-/** Waits until fonts and images have loaded, so a capture never catches them half-drawn. */
+/** Finite CSS animations and transitions still running, such as an admin panel's 0.35 s slide-up. */
+function runningAnimations(page: Page) {
+  return page.evaluate(() => document.getAnimations()
+    .filter(animation => animation.playState === "running"
+      && Number.isFinite(animation.effect?.getComputedTiming().endTime ?? Number.POSITIVE_INFINITY))
+    .map(animation => ("animationName" in animation ? animation.animationName : "transition")));
+}
+
+/** Waits until fonts, images and animations have finished, so a capture never catches them half-drawn. */
 async function settle(page: Page) {
   // Lazy views (maps, panels) show the fixtures' next/dynamic placeholder until they load.
   await expect(page.getByText("Loading fixture view…")).toHaveCount(0);
@@ -57,6 +65,11 @@ async function settle(page: Page) {
       image.addEventListener("error", done, { once: true });
     })));
   });
+  // toHaveScreenshot fast-forwards an animation that is still running, and a
+  // fast-forwarded panel renders a fraction of a pixel away from one that
+  // finished by itself (about 11,000 pixels on the tablet Feedback tab).
+  // Infinite animations, such as spinners, are left to toHaveScreenshot.
+  await expect.poll(() => runningAnimations(page), { message: "animations still running before capture" }).toEqual([]);
 }
 
 type CaptureOptions = {
