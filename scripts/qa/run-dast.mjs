@@ -3,9 +3,9 @@ import { chmodSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, rm
 import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
 import { repositoryRoot } from './acceptance-catalog.mjs';
-import { describeDirty, workingTreeState } from './working-tree.mjs';
 import { safetyPreflight } from './safety-preflight.mjs';
 import { removeGeneratedDemoConfig } from './emulator-environment.mjs';
+import { describeDirty, workingTreeState } from './working-tree.mjs';
 import {
   LOCAL_BACKEND_PORT, LOCAL_PATH_VALUES, STAGING_ORIGIN, ZAP_IMAGE,
   CLOUD_RUN_NAME_CHARACTERS, HEX_DIGITS, applyTriage, assertStagingRun, automationPlan, canonicalCount, canonicalStatus,
