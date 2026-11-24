@@ -5,6 +5,7 @@ import { resolve } from 'node:path';
 import { repositoryRoot } from './acceptance-catalog.mjs';
 import { safetyPreflight } from './safety-preflight.mjs';
 import { removeGeneratedDemoConfig } from './emulator-environment.mjs';
+import { describeDirty, workingTreeState } from './working-tree.mjs';
 import {
   BACKEND_SCOPE, DEFAULT_RECEIVER_PORT, HTTP_SCOPE, SERVICE_NAME, STATUS_ERROR,
   assertRelayRun, canonicalCount, canonicalStatus, checkSelectors, createOtlpReceiver, dashboardSelectors, familyCollisions, flattenLogs, flattenMetrics,
@@ -65,7 +66,7 @@ const version = name => {
 const report = {
   schemaVersion: 1, mode, dryRun,
   sourceCommit: git(['rev-parse', 'HEAD']),
-  dirty: Boolean(git(['status', '--porcelain', '--untracked-files=all'])),
+  ...workingTreeState(repositoryRoot),
   startedAt: new Date().toISOString(), finishedAt: null,
   workflowRunId: process.env.GITHUB_RUN_ID ?? null, node: process.version, platform: process.platform, firebaseTools: '15.14.0',
   openTelemetry: Object.fromEntries(['@opentelemetry/sdk-node', '@opentelemetry/sdk-metrics', '@opentelemetry/instrumentation-http',
@@ -111,7 +112,7 @@ if (outer) {
   }
   report.finishedAt = new Date().toISOString();
   writeFileSync(`${reportBase}.json`, JSON.stringify(report, null, 2) + '\n');
-  const summary = `# Observability relay ${dryRun ? 'plan' : 'run'}\n\nSource ${report.sourceCommit}; dirty: ${report.dirty}; verdict: ${report.verdict}.\n\n`
+  const summary = `# Observability relay ${dryRun ? 'plan' : 'run'}\n\nSource ${report.sourceCommit}; dirty: ${describeDirty(report)}; verdict: ${report.verdict}.\n\n`
     + (report.relay ? `Collector origin: ${report.relay.origin}; header names: ${report.relay.headerNames.join(', ') || 'none'}.\n\n` : '')
     + (report.setupError ? `Setup: ${report.setupError}\n\n` : '')
     + (report.plan ? `Requests: ${report.plan.requests.map(item => `${item.count}x ${item.label}`).join(', ')}. Nothing was sent.\n` : '');
@@ -479,7 +480,7 @@ function backendSources(directory = resolve(repositoryRoot, 'backend/src')) {
 // ---- report ------------------------------------------------------------------
 
 function markdown() {
-  const lines = [`# Observability drill (${mode})`, '', `Source ${report.sourceCommit}; dirty: ${report.dirty}; verdict: ${report.verdict}.`, '',
+  const lines = [`# Observability drill (${mode})`, '', `Source ${report.sourceCommit}; dirty: ${describeDirty(report)}; verdict: ${report.verdict}.`, '',
     `Target: ${report.target}. Receiver: ${report.receiver}. Node ${report.node}; OpenTelemetry SDK ${report.openTelemetry['@opentelemetry/sdk-node']}.`, ''];
   if (report.relay) lines.push(`Relay: ${report.relay.origin} (header names: ${report.relay.headerNames.join(', ') || 'none'}).`, '');
   if (report.setupError) lines.push(`Setup: ${report.setupError}`, '');

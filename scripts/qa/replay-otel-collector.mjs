@@ -2,6 +2,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { repositoryRoot } from './acceptance-catalog.mjs';
+import { describeDirty, workingTreeState } from './working-tree.mjs';
 import {
   SIGNALS, canonicalTraceId, checkSelectors, dashboardSelectors, flattenLogs, flattenMetrics, flattenSpans, metricCatalogFromExport,
   printableText, prometheusName, seriesNames,
@@ -32,7 +33,7 @@ const suffix = `${process.pid}`;
 const names = { network: `eki-obs-replay-${suffix}`, collector: `eki-obs-collector-${suffix}`, jaeger: `eki-obs-jaeger-${suffix}` };
 
 const report = {
-  schemaVersion: 1, sourceCommit: git(['rev-parse', 'HEAD']), dirty: Boolean(git(['status', '--porcelain', '--untracked-files=all'])),
+  schemaVersion: 1, sourceCommit: git(['rev-parse', 'HEAD']), ...workingTreeState(repositoryRoot),
   startedAt: new Date().toISOString(), finishedAt: null, collectorImage: COLLECTOR_IMAGE, jaegerImage: JAEGER_IMAGE,
   collectorConfig: 'observability/otel-collector.yaml plus a Prometheus exporter overlay on the metrics pipeline',
   replayed: null, accepted: null, jaeger: null, debugExporter: null, prometheus: null, dashboard: null, p95: null,
@@ -209,7 +210,7 @@ try {
 }
 report.finishedAt = new Date().toISOString();
 writeFileSync(resolve(evidence, 'observability-collector-report.json'), JSON.stringify(report, null, 2) + '\n');
-const lines = ['# Collector replay', '', `Source ${report.sourceCommit}; dirty: ${report.dirty}; verdict: ${report.verdict}.`, '',
+const lines = ['# Collector replay', '', `Source ${report.sourceCommit}; dirty: ${describeDirty(report)}; verdict: ${report.verdict}.`, '',
   `Collector ${COLLECTOR_IMAGE}; Jaeger ${JAEGER_IMAGE}.`, '', ...(report.setupError ? [`Setup: ${report.setupError}`, ''] : []),
   '| Check | Result | Detail |', '|---|---|---|', ...report.checks.map(item => `| ${item.id} | ${item.pass ? 'PASS' : 'FAIL'} | ${String(item.detail).replace(/\|/g, '/').slice(0, 300)} |`), ''];
 if (report.p95) {
