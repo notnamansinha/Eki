@@ -771,7 +771,19 @@
 .pp-footnote-links a { display: inline-flex; min-height: 44px; align-items: center; color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
 
 /* ═══ Tracking overlay ═══ */
-.pp-tracking-scrim { background: var(--pp-tracking-scrim); }
+/* Soften only the status bar and the top line: the map buttons in the column
+   under chat sit beside the trip card and must not be washed out by it. */
+.pp-tracking-scrim::before {
+  position: absolute;
+  z-index: -1;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: calc(env(safe-area-inset-top, 0px) + 4.5rem);
+  background: var(--pp-tracking-scrim);
+  content: "";
+  pointer-events: none;
+}
 
 .pp-icon-button,
 .pp-map-button {
@@ -827,6 +839,166 @@
 .pp-status-detail { margin-top: 0.25rem; color: var(--text-secondary); font-size: 0.8125rem; line-height: 1.45; }
 .pp-status-detail[data-tone="danger"] { color: var(--status-danger); }
 .pp-tracking-route { color: var(--text-primary); font-family: var(--font-heading); font-size: 1.125rem; font-weight: 600; line-height: 1.25; }
+
+/* ═══ Tracking trip picker (side rail) ═══
+   Back, the trip card and live chat share the top line (PassengerWorkspace);
+   the map buttons keep the column under chat. Once both stops are set the card
+   slides into a 48 px rail under Back with the stop letters, the ETAs and Board. */
+.pp-trip-header { --pp-trip-lead: 2.75rem; --pp-trip-gap: 0.5rem; }
+.pp-trip { position: relative; }
+.pp-trip-card { position: relative; transform-origin: left top; }
+.pp-trip-status { display: flex; min-width: 0; align-items: baseline; gap: 0.375rem; padding: 0.625rem 0.875rem 0.125rem; }
+.pp-trip-status > .pp-status-title { flex: none; font-size: 0.75rem; }
+.pp-trip-progress { min-width: 0; overflow: hidden; color: var(--text-primary); font-size: 0.75rem; text-overflow: ellipsis; white-space: nowrap; }
+.pp-trip-progress::before { margin-right: 0.375rem; color: var(--text-tertiary); content: "·"; }
+.pp-trip-rows { position: relative; padding: 0 0.25rem 0.25rem; }
+.pp-trip-divider { display: block; margin-left: 2.75rem; border-top: 0.5px solid var(--hairline); }
+/* Three dots join the boarding and destination markers (row centres 24 px and 72.5 px). */
+.pp-trip-link {
+  position: absolute;
+  top: 2.375rem;
+  left: calc(0.25rem + 0.75rem + 11px - 1.5px);
+  width: 3px;
+  height: 1.25rem;
+  background: radial-gradient(circle, #9a9c9c 1.2px, transparent 1.6px) 0 0 / 3px 6.67px repeat-y;
+}
+.pp-trip-ring { display: block; width: 12px; height: 12px; border-radius: 50%; background: var(--surface-1); box-shadow: inset 0 0 0 2.5px var(--text-primary); }
+.pp-trip-footer { display: flex; flex-direction: column; gap: 0.5rem; padding: 0.25rem 0.75rem 0.75rem; }
+
+/* Stop letters as on the map: AU Red, the boarding stop as a ring, passed in grey. */
+.pp-stop-badge {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  flex: none;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-contrast);
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1;
+}
+.pp-stop-badge[data-kind="origin"] { background: var(--surface-1); color: var(--accent); box-shadow: inset 0 0 0 2.5px var(--accent); }
+.pp-stop-badge[data-kind="boarded"] { background: var(--status-live); }
+.pp-stop-badge[data-completed] { background: var(--route-passed); }
+
+/* InAppSelect appearance="row": a borderless 48 px row inside the trip card. */
+.pp-select-row { border-radius: 10px; color: var(--text-primary); font-size: 0.9375rem; font-weight: 500; line-height: 1.25rem; transition: background-color 0.15s ease; }
+.pp-select-row:hover:not(:disabled),
+.pp-select-row[aria-expanded="true"] { background: var(--surface-3); }
+.pp-select-row [data-placeholder] { color: var(--text-secondary); font-weight: 400; }
+.pp-select-row [id$="-selected-detail"] { font-size: 0.8125rem; font-weight: 400; }
+.pp-select-row-lead { display: grid; width: 22px; height: 22px; flex: none; place-items: center; }
+/* InAppSelect widens a narrow card's list towards the window edge (under chat). */
+.pp-select-popup {
+  border: var(--pp-float-border);
+  border-radius: var(--pp-float-radius);
+  background: var(--surface-1);
+  box-shadow: 0 18px 40px -16px rgb(0 0 0 / 0.35), 0 2px 6px rgb(0 0 0 / 0.06);
+  color: var(--text-primary);
+}
+
+/* Docked: the card leaves towards Back while the rail slides in under it. */
+.pp-trip[data-docked] .pp-trip-card {
+  position: absolute;
+  top: 0;
+  inset-inline: 0;
+  pointer-events: none;
+  animation: pp-trip-card-out 0.3s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+/* Docked, the trip takes no height: cancel the slot's gap so a paused notice keeps the top line. */
+.pp-trip[data-docked] { margin-bottom: -0.5rem; }
+/* The ride status stays in the accessibility tree while it leaves the screen. */
+.pp-trip[data-docked] .pp-trip-status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); visibility: visible; white-space: nowrap; }
+.pp-trip:not([data-docked]) .pp-trip-card[data-reopened] { animation: pp-trip-card-in 0.32s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.pp-trip-dock {
+  position: absolute;
+  top: 3.5rem;
+  left: calc(-1 * (var(--pp-trip-lead, 2.75rem) + var(--pp-trip-gap, 0.5rem)) - 2px);
+  width: 3rem;
+  opacity: 0;
+  transform-origin: left top;
+  visibility: hidden;
+}
+.pp-trip[data-docked] .pp-trip-dock { opacity: 1; visibility: visible; animation: pp-trip-rail-in 0.34s cubic-bezier(0.2, 0.8, 0.2, 1) 0.06s both; }
+@keyframes pp-trip-card-out {
+  to { opacity: 0; transform: translateX(calc(-1 * (var(--pp-trip-lead, 2.75rem) + var(--pp-trip-gap, 0.5rem)))) scale(0.3, 0.9); visibility: hidden; }
+}
+@keyframes pp-trip-card-in {
+  from { opacity: 0; transform: translateX(calc(-1 * (var(--pp-trip-lead, 2.75rem) + var(--pp-trip-gap, 0.5rem)))) scale(0.3, 0.9); }
+}
+@keyframes pp-trip-rail-in {
+  from { opacity: 0; transform: translateX(calc(var(--pp-trip-lead, 2.75rem) + var(--pp-trip-gap, 0.5rem))) scaleY(0.6); }
+}
+
+.pp-trip-rail { display: flex; flex-direction: column; overflow: hidden; }
+.pp-rail-trip { display: flex; width: 100%; flex-direction: column; align-items: center; gap: 0.25rem; padding: 0.625rem 0 0.5rem; color: var(--text-primary); cursor: pointer; transition: background-color 0.15s ease; }
+.pp-rail-trip:hover { background: var(--surface-3); }
+.pp-rail-stop { display: flex; flex-direction: column; align-items: center; gap: 0.25rem; }
+.pp-rail-stop .pp-stop-badge { width: 26px; height: 26px; }
+.pp-rail-eta { font-size: 0.75rem; font-variant-numeric: tabular-nums; font-weight: 500; letter-spacing: -0.01em; line-height: 1rem; white-space: nowrap; }
+.pp-rail-eta[data-tone="live"] { color: var(--status-live); }
+.pp-rail-dots { display: block; width: 3px; height: 1.125rem; background: radial-gradient(circle, #9a9c9c 1.2px, transparent 1.6px) 0 0 / 3px 6px repeat-y; }
+.pp-rail-board {
+  display: flex;
+  width: 100%;
+  min-height: 3rem;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.125rem;
+  padding: 0.375rem 0.125rem;
+  background: var(--accent);
+  color: var(--accent-contrast);
+  cursor: pointer;
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 0.875rem;
+  text-align: center;
+  transition: background-color 0.15s ease;
+}
+.pp-rail-board:hover:not(:disabled) { background: var(--accent-hover); }
+.pp-rail-board:disabled { background: var(--surface-4); color: var(--text-tertiary); cursor: not-allowed; }
+.pp-rail-board[data-state="joining"] { background: var(--accent); color: var(--accent-contrast); cursor: progress; }
+.pp-rail-board[data-state="on"] { background: var(--status-live-bg); color: var(--status-live); cursor: default; }
+.pp-rail-trip:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+/* AU Red carries a white focus ring. */
+.pp-rail-board:focus-visible { outline: 2px solid var(--accent-contrast); outline-offset: -4px; }
+/* Beside Board: the location notice before the browser prompt, or why Board waits. */
+.pp-rail-note {
+  position: absolute;
+  bottom: 0;
+  left: calc(100% + 0.5rem);
+  width: max-content;
+  max-width: 12.5rem;
+  padding: 0.375rem 0.625rem;
+  border: var(--pp-float-border);
+  border-radius: 12px;
+  background: var(--pp-float-bg);
+  box-shadow: var(--pp-float-shadow);
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  line-height: 1rem;
+  -webkit-backdrop-filter: var(--pp-float-filter);
+  backdrop-filter: var(--pp-float-filter);
+}
+
+/* Map notices and buttons line up with the header column, on phones and desktops. */
+[data-passenger-map] { --pp-track-inline: max(1rem, calc((100% - 32rem) / 2)); }
+.pp-map-notices { right: calc(var(--pp-track-inline) + 4rem); left: var(--pp-track-inline); }
+.pp-map-camera { right: var(--pp-track-inline); }
+/* Docked, notices start below the rail (at most 13.5rem under the chat column's
+   bottom: the rail's 8px offset, its tallest "On board" height and a gap), so
+   neither the rail nor the note beside Board is ever covered. */
+[data-passenger-tracking]:has(.pp-trip[data-docked]) .pp-map-notices {
+  top: max(calc(var(--tracking-controls-inset, 0px) + 1rem), calc(var(--tracking-anchor-inset, 0px) + 13.5rem)) !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pp-trip-card,
+  .pp-trip-dock { animation-delay: 0s !important; animation-duration: 0.01ms !important; }
+}
 
 .pp-notice {
   display: flex;

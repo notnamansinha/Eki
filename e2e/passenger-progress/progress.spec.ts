@@ -1,4 +1,9 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
+
+async function choose(page: Page, name: string, option: string) {
+  await page.getByRole("combobox", { name, exact: true }).click();
+  await page.getByRole("option", { name: option, exact: true }).click();
+}
 
 test("ETA follows the later itinerary visit at identical coordinates and heading", async ({ page }, info) => {
   await page.goto("/?loop");
@@ -148,12 +153,23 @@ test("field ride 29 Oct 2026: A marked at A, B at B, GNSS loss and silence shown
   await picker.press("Escape");
   await page.screenshot({ path: info.outputPath("at-beta.png"), fullPage: true });
 
+  // Both stops set: the trip card slides into the rail under Back, with Board.
+  await choose(page, "Boarding stop", "Gamma");
+  await choose(page, "Destination station", "Delta");
+  await expect(page.getByRole("button", { name: "Change stops", exact: true })).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Boarding stop" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Board", exact: true })).toBeEnabled();
+
   // GNSS disconnected: the single loss packet is reported at once, boarding withheld.
   await page.getByRole("button", { name: "Publish GNSS loss", exact: true }).click();
   await expect(page.getByText("GPS signal lost").first()).toBeVisible();
-  // The card stays (a chosen stop or "On board" survives the blip); boarding waits for GPS.
-  await expect(page.getByRole("button", { name: "Board", exact: true })).toBeDisabled();
-  await expect(page.getByText("Boarding resumes when live tracking returns.")).toBeVisible();
+  // The rail stays (a chosen stop or "On board" survives the blip); boarding waits for GPS.
+  // The header explains the loss; the disabled Board names the reason to assistive technology.
+  const board = page.getByRole("button", { name: "Board", exact: true });
+  await expect(board).toBeDisabled();
+  await expect(board).toHaveAccessibleDescription("Boarding resumes when live tracking returns.");
+  await expect(page.getByRole("button", { name: "Back to home", exact: true }).locator("..")
+    .getByRole("paragraph").filter({ hasText: /^GPS signal lost$/ })).toBeVisible();
   await expect(page.getByTitle(/GPS signal lost, last known location/)).toBeVisible();
   await page.screenshot({ path: info.outputPath("gnss-lost.png"), fullPage: true });
 

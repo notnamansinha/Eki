@@ -7,9 +7,11 @@ import { beginAuthVerification } from "@/lib/authState";
 
 const sdk = vi.hoisted(() => ({ token: vi.fn(), auth: { currentUser: null as null | { uid: string; getIdToken: () => Promise<string> } } }));
 vi.mock("@/lib/firebaseAuth", () => ({ auth: sdk.auth }));
-vi.mock("@/components/ui/InAppSelect", () => ({ default: ({ ariaLabel, value, onChange, options, disabled }: {
-  ariaLabel: string; value: string; onChange: (value: string) => void; options: Array<{ value: string; label: string }>; disabled: boolean;
+vi.mock("@/components/ui/InAppSelect", () => ({ default: ({ ariaLabel, value, onChange, options, disabled, placeholder }: {
+  ariaLabel: string; value: string; onChange: (value: string) => void; options: Array<{ value: string; label: string }>; disabled: boolean; placeholder?: string;
 }) => <select aria-label={ariaLabel} value={value} disabled={disabled} onChange={event => onChange(event.target.value)}>
+  {/* The trip rows show a placeholder rather than a "none" option. */}
+  {!options.some(option => option.value === "") && <option value="">{placeholder}</option>}
   {options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
 </select> }));
 const route: RouteData = { id: "qa-route", name: "QA route", color: "#3B82F6", waypoints: [], stops: [

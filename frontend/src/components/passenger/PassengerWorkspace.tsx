@@ -452,6 +452,9 @@ export default function PassengerWorkspace() {
   // reporting bus, not a GPS fix. A GNSS blip must not close or reset it.
   const chatAvailable = isConnected && !isResuming && !liveDataError && activeBusOnRoute?.automaticServicePaused !== true &&
     (activeBusHealth?.state === "live" || activeBusHealth?.state === "delayed" || activeBusHealth?.state === "gnss_lost");
+  // Several live buses on the route: the passenger picks one, unless already joined to one.
+  const showLiveBusPicker = (selectableBusesOnRoute.length > 1 || (!busSelectable && selectableBusesOnRoute.length > 0)) &&
+    !busesOnRoute.some(bus => bus.sessionId === trackedSessionId);
   const chatShown = (view: ViewState) => view === "tracking" && isMessagingOpen && chatAvailable && Boolean(activeSessionId) &&
     isLiveChatDeviceOnline(activeBusOnRoute);
   const directionPending = activeBusOnRoute?.directionState === "pending";
@@ -770,10 +773,13 @@ export default function PassengerWorkspace() {
         <div data-passenger-tracking inert={visibleView !== "tracking"} aria-hidden={visibleView !== "tracking"} className={`absolute inset-0 z-20 flex flex-col pointer-events-none transition-opacity duration-200 ${visibleView === "tracking" ? "opacity-100 bg-[var(--pp-page)]" : "opacity-0"}`}>
           {!endedMessage && mapRoute && targetStop ? (
             <>
-              {/* Top bar: back + route info */}
+              {/* One top line: Back, the trip card and live chat. The map buttons
+                  keep their own column under chat (PassengerMap measures
+                  [data-tracking-anchor]), so a taller card never pushes them down.
+                  With both stops set the trip card slides into a rail under Back. */}
               <div data-tracking-controls className="pp-tracking-scrim absolute inset-x-0 top-0 w-full z-40 pt-safe px-4 pb-4 pointer-events-none">
                 <h1 className="sr-only">{mapRoute.name}</h1>
-                <div className="flex items-center gap-4 max-w-lg mx-auto pt-4 pointer-events-auto">
+                <div className="pp-trip-header flex items-start gap-2 max-w-lg mx-auto pt-4">
                   <button
                     ref={trackingBackButton}
                     type="button"
@@ -785,131 +791,135 @@ export default function PassengerWorkspace() {
                       setIsMessagingOpen(false);
                       setCurrentView("home");
                     }}
-                    className="pp-icon-button cursor-pointer pointer-events-auto"
+                    className="pp-icon-button mt-0.5 cursor-pointer pointer-events-auto"
                     aria-label={chatShown(visibleView) ? "Close live chat" : "Back to home"}
                   >
                     <ArrowLeft className="w-5 h-5" aria-hidden="true" />
                   </button>
-                  {activeBusOnRoute ? (
-                    <div className="pp-float-card relative z-10 flex-1 min-w-0 flex flex-col gap-2 p-3 pointer-events-auto">
-                      {(selectableBusesOnRoute.length > 1 || (!busSelectable && selectableBusesOnRoute.length > 0)) &&
-                        !busesOnRoute.some(
-                          (bus) => bus.sessionId === trackedSessionId,
-                        ) && (
-                        <InAppSelect
-                          name="live-bus"
-                          value={passengerLiveBusSelectionKey(activeBusOnRoute)}
-                          onChange={(value) => {
-                            setSelectedLiveBusKey(value);
-                            setSelectedBusId(busesOnRoute.find(bus => passengerLiveBusSelectionKey(bus) === value)?.busId ?? "");
-                            setIsMessagingOpen(false);
-                          }}
-                          ariaLabel="Live bus"
-                          placeholder="Choose a live bus…"
-                          options={selectableBusesOnRoute.map(bus => ({
-                            value: passengerLiveBusSelectionKey(bus),
-                            label: `Bus ${bus.busId} · ${hasSessionId(bus) ? directionLabelState(bus.directionState === "pending" ? "pending" : normalizeRideDirection(bus.direction), activeRoute?.stops ?? []) : "Service not started"}`,
-                          }))}
-                        />
-                      )}
-                      {!busSelectable && (
-                        <div role="status" aria-live="polite">
-                          <p className="pp-status-title" data-tone={"tone" in pausedNotice && pausedNotice.tone === "danger" ? "danger" : "warning"}>{pausedNotice.title}</p>
-                          <p className="pp-status-detail">
-                            {pausedNotice.detail}
-                          </p>
-                        </div>
-                      )}
-                      {/* The boarding card stays mounted through a tracking blip so a
-                          chosen stop, an in-flight join and "On board" survive it. */}
-                      {!preview && directedRoute && hasSessionId(activeBusOnRoute) ? (
-                        <PassengerBoardingView
-                          key={activeBusOnRoute.sessionId}
-                          sessionId={activeBusOnRoute.sessionId}
-                          route={directedRoute}
-                          stopEstimates={stopEstimates}
-                          tripState={activeBusOnRoute.tripState === "in_service" ? "in_service" : "pre_departure"}
-                          liveHealth={activeBusHealth}
-                          boardingBlockedReason={busSelectable ? undefined : "Boarding resumes when live tracking returns."}
-                          destinationStopId={effectiveDestinationStopId}
-                          restoredBoarding={restoredBoarding && restoredBoarding.uid === user?.uid && restoredBoarding.sessionId === activeBusOnRoute.sessionId ? restoredBoarding : undefined}
-                          onDestinationStopChange={setSelectedDestinationStopId}
-                          onJoined={() => {
-                            boardingRevisionRef.current++;
-                            if (user?.role === "passenger") saveJoinedRidePointer(user.uid, activeBusOnRoute.sessionId);
-                            trackedRideRef.current = recordSuccessfulJoin(
-                              trackedRideRef.current,
-                              {
-                                sessionId: activeBusOnRoute.sessionId,
-                                busId: activeBusOnRoute.busId,
-                                routeId: activeBusOnRoute.routeId,
-                                driverId: activeBusOnRoute.driverId || "",
-                              },
-                            );
-                            setTrackedSessionId(activeBusOnRoute.sessionId);
-                            setJoinedRouteId(activeBusOnRoute.routeId);
-                            setRideRecoveryError(null); setRideRecoveryNotice(null);
-                          }}
-                        />
-                      ) : busSelectable ? (
-                        <div className="flex flex-col gap-2">
-                          <div>
-                          <p className="pp-status-title">
-                            {hasSessionId(activeBusOnRoute) ? "Direction pending" : "Bus online · service not started"}
-                          </p>
-                          <p className="pp-status-detail">
-                            {hasSessionId(activeBusOnRoute)
-                              ? "Live location and configured route shown. Travel order and ETAs appear once direction is resolved."
-                              : "Live location and configured route shown. Boarding and ETAs appear when service starts."}
-                          </p>
+                  <div className="pp-trip-slot relative z-10 flex min-w-0 flex-1 flex-col gap-2">
+                    {activeBusOnRoute ? (
+                      <>
+                        {/* The boarding card stays mounted through a tracking blip so a
+                            chosen stop, an in-flight join and "On board" survive it.
+                            It comes first: its rail is placed from the slot's top. */}
+                        {!preview && directedRoute && hasSessionId(activeBusOnRoute) ? (
+                          <PassengerBoardingView
+                            key={activeBusOnRoute.sessionId}
+                            sessionId={activeBusOnRoute.sessionId}
+                            route={directedRoute}
+                            stopEstimates={stopEstimates}
+                            tripState={activeBusOnRoute.tripState === "in_service" ? "in_service" : "pre_departure"}
+                            liveHealth={activeBusHealth}
+                            boardingBlockedReason={busSelectable ? undefined : "Boarding resumes when live tracking returns."}
+                            destinationStopId={effectiveDestinationStopId}
+                            restoredBoarding={restoredBoarding && restoredBoarding.uid === user?.uid && restoredBoarding.sessionId === activeBusOnRoute.sessionId ? restoredBoarding : undefined}
+                            onDestinationStopChange={setSelectedDestinationStopId}
+                            onJoined={() => {
+                              boardingRevisionRef.current++;
+                              if (user?.role === "passenger") saveJoinedRidePointer(user.uid, activeBusOnRoute.sessionId);
+                              trackedRideRef.current = recordSuccessfulJoin(
+                                trackedRideRef.current,
+                                {
+                                  sessionId: activeBusOnRoute.sessionId,
+                                  busId: activeBusOnRoute.busId,
+                                  routeId: activeBusOnRoute.routeId,
+                                  driverId: activeBusOnRoute.driverId || "",
+                                },
+                              );
+                              setTrackedSessionId(activeBusOnRoute.sessionId);
+                              setJoinedRouteId(activeBusOnRoute.routeId);
+                              setRideRecoveryError(null); setRideRecoveryNotice(null);
+                            }}
+                          />
+                        ) : busSelectable ? (
+                          <div className="pp-float-card flex flex-col gap-2 p-3 pointer-events-auto">
+                            <div>
+                            <p className="pp-status-title">
+                              {hasSessionId(activeBusOnRoute) ? "Direction pending" : "Bus online · service not started"}
+                            </p>
+                            <p className="pp-status-detail">
+                              {hasSessionId(activeBusOnRoute)
+                                ? "Live location and configured route shown. Travel order and ETAs appear once direction is resolved."
+                                : "Live location and configured route shown. Boarding and ETAs appear when service starts."}
+                            </p>
+                            </div>
+                          <InAppSelect
+                            name="destination-station"
+                            ariaLabel="Destination station"
+                            placeholder="Choose destination stop"
+                            value={effectiveDestinationStopId}
+                            onChange={setSelectedDestinationStopId}
+                            options={[
+                              { value: "", label: "Choose destination stop" },
+                              ...(mapRoute.stops ?? []).map((stop, index) => ({
+                                value: stop.id,
+                                label: stop.name,
+                                detail: stopEstimateLabel(stopEstimates ?? { context: "", minutes: {}, unavailable: hasSessionId(activeBusOnRoute) ? "Direction pending" : "Service not started" }, stop.id, index),
+                              })),
+                            ]}
+                          />
                           </div>
-                        <InAppSelect
-                          name="destination-station"
-                          ariaLabel="Destination station"
-                          placeholder="Choose destination stop"
-                          value={effectiveDestinationStopId}
-                          onChange={setSelectedDestinationStopId}
-                          options={[
-                            { value: "", label: "Choose destination stop" },
-                            ...(mapRoute.stops ?? []).map((stop, index) => ({
-                              value: stop.id,
-                              label: stop.name,
-                              detail: stopEstimateLabel(stopEstimates ?? { context: "", minutes: {}, unavailable: hasSessionId(activeBusOnRoute) ? "Direction pending" : "Service not started" }, stop.id, index),
-                            })),
-                          ]}
-                        />
-                        </div>
-                      ) : null}
-                    </div>
-                  ) : (
-                    <div className="pp-float-card min-w-0 flex-1 flex flex-col justify-center gap-1 p-3 pointer-events-auto">
-                      <p className="pp-status-title">
-                        Waiting for live bus data…
-                      </p>
-                      <p className="pp-tracking-route break-words text-pretty">
-                        {mapRoute.name}
-                      </p>
-                    </div>
-                  )}
-                </div>
-                {/* Keep chat in header flow, below the variable-height boarding card. */}
-                {chatAvailable && activeSessionId && isLiveChatDeviceOnline(activeBusOnRoute) && !chatShown(visibleView) && (
-                  <div className="mt-2 flex justify-end max-w-lg mx-auto animate-scale-in pointer-events-none">
-                    <button
-                      onClick={handleOpenMessaging}
-                      className="pp-map-button relative pointer-events-auto"
-                      aria-label={activeSessionId ? "Open live chat" : "Open live chat status"}
-                      title={activeSessionId ? "Open live chat" : "Device online; chat will unlock when the ride is armed"}
-                    >
-                      <MessageCircle className="w-5 h-5" aria-hidden="true" style={{ color: "var(--accent)" }} />
-                      {unreadCount > 0 && (
-                        <span className="pp-unread">
-                          {unreadCount > 9 ? "9+" : unreadCount}
-                        </span>
-                      )}
-                    </button>
+                        ) : null}
+                        {(showLiveBusPicker || !busSelectable) && (
+                          <div className="pp-float-card flex flex-col gap-2 p-3 pointer-events-auto">
+                            {showLiveBusPicker && (
+                              <InAppSelect
+                                name="live-bus"
+                                value={passengerLiveBusSelectionKey(activeBusOnRoute)}
+                                onChange={(value) => {
+                                  setSelectedLiveBusKey(value);
+                                  setSelectedBusId(busesOnRoute.find(bus => passengerLiveBusSelectionKey(bus) === value)?.busId ?? "");
+                                  setIsMessagingOpen(false);
+                                }}
+                                ariaLabel="Live bus"
+                                placeholder="Choose a live bus…"
+                                options={selectableBusesOnRoute.map(bus => ({
+                                  value: passengerLiveBusSelectionKey(bus),
+                                  label: `Bus ${bus.busId} · ${hasSessionId(bus) ? directionLabelState(bus.directionState === "pending" ? "pending" : normalizeRideDirection(bus.direction), activeRoute?.stops ?? []) : "Service not started"}`,
+                                }))}
+                              />
+                            )}
+                            {!busSelectable && (
+                              <div role="status" aria-live="polite">
+                                <p className="pp-status-title" data-tone={"tone" in pausedNotice && pausedNotice.tone === "danger" ? "danger" : "warning"}>{pausedNotice.title}</p>
+                                <p className="pp-status-detail">
+                                  {pausedNotice.detail}
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <div className="pp-float-card min-w-0 flex-1 flex flex-col justify-center gap-1 p-3 pointer-events-auto">
+                        <p className="pp-status-title">
+                          Waiting for live bus data…
+                        </p>
+                        <p className="pp-tracking-route break-words text-pretty">
+                          {mapRoute.name}
+                        </p>
+                      </div>
+                    )}
                   </div>
-                )}
+                  {/* Right column: live chat, then the map buttons below it. */}
+                  <div data-tracking-anchor className="flex h-12 w-12 shrink-0 justify-center">
+                    {chatAvailable && activeSessionId && isLiveChatDeviceOnline(activeBusOnRoute) && !chatShown(visibleView) && (
+                      <button
+                        onClick={handleOpenMessaging}
+                        className="pp-map-button relative animate-scale-in pointer-events-auto"
+                        aria-label={activeSessionId ? "Open live chat" : "Open live chat status"}
+                        title={activeSessionId ? "Open live chat" : "Device online; chat will unlock when the ride is armed"}
+                      >
+                        <MessageCircle className="w-5 h-5" aria-hidden="true" style={{ color: "var(--accent)" }} />
+                        {unreadCount > 0 && (
+                          <span className="pp-unread">
+                            {unreadCount > 9 ? "9+" : unreadCount}
+                          </span>
+                        )}
+                      </button>
+                    )}
+                  </div>
+                </div>
               </div>
 
               {/* Full-bleed map; camera padding and notices measure the overlay. */}

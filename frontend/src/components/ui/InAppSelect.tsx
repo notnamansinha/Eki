@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
+import { useEffect, useId, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
 import { Check, ChevronDown } from "lucide-react";
 import type { CustomSelectOption } from "./CustomSelect";
 
@@ -8,17 +8,26 @@ interface Props {
   name: string;
   value: string;
   onChange: (value: string) => void;
-  options: (CustomSelectOption & { detail?: string; completed?: boolean })[];
+  /** `badge` is the stop letter drawn on the map; `completed` greys a passed stop. */
+  options: (CustomSelectOption & { detail?: string; completed?: boolean; badge?: string })[];
   placeholder?: string;
   disabled?: boolean;
   ariaLabel: string;
   style?: CSSProperties;
+  /** "row" is a borderless trip-card row (passenger/theme.css `.pp-select-row`); "field" is the bordered picker. */
+  appearance?: "field" | "row";
+  /** Icon before the value in a row, such as the stop letter. */
+  leading?: ReactNode;
 }
 
-type Popup = { activeValue: string; above: boolean; maxHeight: number };
+type Popup = { activeValue: string; above: boolean; maxHeight: number; width?: number };
+
+/** A narrow trigger may widen its list up to this, never past the 16 px window gutter. */
+const POPUP_MAX_WIDTH_PX = 320;
 
 /** Passenger map picker: the options stay in the page instead of an OS dialog. */
-export default function InAppSelect({ name, value, onChange, options, placeholder = "Choose an option…", disabled = false, ariaLabel, style }: Props) {
+export default function InAppSelect({ name, value, onChange, options, placeholder = "Choose an option…", disabled = false, ariaLabel, style, appearance = "field", leading }: Props) {
+  const row = appearance === "row";
   const id = useId();
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -45,8 +54,12 @@ export default function InAppSelect({ name, value, onChange, options, placeholde
     const below = Math.max(44, bottom - (rect?.bottom ?? 0) - 12);
     const aboveSpace = Math.max(44, (rect?.top ?? 0) - top - 12);
     const above = below < Math.min(132, options.length * 44) && aboveSpace > below;
+    // A card squeezed between Back and chat on a small phone widens its list
+    // towards the window edge, so stop names keep room beside their ETAs.
+    const windowRight = (viewport?.offsetLeft ?? 0) + (viewport?.width ?? window.innerWidth) - 16;
+    const width = rect ? Math.round(Math.max(rect.width, Math.min(POPUP_MAX_WIDTH_PX, windowRight - rect.left))) : undefined;
     searchRef.current = { text: "", at: 0 };
-    setPopup({ activeValue: options[index].value, above, maxHeight: Math.min(256, above ? aboveSpace : below) });
+    setPopup({ activeValue: options[index].value, above, maxHeight: Math.min(256, above ? aboveSpace : below), width });
   }
 
   function choose(nextValue: string) {
@@ -135,12 +148,15 @@ export default function InAppSelect({ name, value, onChange, options, placeholde
         disabled={disabled || options.length === 0}
         onClick={() => open ? setPopup(null) : openAt()}
         onKeyDown={handleKeyDown}
-        className="flex min-h-11 w-full items-center gap-2 rounded-xl px-3.5 py-2.5 text-left text-sm font-medium cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
-        style={{ background: "var(--surface-1, #09090b)", color: "var(--text-primary, #fff)", border: "1px solid var(--border-default, #3f3f46)", ...style }}
+        className={row
+          ? "pp-select-row flex min-h-12 w-full items-center gap-2.5 px-3 text-left cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--accent)]"
+          : "flex min-h-11 w-full items-center gap-2 rounded-xl px-3.5 py-2.5 text-left text-sm font-medium cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"}
+        style={row ? style : { background: "var(--surface-1, #09090b)", color: "var(--text-primary, #fff)", border: "1px solid var(--border-default, #3f3f46)", ...style }}
       >
-        <span className="min-w-0 flex-1 truncate">{selected?.label ?? placeholder}</span>
+        {row && leading && <span className="pp-select-row-lead" aria-hidden="true">{leading}</span>}
+        <span className="min-w-0 flex-1 truncate" data-placeholder={row && !selected?.value ? "" : undefined}>{selected?.label ?? placeholder}</span>
         {selected?.detail && <span id={`${id}-selected-detail`} className="shrink-0 tabular-nums" style={{ color: "var(--text-secondary)" }}>{selected.detail}</span>}
-        <ChevronDown aria-hidden="true" className={`h-4 w-4 shrink-0 ${open ? "rotate-180" : ""}`} />
+        {!row && <ChevronDown aria-hidden="true" className={`h-4 w-4 shrink-0 ${open ? "rotate-180" : ""}`} />}
       </button>
       {open && popup && (
         <ul
@@ -149,8 +165,8 @@ export default function InAppSelect({ name, value, onChange, options, placeholde
           role="listbox"
           aria-label={ariaLabel}
           onMouseDown={event => event.preventDefault()}
-          className={`absolute left-0 right-0 overflow-y-auto overscroll-contain rounded-xl p-1 shadow-xl ${popup.above ? "bottom-full mb-1" : "top-full mt-1"}`}
-          style={{ maxHeight: popup.maxHeight, background: "var(--surface-1, #09090b)", color: "var(--text-primary, #fff)", border: "1px solid var(--border-default, #3f3f46)" }}
+          className={`absolute left-0 overflow-y-auto overscroll-contain p-1 ${popup.width ? "" : "right-0"} ${row ? "pp-select-popup" : "rounded-xl shadow-xl"} ${popup.above ? "bottom-full mb-1" : "top-full mt-1"}`}
+          style={row ? { maxHeight: popup.maxHeight, width: popup.width } : { maxHeight: popup.maxHeight, width: popup.width, background: "var(--surface-1, #09090b)", color: "var(--text-primary, #fff)", border: "1px solid var(--border-default, #3f3f46)" }}
         >
           {options.map((option, index) => (
             <li
@@ -164,6 +180,7 @@ export default function InAppSelect({ name, value, onChange, options, placeholde
               className="flex min-h-11 cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium hover:bg-[var(--surface-3)]"
               style={{ background: index === activeIndex ? "var(--surface-4, #27272a)" : undefined, overflowWrap: "anywhere", color: option.completed ? "var(--text-secondary, #a1a1aa)" : undefined }}
             >
+              {option.badge && <span className="pp-stop-badge" data-completed={option.completed || undefined} aria-hidden="true">{option.badge}</span>}
               <span className="min-w-0 flex-1">{option.label}</span>
               {option.detail && <span id={`${id}-detail-${index}`} className="shrink-0 tabular-nums" style={{ color: "var(--text-secondary, #a1a1aa)" }}>{option.detail}</span>}
               {option.value === value && <Check aria-hidden="true" className="h-4 w-4 shrink-0" />}

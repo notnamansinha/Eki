@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-UIX-001 | 3.5 | Current | 2026-11-21 |
+| EKI-UIX-001 | 3.6 | Current | 2026-11-24 |
 
 ## 1. Purpose
 
@@ -223,7 +223,11 @@ The map notice (`.pp-notice`) shows the worst state among the displayed buses: a
 
 ### 3.2 Tracking header
 
-The ride card at the top of the tracking view (`components/passenger/PassengerBoardingView.tsx`, `components/passenger/PassengerWorkspace.tsx`) is a `.pp-float-card`: `--pp-float-bg`, a 0.5 px hairline border, a 14 px radius and a 20 px backdrop blur. It shows these texts:
+The tracking header (`components/passenger/PassengerWorkspace.tsx`) is one top line: the 44 px Back button, the trip card and a 48 px column for live chat. The map buttons (Center on bus, Show route overview) continue that column 8 px below chat: `components/maps/PassengerMap.tsx` places them from `[data-tracking-anchor]`, so the card's height never moves them, and on wide windows they line up with the centred 32 rem header (`--pp-track-inline`). The tracking scrim covers only the status bar and the top line.
+
+The trip card (`components/passenger/PassengerBoardingView.tsx`, `.pp-trip-card`) is a `.pp-float-card`: `--pp-float-bg`, a 0.5 px hairline border, a 14 px radius and a 20 px backdrop blur. It holds the status line and two 48 px rows, `InAppSelect` with `appearance="row"` (`.pp-select-row`): "Boarding stop" with a hollow ring and "Destination" with an AU Red map pin, joined by three dots. A chosen stop shows its map letter in a 22 px `.pp-stop-badge` (the boarding stop as an AU Red ring) and its ETA in 13 px `--text-secondary`. The lists show the same letters, grey for passed stops, and reach under the chat column; the destination list offers only stops after the boarding stop. There is no Board button until both stops are set.
+
+With both stops set the card docks: it shrinks towards Back while a 48 px rail (`.pp-trip-rail`, 14 px radius) slides in under Back with the boarding letter and the bus's ETA to it, three dots, the destination letter and its ETA (12 px, weight 500; "Here", "Passed" and "Boarded" in short form, a dash when there are no minutes), and a 48 px Board tile (white on AU Red; "On board" in `--status-live` on `--status-live-bg`; a white focus ring). Until the first join a note beside Board reads "Boarding shares your location once to check that you are at the stop." in 12 px `--text-secondary` on `--pp-float-bg`. The rail ("Change stops") reopens the card; choosing a stop, a tap outside the card or Escape docks it again, and a failed join reopens it to show the error. While docked, map notices start below the rail. With reduced motion the card and rail swap without movement. The card shows these texts:
 
 | Element | Text | Colour |
 |---|---|---|
@@ -237,7 +241,7 @@ The ride card at the top of the tracking view (`components/passenger/PassengerBo
 | Live location without ride direction | "Direction pending" or "Bus online · service not started" | `--accent` |
 | No live bus | "Waiting for live bus data…" above the route name (Playfair Display, 18 px, weight 600) | `--accent` |
 
-The status line (`.pp-status-title`) and the progress line are 13 px; the status line has weight 500. Both sit in a `role="status"` region with `aria-live="polite"`.
+In the trip card the status line (`.pp-status-title`, weight 500) and the progress line (`.pp-trip-progress`) share one 12 px line, and the progress line is cut with an ellipsis. Both sit in a `role="status"` region with `aria-live="polite"`, which stays in the accessibility tree while the card is docked. The boarding blocked notice is its own `.pp-float-card` below the trip card, so it stays in the header while the trip is docked; there the disabled Board tile carries "Boarding resumes when live tracking returns." as its description.
 
 The blocked notice names the connection only while the realtime socket is disconnected ("This device is reconnecting to live bus data. The last known location is shown; live ETAs and boarding resume when the connection returns."). While the client is connected but waiting for the live projection, or after a data error, it reads "Live bus data is not available right now." The reconnect banner likewise appears only while the socket is disconnected, and the empty Live routes panel says "Unable to reach live data. Check your connection." only then. While connected but resuming, or after a data error, the panel shows the same "not available" text, and otherwise the configured service start message.
 

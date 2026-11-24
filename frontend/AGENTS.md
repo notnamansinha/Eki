@@ -112,6 +112,23 @@ are ignored for the 450ms the sheet takes to rise. In portrait the artwork slide
 is raised, so the band above it frames the passengers and trees rather than
 the ceiling straps. Pointer devices keep the centred panel with no toggle.
 
+## Tracking side rail (2026-11-24)
+
+The approved tracking header is one top line: Back, the trip card and live chat.
+The map buttons continue the chat column (PassengerMap places them from
+`[data-tracking-anchor]`), so the card's height never moves them, and on wide
+windows they line up with the centred header. The trip card is the ride status
+line and two 48px rows, "Boarding stop" and "Destination", with the map's stop
+letters and live ETAs (`InAppSelect` `appearance="row"`); the destination list
+offers only stops after the boarding stop. There is no dead Board button: once
+both stops are set the card slides into a 48px rail under Back with both
+letters, their ETAs and Board, and the location notice sits beside Board until
+the first join. The rail ("Change stops") reopens the card; choosing a stop, a
+tap outside the card or Escape docks it again, and a failed join reopens it to
+show the error. While docked, map notices start below the rail, and the
+paused-tracking notice stays in the header. The tracking scrim covers only the
+status bar and the top line. Keep the comboboxes' and Board's accessible names.
+
 ## Admin Live Ops dark (2026-11-06)
 
 Senior faculty found a light Live Ops panel beside the light Google Map hard to

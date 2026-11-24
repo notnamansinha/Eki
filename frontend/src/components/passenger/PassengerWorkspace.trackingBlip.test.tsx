@@ -80,7 +80,8 @@ describe("one untrusted packet must not reset the passenger's boarding card or c
     act(() => setScenario("gnss-lost"));
     await screen.findByText("GPS signal lost");
     act(() => setScenario("forward"));
-    await screen.findByRole("combobox", { name: "Boarding stop" });
+    // The trip stays docked in the rail under Back through the blip.
+    await screen.findByRole("button", { name: "Change stops" });
     await waitFor(() => expect(screen.queryByRole("button", { name: "On board" })).toBeTruthy());
     expect(screen.queryByRole("button", { name: "Board" })).toBeNull();
   }, 20_000);

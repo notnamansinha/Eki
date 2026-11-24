@@ -10,6 +10,7 @@ const route: RouteData = { id: "qa-route", name: "QA route", color: "#3B82F6", w
   { id: "alpha", name: "Alpha", shortName: "A", lat: 23, lng: 72 },
   { id: "beta", name: "Beta", shortName: "B", lat: 23.01, lng: 72.01 },
 ] };
+const threeStops: RouteData = { ...route, stops: [...route.stops, { id: "gamma", name: "Gamma", shortName: "C", lat: 23.02, lng: 72.02 }] };
 let gps: ReturnType<typeof vi.fn>;
 beforeEach(() => {
   vi.stubEnv("NEXT_PUBLIC_BACKEND_URL", "https://qa.ngrok-free.dev");
@@ -20,7 +21,8 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.resto
 async function prepare() {
   const joined = vi.fn(); render(<PassengerBoardingView sessionId="qa-session" route={route} tripState="in_service" onJoined={joined} />);
   const user = userEvent.setup();
-  expect((screen.getByRole("button", { name: "Board" }) as HTMLButtonElement).disabled).toBe(true);
+  // No dead Board button: it appears in the rail once both stops are set.
+  expect(screen.queryByRole("button", { name: "Board" })).toBeNull();
   await user.click(screen.getByRole("combobox", { name: "Boarding stop" }));
   await user.click(screen.getByRole("option", { name: "Alpha" }));
   await user.click(screen.getByRole("combobox", { name: "Destination station" }));
@@ -50,7 +52,7 @@ describe("passenger boarding workflow", () => {
     await waitFor(() => expect(joined).toHaveBeenCalledOnce());
     expect(JSON.parse(fetchMock.mock.calls[0][1].body)).not.toHaveProperty("boardingCode");
   });
-  it("keeps boarding and destination stops distinct", async () => {
+  it("keeps boarding and destination stops distinct and in ride order", async () => {
     const user = userEvent.setup();
     render(<PassengerBoardingView sessionId="qa-session" route={route} tripState="in_service" />);
     await user.click(screen.getByRole("combobox", { name: "Boarding stop" }));
@@ -58,18 +60,60 @@ describe("passenger boarding workflow", () => {
     await user.click(screen.getByRole("combobox", { name: "Destination station" }));
     expect(screen.queryByRole("option", { name: "Alpha" })).toBeNull();
     await user.click(screen.getByRole("option", { name: "Beta" }));
+    // Both set: the card docks into the rail, which reopens it.
+    await user.click(screen.getByRole("button", { name: "Change stops" }));
     await user.click(screen.getByRole("combobox", { name: "Boarding stop" }));
     await user.click(screen.getByRole("option", { name: "Beta" }));
-    expect(screen.getByRole("combobox", { name: "Destination station" }).textContent)
-      .toContain("Choose destination stop");
-    expect(screen.getByRole("button", { name: "Board" })).toHaveProperty("disabled", true);
+    // No stop follows Beta, so the destination clears and Board leaves.
+    expect(screen.getByRole("combobox", { name: "Destination station" }).textContent).toContain("Destination");
+    expect(screen.queryByRole("button", { name: "Board" })).toBeNull();
+  });
+  it("offers only stops after the boarding stop as destinations", async () => {
+    const user = userEvent.setup();
+    render(<PassengerBoardingView sessionId="qa-session" route={threeStops} tripState="in_service" />);
+    await user.click(screen.getByRole("combobox", { name: "Destination station" }));
+    expect(screen.getAllByRole("option").map(option => option.getAttribute("aria-label"))).toEqual(["Alpha", "Beta", "Gamma"]);
+    await user.click(screen.getByRole("option", { name: "Alpha" }));
+    await user.click(screen.getByRole("combobox", { name: "Boarding stop" }));
+    await user.click(screen.getByRole("option", { name: "Beta" }));
+    // Alpha comes before Beta, so it no longer makes a trip.
+    expect(screen.getByRole("combobox", { name: "Destination station" }).textContent).toContain("Destination");
+    await user.click(screen.getByRole("combobox", { name: "Destination station" }));
+    expect(screen.getAllByRole("option").map(option => option.getAttribute("aria-label"))).toEqual(["Gamma"]);
+  });
+  it("docks into a rail with both stop letters and ETAs, and reopens and tucks away again", async () => {
+    const user = userEvent.setup();
+    const estimates = { context: "s", minutes: { beta: 4, gamma: 19 }, nextStopIndex: 1 };
+    render(<PassengerBoardingView sessionId="qa-session" route={threeStops} tripState="in_service" stopEstimates={estimates} />);
+    await user.click(screen.getByRole("combobox", { name: "Boarding stop" }));
+    await user.click(screen.getByRole("option", { name: "Beta" }));
+    await user.click(screen.getByRole("combobox", { name: "Destination station" }));
+    await user.click(screen.getByRole("option", { name: "Gamma" }));
+    // The rows leave the accessibility tree; focus moves onto the rail.
+    expect(screen.queryByRole("combobox", { name: "Boarding stop" })).toBeNull();
+    const rail = screen.getByRole("button", { name: "Change stops" });
+    expect(document.activeElement).toBe(rail);
+    expect(rail.textContent).toBe("B4 minC19 min");
+    expect(document.getElementById(rail.getAttribute("aria-describedby")!)?.textContent).toBe("From Beta, 4 min, to Gamma, 19 min");
+    // The ride status keeps announcing while docked.
+    expect(screen.getByRole("status").textContent).toContain("Ride in service");
+    await user.click(rail);
+    expect(document.activeElement).toBe(screen.getByRole("combobox", { name: "Boarding stop" }));
+    expect(screen.queryByRole("button", { name: "Change stops" })).toBeNull();
+    await user.keyboard("{Escape}");
+    expect(screen.getByRole("button", { name: "Change stops" })).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Change stops" }));
+    // A tap outside the card, on the map, tucks it away too.
+    await user.click(document.body);
+    expect(screen.getByRole("button", { name: "Change stops" })).toBeTruthy();
   });
   it("shows verified restored choices without replaying boarding or caching a code", async () => {
     const fetchMock = vi.fn(); vi.stubGlobal("fetch", fetchMock);
     const { rerender } = render(<PassengerBoardingView sessionId="qa-session" route={route} tripState="in_service" restoredBoarding={{ boardingStopId: "alpha", alightingStopId: "beta" }} />);
     const button = await screen.findByRole("button", { name: "On board" });
-    expect(screen.getByRole("combobox", { name: "Boarding stop" }).textContent).toContain("Alpha");
-    expect(screen.getByRole("combobox", { name: "Destination station" }).textContent).toContain("Beta");
+    // A restored ride rests in the rail; its description names both stops.
+    const rail = screen.getByRole("button", { name: "Change stops" });
+    expect(document.getElementById(rail.getAttribute("aria-describedby")!)?.textContent).toMatch(/Alpha.*Beta/);
     expect(screen.queryByLabelText("Boarding code")).toBeNull();
     expect(button).toHaveProperty("disabled", true); expect(gps).not.toHaveBeenCalled(); expect(fetchMock).not.toHaveBeenCalled();
     rerender(<PassengerBoardingView sessionId="other-session" route={route} tripState="in_service" />);
@@ -128,16 +172,35 @@ describe("passenger boarding workflow", () => {
     expect(screen.getByRole("status").textContent).toContain("Next: Beta");
     expect(screen.getByRole("status").textContent).not.toContain("At ");
   });
-  it("explains why Board is disabled instead of leaving a prominent dead button", async () => {
+  it("leaves no dead Board button, and gives Board its location notice once both stops are set", async () => {
     render(<PassengerBoardingView sessionId="qa-session" route={route} tripState="in_service" />);
-    expect(screen.getByRole("combobox", { name: "Boarding stop" }).textContent).toContain("Choose boarding stop");
-    expect(screen.getByText("Choose your boarding and destination stops to board.")).toBeTruthy();
+    expect(screen.getByRole("combobox", { name: "Boarding stop" }).textContent).toContain("Boarding stop");
+    expect(screen.queryByRole("button", { name: "Board" })).toBeNull();
     const user = userEvent.setup();
     await user.click(screen.getByRole("combobox", { name: "Boarding stop" }));
     await user.click(screen.getByRole("option", { name: "Alpha" }));
     await user.click(screen.getByRole("combobox", { name: "Destination station" }));
     await user.click(screen.getByRole("option", { name: "Beta" }));
-    expect(screen.queryByText("Choose your boarding and destination stops to board.")).toBeNull();
+    const board = screen.getByRole("button", { name: "Board" });
+    expect(board).toHaveProperty("disabled", false);
+    // Shown beside Board, so it precedes the browser's location prompt.
+    expect(document.getElementById(board.getAttribute("aria-describedby")!)?.textContent)
+      .toBe("Boarding shares your location once to check that you are at the stop.");
+  });
+  it("explains in the rail why Board waits while live tracking is paused", async () => {
+    const user = userEvent.setup();
+    const props = { sessionId: "qa-session", route, tripState: "in_service" as const };
+    const view = render(<PassengerBoardingView {...props} />);
+    await user.click(screen.getByRole("combobox", { name: "Boarding stop" }));
+    await user.click(screen.getByRole("option", { name: "Alpha" }));
+    await user.click(screen.getByRole("combobox", { name: "Destination station" }));
+    await user.click(screen.getByRole("option", { name: "Beta" }));
+    view.rerender(<PassengerBoardingView {...props} boardingBlockedReason="Boarding resumes when live tracking returns." />);
+    const board = screen.getByRole("button", { name: "Board" });
+    expect(board).toHaveProperty("disabled", true);
+    // The header already explains the pause; the rail gives Board the reason as its description.
+    expect(board.getAttribute("aria-describedby")!.split(" ").map(id => document.getElementById(id)?.textContent))
+      .toEqual(["Boarding resumes when live tracking returns."]);
   });
   it("aborts an in-flight join when the boarding view unmounts", async () => {
     const fetchMock = vi.fn((_url, options) => new Promise((_resolve, reject) => options.signal.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")))));

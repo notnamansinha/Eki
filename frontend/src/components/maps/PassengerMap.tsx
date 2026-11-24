@@ -219,16 +219,24 @@ function PassengerMapInner({
 }) {
   const mapRootRef = useRef<HTMLDivElement>(null);
   const [controlsInset, setControlsInset] = useState(0);
+  const [anchorInset, setAnchorInset] = useState<number | null>(null);
   // Notices need the same overlay inset even before the Maps SDK is ready.
+  // The map buttons follow the header's chat column ([data-tracking-anchor])
+  // instead of its bottom, so the trip card's height never moves them.
   useEffect(() => {
     const root = mapRootRef.current;
     const header = root?.closest("[data-passenger-tracking]")?.querySelector<HTMLElement>("[data-tracking-controls]");
     if (!root || !header) return;
-    const measure = () => setControlsInset(Math.round(Math.max(0,
-      header.getBoundingClientRect().bottom - root.getBoundingClientRect().top)));
+    const anchor = header.querySelector<HTMLElement>("[data-tracking-anchor]");
+    const measure = () => {
+      const top = root.getBoundingClientRect().top;
+      setControlsInset(Math.round(Math.max(0, header.getBoundingClientRect().bottom - top)));
+      setAnchorInset(anchor ? Math.round(Math.max(0, anchor.getBoundingClientRect().bottom - top)) : null);
+    };
     measure();
     const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
     observer?.observe(root); observer?.observe(header);
+    if (anchor) observer?.observe(anchor);
     return () => observer?.disconnect();
   }, []);
   const [buses, setBuses] = useState<Map<string, IncomingBusData>>(new Map<string, IncomingBusData>());
@@ -609,8 +617,12 @@ function PassengerMapInner({
   }, [firstBusMarker.position, mapCenter]);
 
   return (
-    <div ref={mapRootRef} data-passenger-map className="relative h-full w-full" style={{ "--tracking-controls-inset": `${controlsInset}px` } as CSSProperties}>
-      <div data-map-notices className="pointer-events-none absolute left-4 right-20 z-40 flex flex-col gap-2" style={{ top: "calc(var(--tracking-controls-inset, 0px) + 16px)" }}>
+    <div ref={mapRootRef} data-passenger-map className="relative h-full w-full" style={{
+      "--tracking-controls-inset": `${controlsInset}px`,
+      ...(anchorInset !== null ? { "--tracking-anchor-inset": `${anchorInset}px` } : {}),
+    } as CSSProperties}>
+      {/* passenger/theme.css aligns .pp-map-notices and .pp-map-camera with the header column. */}
+      <div data-map-notices className="pp-map-notices pointer-events-none absolute left-4 right-20 z-40 flex flex-col gap-2" style={{ top: "calc(var(--tracking-controls-inset, 0px) + 16px)" }}>
       {(liveReadFailed || !liveUpdatesAvailable) && (
         <div className="pp-notice" data-tone="warning" role="alert">
           <WifiOff className="w-4 h-4" aria-hidden="true" />
@@ -763,7 +775,8 @@ function PassengerMapInner({
 
 
 
-      <div data-map-camera-controls className="absolute right-4 z-40 flex flex-col gap-2" style={{ top: "calc(var(--tracking-controls-inset, 0px) + 16px)" }}>
+      <div data-map-camera-controls className="pp-map-camera absolute right-4 z-40 flex flex-col gap-2"
+        style={{ top: "calc(var(--tracking-anchor-inset, calc(var(--tracking-controls-inset, 0px) + 8px)) + 8px)" }}>
         <button
           disabled={!firstBusMarker.position}
           onClick={() => { setFocusBus(true); setIsCentered(true); }}
