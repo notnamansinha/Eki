@@ -22,7 +22,7 @@ Every expectation is derived from the `hosting` block of [`firebase.json`](../..
 |---|---|---|
 | Node | 24 (CI version) | 24 |
 | Export | `frontend/out`, from `npm run build:production` with the placeholder variables of the `Strict production build` step in [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml), or from `npm run build` | Not needed |
-| Checkout | Clean, so the report records `dirty: false`. The build rewrites the CSP in `firebase.json`; restore it with `git checkout -- firebase.json` | Clean |
+| Checkout | Clean, so the report records `dirty: false`. The CSP hashes that the build writes into `firebase.json` do not count; the report lists them in `ignoredChanges` | Clean |
 | Network | Loopback only | HTTPS to the two staging Hosting origins. No credentials, no backend, no Firebase API |
 
 ## 3. Scope
@@ -128,7 +128,7 @@ The live mode is the only part that leaves the machine. It does not run through 
 
 | File | Content |
 |---|---|
-| `artifacts/qa/cache-matrix-<mode>-report.json` | Commit and dirty flag, `firebase.json` hash, target, bounds, plan, identity (build ID, `sw.js` SHA-256, `ETag` and `Last-Modified` of `/`, `X-Served-By` values), the matrix rows, checks and sanitized observations |
+| `artifacts/qa/cache-matrix-<mode>-report.json` | Commit, dirty flag and `ignoredChanges`, `firebase.json` hash, target, bounds, plan, identity (build ID, `sw.js` SHA-256, `ETag` and `Last-Modified` of `/`, `X-Served-By` values), the matrix rows, checks and sanitized observations |
 | `artifacts/qa/cache-matrix-<mode>-report.md` | The same as tables, with every failure and finding |
 
 Observations keep a fixed list of response headers, cut to printable ASCII and 300 characters. Bodies are kept only as a length and a SHA-256 of the decoded bytes. `Set-Cookie` and CSP values are never stored, only their presence.
