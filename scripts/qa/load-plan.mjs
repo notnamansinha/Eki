@@ -3,6 +3,7 @@ import {
   DEFAULTS, LIMITS, PEAK_PROFILES, PROFILE_NAMES, classify, peakVus, plannedSeconds, readSettings, thresholdsFor,
 } from '../../qa/k6/profiles.mjs';
 import { percentileSummary } from '../percentile-summary.mjs';
+import { describeDirty } from './working-tree.mjs';
 
 /**
  * Plans and evidence for the load profiles and fault drills (issue #518,
@@ -542,7 +543,7 @@ const mib = value => (value === null || value === undefined ? '-' : `${rounded(v
 /** The Markdown summary of a report. */
 export function renderMarkdown(report) {
   const lines = [`# Load and fault drills: ${report.mode}`, '',
-    `Source ${report.sourceCommit}; dirty: ${report.dirty}; verdict: ${report.verdict}.`, '',
+    `Source ${report.sourceCommit}; dirty: ${describeDirty(report)}; verdict: ${report.verdict}.`, '',
     `Target: ${report.target}. k6 ${report.k6Version ?? 'not run'} (\`${K6_IMAGE}\`); Toxiproxy ${report.toxiproxyVersion ?? 'not run'} (\`${TOXIPROXY_IMAGE}\`).`, '',
     report.scope, ''];
   if (report.release) {

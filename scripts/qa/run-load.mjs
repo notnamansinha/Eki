@@ -6,6 +6,7 @@ import { resolve } from 'node:path';
 import { repositoryRoot } from './acceptance-catalog.mjs';
 import { safetyPreflight } from './safety-preflight.mjs';
 import { removeGeneratedDemoConfig } from './emulator-environment.mjs';
+import { workingTreeState } from './working-tree.mjs';
 import {
   DRILLS, DRILL_NAMES, K6_IMAGE, LIMITER_COOLDOWN_S, LOCAL_ACCOUNTS, PEAK_PROFILES, PORTS, PROBE_TIMEOUT_MS, PROFILE_ORDER, REQUESTS_PER_CONNECTION,
   STABLE_MS, TOXIPROXY_IMAGE, analyzeDrill, assertDeployedRun, campaignSeconds, canonicalId, canonicalStatus,
@@ -50,7 +51,7 @@ const STAGING_SCOPE = 'Deployed run against one Cloud Run revision. Public probe
 const report = {
   schemaVersion: 1, mode, dryRun,
   sourceCommit: git(['rev-parse', 'HEAD']),
-  dirty: Boolean(git(['status', '--porcelain', '--untracked-files=all'])),
+  ...workingTreeState(repositoryRoot),
   startedAt: new Date().toISOString(), finishedAt: null,
   workflowRunId: process.env.GITHUB_RUN_ID ?? null, node: process.version, platform: process.platform,
   dockerServer: null, k6Image: K6_IMAGE, k6Version: null, toxiproxyImage: TOXIPROXY_IMAGE, toxiproxyVersion: null,
