@@ -12,7 +12,7 @@ const fixture = vi.hoisted(() => ({
 vi.mock("@/hooks/useAuth", () => ({ useAuth: () => fixture.auth }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ replace: fixture.replace }) }));
 beforeEach(() => {
-  Object.assign(fixture.auth, { user: null, loading: true, loginReady: true, restoreSlow: false, loginFallbackAvailable: false, roleError: null });
+  Object.assign(fixture.auth, { user: null, loading: true, loginReady: true, loginLoading: false, restoreSlow: false, loginFallbackAvailable: false, roleError: null });
   fixture.replace.mockClear(); fixture.auth.logout.mockClear();
 });
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); });
@@ -30,6 +30,26 @@ describe("landing sign-in and redirect recovery", () => {
     fixture.auth.loginFallbackAvailable = true;
     rerender(<HomePage />);
     expect(screen.getByRole("button", { name: /Continue with full-page/ })).toBeTruthy();
+  });
+  it("updates the sign-in label after a translator wraps its text node", () => {
+    const { rerender } = render(<HomePage />);
+    const button = screen.getByRole("button", { name: "Continue with Google" });
+    const walker = document.createTreeWalker(button, NodeFilter.SHOW_TEXT);
+    let label = walker.nextNode();
+    while (label && label.textContent !== "Continue with Google") label = walker.nextNode();
+    expect(label).not.toBeNull();
+    const translated = document.createElement("font");
+    translated.textContent = "Weiter mit Google";
+    label!.parentNode!.replaceChild(translated, label!);
+
+    fixture.auth.loginLoading = true;
+    rerender(<HomePage />);
+    expect(screen.getByRole("button", { name: "Opening Google…" })).toBe(button);
+    expect((button as HTMLButtonElement).disabled).toBe(true);
+
+    fixture.auth.loginLoading = false;
+    rerender(<HomePage />);
+    expect(screen.getByRole("button", { name: "Continue with Google" })).toBe(button);
   });
   it("offers reload after ten seconds if opening the workspace stalls", async () => {
     vi.useFakeTimers();
@@ -49,6 +69,22 @@ describe("landing sign-in and redirect recovery", () => {
       fixture.auth.loading = false;
       rerender(<HomePage />);
       expect(fixture.replace).toHaveBeenCalledWith(workspace);
+    },
+  );
+  it.each(["https://example.invalid", "//example.invalid", "javascript:alert(1)", "/admin"])(
+    "routes a passenger safely when the saved destination is %s", destination => {
+      const originalUrl = window.location.href;
+      window.history.replaceState(null, "", "/?next=https%3A%2F%2Fexample.invalid&returnUrl=%2F%2Fexample.invalid");
+      localStorage.setItem("eki:last-workspace", destination);
+      fixture.auth.user = { role: "passenger" };
+      fixture.auth.loading = false;
+      try {
+        render(<HomePage />);
+        expect(fixture.replace).toHaveBeenCalledExactlyOnceWith("/passenger");
+      } finally {
+        localStorage.removeItem("eki:last-workspace");
+        window.history.replaceState(null, "", originalUrl);
+      }
     },
   );
   it("routes to the default workspace when browser storage is blocked", () => {

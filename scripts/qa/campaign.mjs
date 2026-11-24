@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { repositoryRoot } from './acceptance-catalog.mjs';
 import { safetyPreflight } from './safety-preflight.mjs';
+import { workingTreeState } from './working-tree.mjs';
 
 export function campaignSeeds(commit, day) {
   if (!/^[a-f0-9]{40}$/.test(commit) || !/^\d{4}-\d{2}-\d{2}$/.test(day)
@@ -17,7 +18,7 @@ export function runCampaign(suite, env = process.env) {
   if (!['gnss', 'emulator', 'browser', 'api', 'native', 'reviewedUnit'].includes(suite)) throw Error('Only named isolated QA suites are supported');
   safetyPreflight(env);
   const sourceCommit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repositoryRoot, encoding: 'utf8' }).trim();
-  const dirty = Boolean(execFileSync('git', ['status', '--porcelain', '--untracked-files=all'], { cwd: repositoryRoot, encoding: 'utf8' }).trim());
+  const { dirty, ignoredChanges } = workingTreeState(repositoryRoot);
   if (dirty) throw Error('Campaign requires a clean checkout');
   const day = env.EKI_QA_CAMPAIGN_DAY ?? new Date().toISOString().slice(0, 10);
   const seeds = campaignSeeds(sourceCommit, day);
@@ -44,7 +45,7 @@ export function runCampaign(suite, env = process.env) {
   }
   // The aggregate uses the fixed regression seed; additional seeds stay distinct.
   if (suite === 'gnss' && observations[0]?.report) copyFileSync(resolve(directory, 'gnss-seed-42-report.json'), resolve(directory, 'gnss-report.json'));
-  const report = { schemaVersion: 1, sourceCommit, dirty, suite, day, seeds: suite === 'gnss' ? seeds : [],
+  const report = { schemaVersion: 1, sourceCommit, dirty, ignoredChanges, suite, day, seeds: suite === 'gnss' ? seeds : [],
     startedAt, finishedAt: new Date().toISOString(), workflowRunId: env.GITHUB_RUN_ID ?? null,
     accepted: observations.length === commands.length && observations.every(item => item.accepted), observations,
     physicalMotionExecuted: false, realProvidersExecuted: false };
