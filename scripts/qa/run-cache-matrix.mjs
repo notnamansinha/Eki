@@ -11,6 +11,7 @@ import {
   parseCacheMatrixArgs, requestHeaders, routesFromPageFiles, skippedObservation,
 } from './cache-matrix.mjs';
 import { createHostingReplay, listExport } from './hosting-replay.mjs';
+import { describeDirty, workingTreeState } from './working-tree.mjs';
 
 /**
  * HTTP cache and CDN matrix for Firebase Hosting (qa/CACHE_MATRIX.md).
@@ -28,9 +29,9 @@ const MAX_BODY_BYTES = 8 * 1024 * 1024;
 const git = args => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
 const firebaseText = readFileSync(resolve(root, 'firebase.json'), 'utf8');
 const hosting = hostingConfig(JSON.parse(firebaseText));
+const { dirty, ignoredChanges } = workingTreeState(root);
 const report = {
-  schemaVersion: 1, mode: options.mode, sourceCommit: git(['rev-parse', 'HEAD']),
-  dirty: Boolean(git(['status', '--porcelain', '--untracked-files=all'])),
+  schemaVersion: 1, mode: options.mode, sourceCommit: git(['rev-parse', 'HEAD']), dirty, ignoredChanges,
   startedAt: new Date().toISOString(), finishedAt: null, node: process.version, platform: process.platform,
   firebaseJsonSha256: createHash('sha256').update(firebaseText.replace(/\r\n/g, '\n')).digest('hex'),
   target: null, bounds: null, userAgent: USER_AGENT, requestsSent: 0, plan: null,
@@ -139,7 +140,7 @@ const short = value => (value ? String(value).slice(0, 12) : '');
 function markdown() {
   const lines = [`# Cache matrix: ${report.mode}`, '', '| Item | Value |', '|---|---|',
     `| Verdict | ${report.verdict}${report.setupError ? `: ${cell(report.setupError)}` : ''} |`,
-    `| Source commit | \`${report.sourceCommit}\`, dirty: ${report.dirty} |`,
+    `| Source commit | \`${report.sourceCommit}\`, dirty: ${describeDirty(report)} |`,
     `| Target | ${cell(typeof report.target === 'string' ? report.target : JSON.stringify(report.target))} |`,
     `| Started, finished (UTC) | ${report.startedAt}, ${report.finishedAt} |`];
   if (report.mode !== 'compare') {
