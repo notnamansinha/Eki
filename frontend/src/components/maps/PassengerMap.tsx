@@ -8,7 +8,7 @@ import BusPositionGlyph from "@/components/maps/BusPositionGlyph";
 import { RouteStop } from "@/hooks/useRoutes";
 import { getDistanceMeters } from "@/lib/mapUtils";
 import { serverNow } from "@/lib/serverClock";
-import { subscribeLiveBusesByRoute } from "@/lib/liveBusStore";
+import { subscribeRouteBuses } from "@/lib/passengerLiveSource";
 import {
   normalizePassengerMapBus,
   passengerLiveBusSelectionKey,
@@ -52,6 +52,10 @@ export interface PassengerMapProps {
   selectedBusKey?: string;
   /** Explicit destination selection; targetStop may only be a camera fallback. */
   selectedDestinationStopId?: string;
+  /** The passenger's chosen boarding stop, labelled on the map. */
+  selectedBoardingStopId?: string;
+  /** Offer the walking-time location notice; the demo ride never uses location. */
+  offerLocation?: boolean;
   onStopEstimatesChange?: (estimates: PassengerStopEstimates) => void;
   liveUpdatesAvailable?: boolean;
 }
@@ -205,6 +209,8 @@ function PassengerMapInner({
   preview = false,
   selectedBusKey,
   selectedDestinationStopId,
+  selectedBoardingStopId,
+  offerLocation = true,
   onStopEstimatesChange,
   liveUpdatesAvailable = true,
 }: {
@@ -214,6 +220,8 @@ function PassengerMapInner({
   preview?: boolean;
   selectedBusKey?: string;
   selectedDestinationStopId?: string;
+  selectedBoardingStopId?: string;
+  offerLocation?: boolean;
   onStopEstimatesChange?: PassengerMapProps["onStopEstimatesChange"];
   liveUpdatesAvailable?: boolean;
 }) {
@@ -314,7 +322,7 @@ function PassengerMapInner({
   // Tracking keeps working without it; an earlier grant starts immediately.
   const [locationChoice, setLocationChoice] = useState<LocationChoice>("unknown");
   useEffect(() => {
-    if (!navigator.geolocation) return;
+    if (!navigator.geolocation || !offerLocation) return;
     let active = true;
     let status: PermissionStatus | undefined;
     const fallback = (): LocationChoice => locationDeclined() ? "declined" : "ask";
@@ -335,7 +343,7 @@ function PassengerMapInner({
       active = false;
       status?.removeEventListener?.("change", onChange);
     };
-  }, []);
+  }, [offerLocation]);
   const declineLocation = () => {
     try {
       sessionStorage.setItem(LOCATION_NOTICE_KEY, "declined");
@@ -376,7 +384,7 @@ function PassengerMapInner({
 
   // ── RTDB subscription: filtered by routeId ───────────────────────────────
   useEffect(() => {
-    const unsubscribe = subscribeLiveBusesByRoute(route.id, (snapshot) => {
+    const unsubscribe = subscribeRouteBuses(route.id, (snapshot) => {
         setLiveReadFailed(false);
         const allData = snapshot as Record<string, unknown> | null;
         const now = serverNow();
@@ -739,11 +747,12 @@ function PassengerMapInner({
           {/* Ordinary stops stay compact; labels are reserved for the current selection. */}
           {route.stops?.map((stop, i) => {
             const isTarget = stop.id === selectedDestinationStopId;
+            const isBoarding = stop.id === selectedBoardingStopId;
             const visit = activeBusProgress?.states[i];
             const isPast = isBehindBus(visit);
             const isAt = visit === "at";
             const visitLabel = stopVisitLabel(visit)?.toLowerCase();
-            const showLabel = isTarget || isAt || i === activeBusProgress?.nextStopIndex || stop.id === inspectedStopId;
+            const showLabel = isTarget || isBoarding || isAt || i === activeBusProgress?.nextStopIndex || stop.id === inspectedStopId;
             return <AdvancedMarker key={`stop-${stop.id || i}`} position={{lat:stop.lat,lng:stop.lng}} anchorLeft="-50%" anchorTop="-50%" zIndex={isAt ? 30 : undefined}>
               <button type="button" aria-label={`Show stop ${stop.name}${visitLabel ? ` — ${visitLabel}` : ""}`} title={`${stop.name}${visitLabel ? ` — ${visitLabel}` : ""}`}
                 onClick={() => setInspectedStopId(stop.id)} onFocus={() => setInspectedStopId(stop.id)}
@@ -753,7 +762,7 @@ function PassengerMapInner({
                 <span className="pp-stop-dot flex size-6 items-center justify-center rounded-full border-2 text-[12px] font-bold shadow-sm"
                   data-state={isAt ? "here" : isPast ? "passed" : "upcoming"}
                   style={{borderStyle: visit === "unobserved" ? "dashed" : "solid",
-                    outline:isTarget ? "2px solid var(--text-primary)" : undefined, outlineOffset: 1}}>{stopLabel(i)}</span>
+                    outline:isTarget || isBoarding ? "2px solid var(--text-primary)" : undefined, outlineOffset: 1}}>{stopLabel(i)}</span>
                 {showLabel && <span className="pp-stop-label">{isAt ? `At ${stop.shortName || stop.name}` : isPast ? `${stop.shortName || stop.name} · Passed` : stop.shortName || stop.name}</span>}
               </button>
             </AdvancedMarker>;
@@ -793,6 +802,7 @@ function PassengerMapInner({
         unobservedStopIndices={unobservedKey ? unobservedKey.split(",").map(Number) : undefined}
         aggregateArrivals={aggregateArrivals}
         geometryUnavailable={geometryUnavailable}
+        live={Boolean(progressBus && liveUpdatesAvailable !== false && busHealth.get(progressBus.busId)?.state === "live")}
       />
     </div>
   );
@@ -812,6 +822,8 @@ export default function PassengerMap(props: PassengerMapProps) {
         preview={props.preview}
         selectedBusKey={props.selectedBusKey}
         selectedDestinationStopId={props.selectedDestinationStopId}
+        selectedBoardingStopId={props.selectedBoardingStopId}
+        offerLocation={props.offerLocation}
         onStopEstimatesChange={props.onStopEstimatesChange}
         liveUpdatesAvailable={props.liveUpdatesAvailable}
       />

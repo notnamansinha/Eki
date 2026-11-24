@@ -45,6 +45,14 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); localStorage.clear(); });
 
+/** From → To through the picker; the bar then docks into the drawer with Board. */
+async function chooseStops(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole("combobox", { name: "Boarding stop" }));
+  await user.click(screen.getByRole("option", { name: "Alpha" }));
+  await user.click(screen.getByRole("option", { name: "Beta" }));
+  return screen.findByRole("button", { name: "Board" });
+}
+
 async function openBoarding() {
   render(<PassengerWorkspace />); const user = userEvent.setup();
   await user.click(await screen.findByRole("button", { name: "Track QA route" }));
@@ -69,28 +77,20 @@ describe("one untrusted packet must not reset the passenger's boarding card or c
   it("keeps 'On board' for a joined passenger after a one-packet blip", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response('{"joined":true}')));
     const user = await openBoarding();
-    await user.click(screen.getByRole("combobox", { name: "Boarding stop" }));
-    await user.click(screen.getByRole("option", { name: "Alpha" }));
-    await user.click(screen.getByRole("combobox", { name: "Destination station" }));
-    await user.click(screen.getByRole("option", { name: "Beta" }));
-    await user.click(screen.getByRole("button", { name: "Board" }));
-    await screen.findByRole("button", { name: "On board" });
+    await user.click(await chooseStops(user));
+    const onBoard = () => screen.queryByRole("group", { name: "Your trip" })?.textContent ?? "";
     // Precondition: the passenger is on board before the blip.
-    expect(screen.getByRole("button", { name: "On board" })).toBeTruthy();
+    await waitFor(() => expect(onBoard()).toContain("On board"));
     act(() => setScenario("gnss-lost"));
     await screen.findByText("GPS signal lost");
     act(() => setScenario("forward"));
-    await screen.findByRole("combobox", { name: "Boarding stop" });
-    await waitFor(() => expect(screen.queryByRole("button", { name: "On board" })).toBeTruthy());
+    await waitFor(() => expect(onBoard()).toContain("On board"));
     expect(screen.queryByRole("button", { name: "Board" })).toBeNull();
   }, 20_000);
 
   it("withholds boarding during the blip without discarding the card", async () => {
     const user = await openBoarding();
-    await user.click(screen.getByRole("combobox", { name: "Boarding stop" }));
-    await user.click(screen.getByRole("option", { name: "Alpha" }));
-    await user.click(screen.getByRole("combobox", { name: "Destination station" }));
-    await user.click(screen.getByRole("option", { name: "Beta" }));
+    await chooseStops(user);
     act(() => setScenario("gnss-lost"));
     await screen.findByText("GPS signal lost");
     expect(screen.getByRole("button", { name: "Board" })).toHaveProperty("disabled", true);

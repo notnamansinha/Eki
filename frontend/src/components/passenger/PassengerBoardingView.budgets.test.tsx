@@ -1,17 +1,12 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import PassengerBoardingView from "./PassengerBoardingView";
+import PassengerBoardingView, { TRIP_DOCK_DELAY_MS } from "./PassengerBoardingView";
 import type { RouteData } from "@/hooks/useRoutes";
 import { beginAuthVerification } from "@/lib/authState";
 
 const sdk = vi.hoisted(() => ({ token: vi.fn(), auth: { currentUser: null as null | { uid: string; getIdToken: () => Promise<string> } } }));
 vi.mock("@/lib/firebaseAuth", () => ({ auth: sdk.auth }));
-vi.mock("@/components/ui/InAppSelect", () => ({ default: ({ ariaLabel, value, onChange, options, disabled }: {
-  ariaLabel: string; value: string; onChange: (value: string) => void; options: Array<{ value: string; label: string }>; disabled: boolean;
-}) => <select aria-label={ariaLabel} value={value} disabled={disabled} onChange={event => onChange(event.target.value)}>
-  {options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-</select> }));
 const route: RouteData = { id: "qa-route", name: "QA route", color: "#3B82F6", waypoints: [], stops: [
   { id: "alpha", name: "Alpha", shortName: "A", lat: 23, lng: 72 },
   { id: "beta", name: "Beta", shortName: "B", lat: 23.01, lng: 72.01 },
@@ -33,11 +28,24 @@ async function advance(ms: number) { await act(async () => { await vi.advanceTim
 function fix(index = 0) {
   callbacks[index].success({ coords: { latitude: 23, longitude: 72, accuracy: 10 } } as GeolocationPosition);
 }
+const value = (name: string) => (document.querySelector(`input[name="${name}"]`) as HTMLInputElement).value;
+/** From → To through the picker; the bar then docks into the drawer with Board. */
+function chooseStops(from: string, to: string) {
+  fireEvent.click(screen.getByRole("combobox", { name: "Boarding stop" }));
+  fireEvent.click(screen.getByRole("option", { name: from }));
+  fireEvent.click(screen.getByRole("option", { name: to }));
+  act(() => { vi.advanceTimersByTime(TRIP_DOCK_DELAY_MS); });
+}
+function changeDestination(to: string) {
+  fireEvent.click(screen.getByRole("button", { name: "Show trip" }));
+  fireEvent.click(screen.getByRole("combobox", { name: "Destination station" }));
+  fireEvent.click(screen.getByRole("option", { name: to }));
+  act(() => { vi.advanceTimersByTime(TRIP_DOCK_DELAY_MS); });
+}
 function prepare() {
   const joined = vi.fn();
   const view = render(<PassengerBoardingView sessionId="qa-session" route={route} tripState="in_service" onJoined={joined} />);
-  fireEvent.change(screen.getByLabelText("Boarding stop"), { target: { value: "alpha" } });
-  fireEvent.change(screen.getByLabelText("Destination station"), { target: { value: "beta" } });
+  chooseStops("Alpha", "Beta");
   const board = () => fireEvent.click(screen.getByRole("button", { name: "Board" }));
   return { ...view, joined, board };
 }
@@ -55,14 +63,14 @@ describe("boarding preparation and API budgets", () => {
     const view = prepare();
     const props = { sessionId: "qa-session", route, tripState: "in_service" as const, destinationStopId: "gamma" };
     view.rerender(<PassengerBoardingView {...props} />);
-    expect(screen.getByLabelText("Destination station")).toHaveProperty("value", "gamma");
-    expect(screen.getByLabelText("Boarding stop")).toHaveProperty("value", "alpha");
+    expect(value("destination-station")).toBe("gamma");
+    expect(value("boarding-stop")).toBe("alpha");
     expect(screen.queryByLabelText("Boarding code")).toBeNull();
-    fireEvent.change(screen.getByLabelText("Destination station"), { target: { value: "beta" } });
+    changeDestination("Beta");
     view.rerender(<PassengerBoardingView {...props} />);
-    expect(screen.getByLabelText("Destination station")).toHaveProperty("value", "beta");
+    expect(value("destination-station")).toBe("beta");
     view.rerender(<PassengerBoardingView {...props} destinationStopId="" />);
-    expect(screen.getByLabelText("Destination station")).toHaveProperty("value", "");
+    expect(value("destination-station")).toBe("");
   });
 
   it("leaves a full network budget after nine seconds of GPS acquisition", async () => {
@@ -146,7 +154,7 @@ describe("boarding preparation and API budgets", () => {
 
   it("allows an existing passenger's stop correction without GPS and requires GPS in a different session", async () => {
     const fetchMock = delayedFetch(1); const view = prepare(); view.board(); act(() => fix()); await flush(); await advance(1);
-    fireEvent.change(screen.getByLabelText("Destination station"), { target: { value: "gamma" } }); view.board();
+    changeDestination("Gamma"); view.board();
     await flush(); await advance(1); expect(gps).toHaveBeenCalledOnce();
     expect(JSON.parse(fetchMock.mock.calls[1][1].body as string)).not.toHaveProperty("lat");
     view.rerender(<PassengerBoardingView sessionId="qa-next-session" route={route} tripState="in_service" onJoined={view.joined} />);
