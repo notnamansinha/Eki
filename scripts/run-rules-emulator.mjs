@@ -12,6 +12,7 @@ import {
   resolveWindowsNpxCli,
   withJdkFirstOnPath,
 } from "./qa/emulator-process.mjs";
+import { workingTreeState } from "./qa/working-tree.mjs";
 
 /**
  * Runs the Firebase emulator rules-integration suite against isolated copies
@@ -31,7 +32,7 @@ const prefix = api ? 'api' : browser ? 'browser' : 'emulator';
 for (const name of [`${prefix}-${browser ? 'playwright' : 'vitest'}.json`, `${prefix}-junit.xml`, `${prefix}-report.md`, `${prefix}-run.log`, ...(browser ? ['browser-results', 'browser-progress.json'] : [])]) rmSync(path.join(evidenceDirectory, name), { force: true, recursive: true });
 writeFileSync(path.join(evidenceDirectory, `${prefix}-report.json`), JSON.stringify({
   sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: ROOT, encoding: 'utf8' }).trim(),
-  dirty: Boolean(execFileSync('git', ['status', '--porcelain', '--untracked-files=all'], { cwd: ROOT, encoding: 'utf8' }).trim()),
+  ...workingTreeState(ROOT),
   startedAt: new Date().toISOString(), timezone: 'Asia/Calcutta', verdict: 'BLOCKED',
   setupError: 'Emulator setup has not yet produced observed execution evidence', counts: null,
   physicalMotionExecuted: false, realProvidersExecuted: false,
