@@ -2,14 +2,14 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-TST-003 | 1.1 | Current | 2026-11-07 |
+| EKI-TST-003 | 1.2 | Current | 2026-11-21 |
 
 ## 1. Purpose
 
 The QA programme measures how much of the [A to Z acceptance plan](../testing/WEBAPP_A_Z_AB_TESTING_PLAN.md) has been observed on a given commit. It has three parts:
 
 1. A static acceptance catalog that imports every requirement and inventories the current source.
-2. Isolated harnesses that run selected tests and record exact assertion identities, the source commit and whether the working tree was dirty.
+2. Isolated harnesses that run selected tests and record exact assertion identities, the source commit and whether the working tree was dirty. The CSP hashes that a build regenerates in `firebase.json` do not make the tree dirty; the report lists them in `ignoredChanges` ([test strategy](../testing/TEST_STRATEGY.md#46-qa-programme-scripts)).
 3. An execution ledger that links those observations to requirement IDs through reviewed test maps.
 
 The programme never marks a requirement complete. It shows which parts of each requirement have been observed and at which level. The [test strategy](../testing/TEST_STRATEGY.md) defines the levels L0 to L5 and lists every command; the [testing index](../testing/README.md) lists dated results.
@@ -125,6 +125,7 @@ A passing preflight proves the configuration only. Runtime isolation comes from 
 | Native firmware | L1 | `npm run qa:native` | [Native firmware evidence](NATIVE_EVIDENCE.md) |
 | Emulator integration | L2 | `npm run test:rules` | [Emulator acceptance](EMULATOR_ACCEPTANCE.md) |
 | HTTP authorization | L2 | `npm run qa:api` | [HTTP authorization sweep](HTTP_AUTHORIZATION.md) |
+| DAST and OpenAPI scans | L2 local, L4 staging | `npm run qa:dast`, `npm run qa:dast:staging` | [Bounded DAST and OpenAPI scans](DAST.md) |
 | Load and fault drills | L2 local, L4 deployed | `npm run qa:load`, `npm run qa:load:staging` | [Load and fault drills](LOAD_DRILLS.md) |
 | Browser | L3 | `npm run qa:browser` | [Browser acceptance](BROWSER_ACCEPTANCE.md) |
 | Ledger | All | `npm run qa:report` | [Execution ledger](EXECUTION_EVIDENCE.md) |
@@ -139,5 +140,4 @@ A passing preflight proves the configuration only. Runtime isolation comes from 
 - The source census counts static control sites; a site can render many times, and non-JSX interactions need browser execution.
 - Declared tests are literal declarations, not runtime-expanded counts.
 - Database call candidates need review to identify actual writes.
-- No harness contacts real Google, Firebase or model services, and none moves a vehicle. L4 and L5 evidence comes only from the procedures in the [field acceptance package](FIELD_ACCEPTANCE.md).
-- `npm run qa:load:staging` is an exception: it sends bounded k6 traffic to one confirmed deployed backend and does not pass through the safety preflight ([load and fault drills](LOAD_DRILLS.md#62-deployed-run)).
+- No harness contacts real Google, Firebase or model services, and none moves a vehicle. Two harnesses are exceptions and do not pass through the safety preflight: `npm run qa:dast:staging` sends bounded GET requests to the staging backend with dedicated test accounts ([DAST and OpenAPI scans](DAST.md)), and `npm run qa:load:staging` sends bounded k6 traffic to one confirmed deployed backend ([load and fault drills](LOAD_DRILLS.md#62-deployed-run)). L4 and L5 evidence comes only from the procedures in the [field acceptance package](FIELD_ACCEPTANCE.md).

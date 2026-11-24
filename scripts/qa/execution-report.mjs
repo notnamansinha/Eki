@@ -8,6 +8,7 @@ import { browserTestMap } from '../../qa/browser-test-map.mjs';
 import { apiTestMap } from '../../qa/api-test-map.mjs';
 import { nativeTestMap } from '../../qa/native-test-map.mjs';
 import { reviewedUnitTestMap } from '../../qa/reviewed-unit-test-map.mjs';
+import { describeDirty } from './working-tree.mjs';
 
 export const evidenceFamilies = [
   { name: 'gnss', level: 'L1', verdict: 'GREEN_FOR_UNIT_SCOPE', mappings: gnssTestMap },
@@ -97,7 +98,7 @@ export function combineExecutionEvidence(catalog, reports, families = evidenceFa
     return { ...item, latestExecutionStatus: status, latestExecutionCommit: evidence.length ? catalog.sourceCommit : null,
       executionEvidence: evidence, remainingGate: item.remainingGate };
   });
-  return { schemaVersion: 1, sourceCommit: catalog.sourceCommit, dirty: catalog.dirty,
+  return { schemaVersion: 1, sourceCommit: catalog.sourceCommit, dirty: catalog.dirty, ignoredChanges: catalog.ignoredChanges ?? [],
     generatedAt: new Date().toISOString(), timezone: 'Asia/Calcutta',
     requiredHarnessExecution: suites.every(item => item.accepted) ? 'PASS' : 'BLOCKED',
     softwareRelease: 'NOT_RELEASE_READY', vehicleFieldDeployment: 'NOT_VERIFIED', completeFeatureCases: 0,
@@ -114,7 +115,7 @@ async function main() {
   }
   const report = combineExecutionEvidence(catalog, reports); const directory = resolve(repositoryRoot, 'artifacts/qa'); mkdirSync(directory, { recursive: true });
   writeFileSync(resolve(directory, 'execution-report.json'), JSON.stringify(report, null, 2) + '\n');
-  const markdown = ['# Current-source execution evidence', '', `Commit: ${report.sourceCommit}; dirty: ${report.dirty}.`,
+  const markdown = ['# Current-source execution evidence', '', `Commit: ${report.sourceCommit}; dirty: ${describeDirty(report)}.`,
     `Required harness scopes: ${report.requiredHarnessExecution}; Eki software: ${report.softwareRelease}; vehicle field deployment: ${report.vehicleFieldDeployment}.`,
     `Case counts: ${JSON.stringify(report.counts)}; complete feature cases: 0.`, '',
     '| Suite | Level | Accepted current scope | Blockers |', '| --- | --- | --- |',

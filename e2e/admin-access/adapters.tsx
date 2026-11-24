@@ -14,4 +14,5 @@ Object.assign(window, { qaRouterReplacements: routerReplacements });
 const router = { replace: (href: string) => { routerReplacements.push(href); } };
 export function useRouter() { return router; }
 export function useLinkStatus() { return { pending: false }; }
-export default function Link({ children, href }: { children: ReactNode; href: string }) { return <a href={href}>{children}</a>; }
+// A plain anchor that keeps the styling, so link targets are measured as they render (install page, #516).
+export default function Link({ children, href, className }: { children: ReactNode; href: string; className?: string }) { return <a href={href} className={className}>{children}</a>; }
