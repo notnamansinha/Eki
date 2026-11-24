@@ -2,6 +2,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { repositoryRoot } from './acceptance-catalog.mjs';
+import { workingTreeState } from './working-tree.mjs';
 import {
   VISUAL_IMAGE, assertImageMatches, dockerRunArgs, installedPlaywrightVersions,
   parseVisualArgs, playwrightArgs, publishedPort,
@@ -31,7 +32,7 @@ const record = {
   schemaVersion: 1,
   mode: options.update ? 'update' : 'compare',
   sourceCommit: git(['rev-parse', 'HEAD']),
-  dirty: Boolean(git(['status', '--porcelain', '--untracked-files=all'])),
+  ...workingTreeState(repositoryRoot),
   startedAt: new Date().toISOString(), finishedAt: null,
   image: VISUAL_IMAGE, playwright: versions.test,
   passthrough: options.passthrough, exitCode: null, setupError: null,
