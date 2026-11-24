@@ -52,7 +52,7 @@ describe("passenger boarding workflow", () => {
     await waitFor(() => expect(joined).toHaveBeenCalledOnce());
     expect(JSON.parse(fetchMock.mock.calls[0][1].body)).not.toHaveProperty("boardingCode");
   });
-  it("keeps boarding and destination stops distinct and in ride order", async () => {
+  it("keeps boarding and destination stops distinct", async () => {
     const user = userEvent.setup();
     render(<PassengerBoardingView sessionId="qa-session" route={route} tripState="in_service" />);
     await user.click(screen.getByRole("combobox", { name: "Boarding stop" }));
