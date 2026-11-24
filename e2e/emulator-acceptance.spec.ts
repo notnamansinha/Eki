@@ -251,6 +251,28 @@ test('chat reconciles a lost acknowledgement into one durable message and listen
   await expect(page.getByRole('dialog')).toHaveCount(0);
 });
 
+test('chat badge counts an operator message sent while chat is closed, never one read in the open chat', async ({ page, request }) => {
+  await page.goto('/'); await login(page); await board(page);
+  const operatorMessage = async () => (await (await request.post(`${control}/chat/operator-message`)).json()).text as string;
+  const chat = page.getByRole('button', { name: 'Open live chat', exact: true });
+  const badge = chat.locator('.pp-unread');
+  const earlier = await operatorMessage();
+  await chat.click();
+  await expect(page.getByText(earlier, { exact: true })).toBeVisible();
+  // The operator replies while the passenger is reading the open chat.
+  const reply = await operatorMessage();
+  await expect(page.getByText(reply, { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Close chat' }).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(badge).toHaveCount(0);
+  const later = await operatorMessage();
+  await expect(badge).toHaveText('1');
+  await chat.click();
+  await expect(page.getByText(later, { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Close chat' }).click();
+  await expect(badge).toHaveCount(0);
+});
+
 test('feedback confirms persistence and enforces cooldown after reopening the real modal', async ({ page, request }) => {
   await page.goto('/'); await login(page);
   await page.getByRole('button', { name: 'Profile', exact: true }).click();
