@@ -24,11 +24,12 @@ import { workingTreeState } from "./qa/working-tree.mjs";
  */
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
-if (args.length > 1 || (args.length && !['--browser', '--browser-providers', '--browser-service', '--api'].includes(args[0]))) throw new Error('Only named browser or API scopes are supported');
+if (args.length > 1 || (args.length && !['--browser', '--browser-providers', '--browser-service', '--api', '--dast'].includes(args[0]))) throw new Error('Only named browser, API or DAST scopes are supported');
 const api = args[0] === '--api';
-const browser = args.length === 1 && !api;
+const dast = args[0] === '--dast';
+const browser = args.length === 1 && !api && !dast;
 const evidenceDirectory = path.join(ROOT, 'artifacts/qa'); mkdirSync(evidenceDirectory, { recursive: true });
-const prefix = api ? 'api' : browser ? 'browser' : 'emulator';
+const prefix = api ? 'api' : dast ? 'dast-local' : browser ? 'browser' : 'emulator';
 for (const name of [`${prefix}-${browser ? 'playwright' : 'vitest'}.json`, `${prefix}-junit.xml`, `${prefix}-report.md`, `${prefix}-run.log`, ...(browser ? ['browser-results', 'browser-progress.json'] : [])]) rmSync(path.join(evidenceDirectory, name), { force: true, recursive: true });
 writeFileSync(path.join(evidenceDirectory, `${prefix}-report.json`), JSON.stringify({
   sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: ROOT, encoding: 'utf8' }).trim(),
@@ -58,7 +59,7 @@ const emulatorArgs = [
   "firestore,database,auth",
   "--project",
   "demo-eki-qa",
-  `node "${path.join(ROOT, api ? 'scripts/qa/run-api.mjs' : browser ? 'scripts/qa/run-browser-tests.mjs' : 'scripts/qa/run-emulator-tests.mjs')}"`,
+  `node "${path.join(ROOT, api ? 'scripts/qa/run-api.mjs' : dast ? 'scripts/qa/run-dast.mjs' : browser ? 'scripts/qa/run-browser-tests.mjs' : 'scripts/qa/run-emulator-tests.mjs')}"`,
 ];
 
 function spawnNpx() {
@@ -102,7 +103,7 @@ function spawnNpx() {
 
 const child = spawnNpx();
 // Deadline: kill the whole tree (Windows: taskkill /T), not just the npx process.
-const deadline = setTimeout(() => { console.error('Emulator runner deadline exceeded; dependent tests BLOCKED.'); killProcessTree(child); }, (browser ? 8 : 6) * 60_000);
+const deadline = setTimeout(() => { console.error('Emulator runner deadline exceeded; dependent tests BLOCKED.'); killProcessTree(child); }, (dast ? 60 : browser ? 8 : 6) * 60_000);
 
 function finish(code) {
   clearTimeout(deadline);
