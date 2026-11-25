@@ -208,7 +208,7 @@ The register lists every controlled document by its source path. A mirror carrie
 | EKI-TST-016 | [Observability Drill](../qa/OBSERVABILITY_DRILL.md) | 1.0 | Current | 2026-11-25 |
 | EKI-TST-017 | [Hosting Cache and CDN Matrix](../qa/CACHE_MATRIX.md) | 1.0 | Current | 2026-11-25 |
 | EKI-TST-018 | [Privacy, Deletion and Sub-Processor Verification](../qa/PRIVACY_VERIFICATION.md) | 1.0 | Current | 2026-11-24 |
-| EKI-TST-019 | [Visual and Accessibility-Tree Baselines](../qa/VISUAL_BASELINES.md) | 1.1 | Current | 2026-11-25 |
+| EKI-TST-019 | [Visual and Accessibility-Tree Baselines](../qa/VISUAL_BASELINES.md) | 1.2 | Current | 2026-11-26 |
 | EKI-TST-020 | [Device and Screen-Reader Acceptance](../qa/DEVICE_AND_SCREEN_READER_ACCEPTANCE.md) | 1.1 | Current | 2026-11-24 |
 
 ### 4.14 Evidence records (EVD)
