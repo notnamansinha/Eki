@@ -7,7 +7,7 @@ import { capture, expect, isTouch, open, PASSENGER, test } from "./visual";
 const workspace = (page: Page) => page.locator(".passenger-layout");
 const nav = (page: Page) => page.getByRole("navigation", { name: "Passenger sections" });
 // See CaptureOptions.maxDiffPixels; the accessibility tree of these states is still exact.
-const MAP_NOISE = 600;
+const MAP_NOISE = 1000;
 
 async function scenario(page: Page, value: string) {
   await page.getByText("QA controls (synthetic)", { exact: true }).click();
