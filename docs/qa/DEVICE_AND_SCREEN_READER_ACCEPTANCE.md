@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-TST-016 | 1.1 | Current | 2026-11-24 |
+| EKI-TST-020 | 1.1 | Current | 2026-11-24 |
 
 ## 1. Purpose
 
@@ -121,7 +121,7 @@ Store screenshots and recordings with the issue or in approved storage, not in t
 
 ## 7. Known items to confirm
 
-The visual baseline review on 2026-11-24 ([EKI-EVD-063](../testing/VISUAL_BASELINE_REVIEW_2026_11_24.md), findings F1 to F8) found these in the emulated renders. The first three (F1 to F3) are fixed in pull request [#562](https://github.com/notnamansinha/Eki/pull/562): confirm each fix on a real device or with voice control. Confirm or clear the others on a real device or with a screen reader. Record each result as a finding.
+The visual baseline review on 2026-11-24 ([EKI-EVD-067](../testing/VISUAL_BASELINE_REVIEW_2026_11_24.md), findings F1 to F8) found these in the emulated renders. The first three (F1 to F3) are fixed in pull request [#562](https://github.com/notnamansinha/Eki/pull/562): confirm each fix on a real device or with voice control. Confirm or clear the others on a real device or with a screen reader. Record each result as a finding.
 
 | Item | Where | Check |
 |---|---|---|

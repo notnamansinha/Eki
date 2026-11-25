@@ -40,10 +40,13 @@ export function imageVersion(tag = VISUAL_IMAGE_TAG) {
   return match[1];
 }
 
+/** The packages that must match the image, by the key each version is reported under. */
+const PLAYWRIGHT_PACKAGES = { test: '@playwright/test', core: 'playwright-core' };
+
 /** Installed versions of the packages that must match the image. */
 export function installedPlaywrightVersions(repositoryRoot) {
   const version = name => JSON.parse(readFileSync(resolve(repositoryRoot, 'node_modules', name, 'package.json'), 'utf8')).version;
-  return { test: version('@playwright/test'), core: version('playwright-core') };
+  return Object.fromEntries(Object.entries(PLAYWRIGHT_PACKAGES).map(([key, name]) => [key, version(name)]));
 }
 
 /** Throws unless the host test runner and the image share one Playwright version. */
@@ -51,7 +54,7 @@ export function assertImageMatches(versions, tag = VISUAL_IMAGE_TAG) {
   const expected = imageVersion(tag);
   const mismatched = Object.entries(versions).filter(([, version]) => version !== expected);
   if (mismatched.length) {
-    const found = mismatched.map(([name, version]) => `${name === 'test' ? '@playwright/test' : 'playwright-core'} ${version}`).join(', ');
+    const found = mismatched.map(([key, version]) => `${PLAYWRIGHT_PACKAGES[key]} ${version}`).join(', ');
     throw new Error(`VISUAL_IMAGE_MISMATCH: the baseline image is Playwright ${expected} but ${found} is installed. `
       + 'Update VISUAL_IMAGE_TAG and VISUAL_IMAGE_DIGEST in scripts/qa/visual-plan.mjs, then regenerate and review the baselines.');
   }
@@ -74,7 +77,12 @@ export function dockerRunArgs({ name, playwrightCorePath }) {
   ];
 }
 
-/** The host port from `docker port <name> 3000/tcp` output such as `127.0.0.1:55012`. */
+/** `docker port` arguments for the browser server's published port. */
+export function dockerPortArgs(name) {
+  return ['port', name, `${SERVER_PORT_IN_CONTAINER}/tcp`];
+}
+
+/** The host port from `docker port` output such as `127.0.0.1:55012`. */
 export function publishedPort(output) {
   const match = /^127\.0\.0\.1:(\d+)$/m.exec(output.trim());
   if (!match) throw new Error(`The browser server is not published on 127.0.0.1: ${output.trim() || '(no output)'}`);

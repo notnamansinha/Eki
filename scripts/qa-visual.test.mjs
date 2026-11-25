@@ -4,7 +4,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { repositoryRoot } from './qa/acceptance-catalog.mjs';
 import {
-  VISUAL_CONFIG, VISUAL_IMAGE, VISUAL_IMAGE_TAG, assertImageMatches, dockerRunArgs, imageVersion,
+  VISUAL_CONFIG, VISUAL_IMAGE, VISUAL_IMAGE_TAG, assertImageMatches, dockerPortArgs, dockerRunArgs, imageVersion,
   installedPlaywrightVersions, parseVisualArgs, playwrightArgs, publishedPort,
 } from './qa/visual-plan.mjs';
 
@@ -47,6 +47,8 @@ test('the browser server is published on loopback only and fetches nothing', () 
   assert.match(args[args.indexOf('--mount') + 1], /,readonly$/);
   assert.ok(args.includes(VISUAL_IMAGE));
   assert.ok(!args.some(arg => /npx|npm/.test(arg)), 'the server is the mounted playwright-core, not a download');
+  // The port looked up is the one the server listens on and is published from.
+  assert.deepEqual(dockerPortArgs('eki-visual-1'), ['port', 'eki-visual-1', `${args[args.indexOf('--port') + 1]}/tcp`]);
   assert.equal(publishedPort('127.0.0.1:55012\n'), 55012);
   assert.throws(() => publishedPort('0.0.0.0:55012'), /not published on 127\.0\.0\.1/);
 });
