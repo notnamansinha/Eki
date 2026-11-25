@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-TST-019 | 1.0 | Current | 2026-11-24 |
+| EKI-TST-019 | 1.1 | Current | 2026-11-25 |
 
 ## 1. Purpose
 
@@ -12,6 +12,8 @@ This suite records reviewed baselines of the public, passenger and admin surface
 - the accessibility tree of the same moment (roles, accessible names, states and heading levels), which is what a screen reader is given.
 
 It covers the "visual regression against reviewed baselines" item of issue #523. It does not replace testing on real devices or with screen readers; see the [device and screen-reader acceptance procedure](DEVICE_AND_SCREEN_READER_ACCEPTANCE.md).
+
+Issue #523 names a template command that runs `tests/responsive-visual.spec.ts` with `VISUAL=1` and a `web-test-arsenal` Playwright configuration; that spec and configuration belong to an external QA template and are not part of Eki. This suite (`npm run qa:visual`, specs in `e2e/visual/`) is the repository's implementation of that responsive visual baseline check and its only visual suite.
 
 ## 2. How it works
 
@@ -90,7 +92,7 @@ Run every command from the repository root.
 npm run qa:visual
 ```
 
-Expected result: every test passes (53 tests, plus one skipped on `desktop`). A comparison never writes a baseline, so a missing baseline fails. Differences, traces and an HTML report go to `artifacts/visual/`; CI keeps them for 7 days as the `visual-baselines` artifact. Arguments after `--` go to `playwright test`, for example `npm run qa:visual -- --project=phone -g "profile"`.
+Expected result: every test passes, except that the touch-only `passenger-live-routes` state is skipped on `desktop` (Section 2.2). A comparison never writes a baseline, so a missing baseline fails. Differences, traces and an HTML report go to `artifacts/visual/`; CI keeps them for 7 days as the `visual-baselines` artifact. Arguments after `--` go to `playwright test`, for example `npm run qa:visual -- --project=phone -g "profile"`.
 
 ### 4.2 Update and review baselines after an intended change
 
@@ -113,7 +115,7 @@ When `@playwright/test` changes version, `scripts/qa-visual.test.mjs` fails with
 
 ## 5. Tolerance
 
-Every screenshot is pixel-exact, except `passenger-tracking` and `passenger-tracking-gnss-lost`, which allow 600 differing pixels (0.06 % of the desktop viewport). In repeated runs on one machine, the text on the translucent route timeline sheet and the edges of the location prompt over the map rendered differently by 133 to 543 pixels from run to run. Turning off the sheet's backdrop blur did not remove this. The accessibility trees of these two states are still compared exactly, so a changed label fails there.
+Screenshots are compared with zero differing pixels tolerated, except `passenger-tracking` and `passenger-tracking-gnss-lost`, which tolerate up to 600 differing pixels (0.06 % of the desktop viewport). In these two states, anti-aliasing of the text on the translucent route timeline sheet and of the location prompt over the map varied by 133 to 543 pixels between runs on one machine. Turning off the sheet's backdrop blur did not remove this. The accessibility trees of these two states are still compared exactly, so a changed label fails there.
 
 ## 6. Limits
 

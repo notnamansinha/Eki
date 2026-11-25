@@ -190,7 +190,7 @@ The register lists every controlled document by its source path. A mirror carrie
 | ID | Document | Version | Status | Last updated |
 |---|---|---|---|---|
 | EKI-TST-001 | [Eki Testing and Evidence Index](testing/README.md) | 1.2 | Current | 2026-11-07 |
-| EKI-TST-002 | [Eki Test Strategy](testing/TEST_STRATEGY.md) | 3.2 | Current | 2026-11-11 |
+| EKI-TST-002 | [Eki Test Strategy](testing/TEST_STRATEGY.md) | 3.4 | Current | 2026-11-25 |
 | EKI-TST-003 | [Eki QA Programme](../qa/README.md) | 1.1 | Current | 2026-11-07 |
 | EKI-TST-004 | [Disposable Browser Acceptance](../qa/BROWSER_ACCEPTANCE.md) | 1.1 | Current | 2026-11-07 |
 | EKI-TST-005 | [Disposable Emulator Acceptance](../qa/EMULATOR_ACCEPTANCE.md) | 1.1 | Current | 2026-11-07 |
@@ -203,7 +203,7 @@ The register lists every controlled document by its source path. A mirror carrie
 | EKI-TST-012 | [Reviewed Unit Sub-Oracles](../qa/REVIEWED_UNIT_EVIDENCE.md) | 1.1 | Current | 2026-11-07 |
 | EKI-TST-013 | [Scheduled Reliability Workflows](../qa/SCHEDULED_RELIABILITY.md) | 2.1 | Current | 2026-11-07 |
 | EKI-TST-014 | [Bounded DAST and OpenAPI Scans](../qa/DAST.md) | 1.0 | Current | 2026-11-23 |
-| EKI-TST-019 | [Visual and Accessibility-Tree Baselines](../qa/VISUAL_BASELINES.md) | 1.0 | Current | 2026-11-24 |
+| EKI-TST-019 | [Visual and Accessibility-Tree Baselines](../qa/VISUAL_BASELINES.md) | 1.1 | Current | 2026-11-25 |
 | EKI-TST-020 | [Device and Screen-Reader Acceptance](../qa/DEVICE_AND_SCREEN_READER_ACCEPTANCE.md) | 1.1 | Current | 2026-11-24 |
 
 ### 4.14 Evidence records (EVD)

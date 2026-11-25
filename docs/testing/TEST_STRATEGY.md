@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-TST-002 | 3.3 | Current | 2026-11-24 |
+| EKI-TST-002 | 3.4 | Current | 2026-11-25 |
 
 ## 1. Purpose and scope
 
@@ -131,7 +131,7 @@ Every configuration except the default and the live Maps check starts its own se
 | `playwright.production-audit.config.ts` | `npx playwright test --config playwright.production-audit.config.ts` | `e2e/production-audit/` | Audit fixture, port 3123 | narrow 360 x 800, mobile 390 x 844, desktop 1280 x 800 | Yes |
 | `playwright.no-script.config.ts` | `npm run test:e2e:no-script` | `e2e/no-script/`: `/` and `/install` with JavaScript disabled show their static fallbacks and hide the loading placeholders; with JavaScript enabled the fallbacks stay out of the page | Built export from `frontend/out` with the `firebase.json` security headers (`e2e/no-script/serve-export.mjs`), `EKI_NOSCRIPT_PORT` or 3129 | android-small 360 x 800 and android (Pixel 7) with touch, desktop 1280 x 800 | Yes, after `build:production` |
 | `playwright.emulator.config.ts` | `npm run qa:browser` (never directly) | `e2e/emulator-acceptance.spec.ts` | Compiled backend 3116, frontend 3115, control 3117, with emulators | mobile 390 x 844, desktop 1280 x 800; one worker, no retries | Yes |
-| `playwright.visual.config.ts` | `npm run qa:visual` (never directly) | `e2e/visual/`: 19 reviewed states, each a screenshot and an accessibility tree compared with `e2e/visual/baselines/` | Passenger fixture on 3141 and the surface fixture (`e2e/visual/fixture/`) on 3142; browsers in the pinned Playwright image | phone (Pixel 7) 412 x 839 and tablet (iPad Pro 11) 834 x 1194 with touch, desktop 1280 x 800 | Yes, job `visual-baselines` |
+| `playwright.visual.config.ts` | `npm run qa:visual` (never directly) | `e2e/visual/`: the reviewed states listed in [visual baselines, Section 2.2](../../qa/VISUAL_BASELINES.md#22-reviewed-states), each a screenshot and an accessibility tree compared with `e2e/visual/baselines/` | Passenger fixture on 3141 and the surface fixture (`e2e/visual/fixture/`) on 3142; browsers in the pinned Playwright image | phone (Pixel 7) 412 x 839 and tablet (iPad Pro 11) 834 x 1194 with touch, desktop 1280 x 800 | Yes, job `visual-baselines` |
 | `playwright.routing.config.ts` | `npx playwright test --config playwright.routing.config.ts` | `e2e/routing/marker.spec.ts` | Routing fixture, port 3162 | Desktop Chrome default (1280 x 720) | No |
 | `playwright.routing.maps.config.ts` | Manual; see [live Maps check](../../e2e/routing/live-maps/README.md) | `e2e/routing/live-maps/in-app.spec.ts` | Live Maps fixture, port 3163 | 1920 x 1080; one test at 360 x 800 with touch | No |
 

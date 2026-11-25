@@ -78,8 +78,8 @@ type CaptureOptions = {
   /** Keep the transit artwork instead of replacing it with a flat tone. */
   showArtwork?: boolean;
   /**
-   * Differing pixels tolerated. Every state is pixel-exact except the map
-   * tracking views, whose overlays and translucent sheet anti-alias slightly
+   * Differing pixels tolerated; 0 by default. Only the map tracking views set
+   * it, because their overlays and translucent sheet anti-alias slightly
    * differently from run to run (qa/VISUAL_BASELINES.md, Section 5).
    */
   maxDiffPixels?: number;
