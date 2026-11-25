@@ -3,7 +3,7 @@
 // passenger opens the demo ride, picks stops in the Thumb drawer and opens
 // Routes and Profile themselves, or lets Next do each step; the tour can be
 // skipped or replayed from Profile.
-import { lazy, Suspense, useEffect, type ComponentType } from "react";
+import { lazy, Suspense, useEffect, useState, type ComponentType } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, configure, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -46,7 +46,16 @@ vi.mock("@/components/maps/PassengerTrackingMap", () => ({ default: function QaM
 vi.mock("@/components/passenger/AccountTab", () => ({
   default: ({ onReplayTour }: { onReplayTour?: () => void }) => <button type="button" onClick={onReplayTour}>Replay app tour</button>,
 }));
-vi.mock("@/components/passenger/RoutesTab", () => ({ default: () => <p>QA timetables</p> }));
+// A stand-in Routes tab: one route row, and the tour hooks the real tab exposes.
+vi.mock("@/components/passenger/RoutesTab", () => ({
+  default: function QaRoutes({ onRouteOpen, openFirstRoute }: { onRouteOpen?: () => void; openFirstRoute?: number }) {
+    const [open, setOpen] = useState(false);
+    useEffect(() => { if (openFirstRoute) setOpen(true); }, [openFirstRoute]);
+    useEffect(() => { if (open) onRouteOpen?.(); }, [open, onRouteOpen]);
+    return open ? <h2>QA route timetable</h2>
+      : <button type="button" data-tour="route-row" onClick={() => setOpen(true)}>View schedule for QA route</button>;
+  },
+}));
 vi.mock("@/components/shared/MessagingPanel", () => ({ default: () => <div>QA chat</div> }));
 vi.mock("@/components/shared/FeedbackModal", () => ({ default: () => <div>QA feedback</div> }));
 
@@ -71,7 +80,7 @@ describe("app tour", () => {
     render(<PassengerWorkspace />);
     expect((await tourCard()).getAttribute("aria-labelledby")).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Welcome to Eki" })).toBeTruthy();
-    expect(screen.getByText("1 of 5")).toBeTruthy();
+    expect(screen.getByText("1 of 6")).toBeTruthy();
     expect(screen.getByText(/Your turn/)).toBeTruthy();
     expect(screen.getByRole("button", { name: "Skip tour" })).toBeTruthy();
     // Focus starts on the card's content, not on a button with a ring.
@@ -86,16 +95,26 @@ describe("app tour", () => {
     await userEvent.click(await screen.findByRole("combobox", { name: "Boarding stop" }));
     await userEvent.click(await screen.findByRole("option", { name: "Gurukul Road" }));
     await userEvent.click(await screen.findByRole("option", { name: "Ahmedabad University" }));
-    expect(await screen.findByRole("heading", { name: "Your trip, out of the way" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "Your trip" })).toBeTruthy();
     expect((await screen.findByRole("group", { name: "Your trip", hidden: true })).textContent).toContain("Gurukul Road");
 
-    // A step with nothing to try moves on with Next.
+    // Steps with nothing to try move on with Next. The demo ride has no
+    // driver, so the tour shows where chat sits on a real bus.
+    await next();
+    expect(await screen.findByRole("heading", { name: "Text the driver" })).toBeTruthy();
+    expect(document.querySelector('[data-tour="chat"]')).toBeTruthy();
     await next();
     expect(await screen.findByRole("heading", { name: "Timetables" })).toBeTruthy();
+    expect(document.querySelector('[data-tour="chat"]')).toBeNull();
     expect(section()).toBe("tracking");
+
+    // Routes waits for a route to be opened, not just the tab.
     await userEvent.click(screen.getByRole("button", { name: "Routes" }));
-    expect(await screen.findByRole("heading", { name: "Your profile" })).toBeTruthy();
     expect(section()).toBe("routes");
+    expect(screen.getByRole("heading", { name: "Timetables" })).toBeTruthy();
+    await userEvent.click(await screen.findByRole("button", { name: "View schedule for QA route" }));
+    expect(await screen.findByRole("heading", { name: "Your profile" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "QA route timetable" })).toBeTruthy();
 
     // Opening Profile finishes the tour there, beside Replay app tour.
     await userEvent.click(screen.getByRole("button", { name: "Profile" }));
@@ -115,13 +134,17 @@ describe("app tour", () => {
     // Next chooses the stop the bus is heading to and the terminus; the bar
     // then slides into the drawer.
     await next();
-    expect(await screen.findByRole("heading", { name: "Your trip, out of the way" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "Your trip" })).toBeTruthy();
     expect((await screen.findByRole("group", { name: "Your trip", hidden: true })).textContent).toContain("Gurukul Road");
 
     await next();
+    expect(await screen.findByRole("heading", { name: "Text the driver" })).toBeTruthy();
+    await next();
     expect(await screen.findByRole("heading", { name: "Timetables" })).toBeTruthy();
+    // Next opens Routes and a route's timetable.
     await next();
     expect(await screen.findByRole("heading", { name: "Your profile" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "QA route timetable" })).toBeTruthy();
     expect(section()).toBe("routes");
     expect(window.location.hash).toBe("#routes");
     expect(screen.queryByRole("button", { name: "Skip tour" })).toBeNull();

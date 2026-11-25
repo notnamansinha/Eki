@@ -13,7 +13,7 @@ import { useDialogFocus } from "@/hooks/useDialogFocus";
  * Skip at the top of the card ends the tour.
  */
 
-export type TourStepId = "welcome" | "welcome-no-ride" | "stops" | "drawer" | "routes" | "profile";
+export type TourStepId = "welcome" | "welcome-no-ride" | "stops" | "drawer" | "chat" | "routes" | "profile";
 
 interface StepContent {
   title: string;
@@ -27,37 +27,43 @@ interface StepContent {
 export const TOUR_STEPS: Record<TourStepId, StepContent> = {
   welcome: {
     title: "Welcome to Eki",
-    body: "Live routes lists every bus running now. Tap the demo ride to try one.",
+    body: "Tap the demo ride to try a bus.",
     tryIt: true,
     targets: ['[data-passenger-route="demo-ride"]', ".passenger-home-heading"],
   },
   "welcome-no-ride": {
     title: "Welcome to Eki",
-    body: "Live routes lists every bus running now. Choose one to see where it is and when it reaches your stop.",
+    body: "Choose a route to see its bus live.",
     targets: [".passenger-home-heading"],
   },
   stops: {
     title: "Choose your stops",
-    body: "Tap From, then pick where you board and where you're going. Arrival times are live.",
+    body: "Tap From, then pick two stops.",
     tryIt: true,
     // While the passenger picks, the route timeline is the part to use.
     targets: ["[data-tracking-dock] .pp-picker", "[data-tracking-dock] .pp-trip-bar", "[data-tracking-dock] .pp-trip"],
   },
   drawer: {
-    title: "Your trip, out of the way",
-    body: "Your stops tuck into this drawer with the bus's arrival time. When the bus reaches your stop, you're marked on board automatically.",
+    title: "Your trip",
+    body: "You're marked on board when the bus reaches your stop.",
     // The drawer with the boarding note above it, which says how boarding works.
     targets: ["[data-tracking-dock] .pp-trip-stack", "[data-tracking-dock] .pp-trip-drawer", "[data-tracking-dock] .pp-trip"],
   },
+  chat: {
+    title: "Text the driver",
+    body: "On a real bus, tap here to chat.",
+    targets: ['[data-tour="chat"]'],
+  },
   routes: {
     title: "Timetables",
-    body: "Tap Routes to see every line with its stops and scheduled times.",
+    body: "Tap Routes, then a route.",
     tryIt: true,
-    targets: ['[data-tour="routes-tab"]'],
+    // Once Routes is open, a route row is the part to tap.
+    targets: ['[data-tour="route-row"]', '[data-tour="routes-tab"]'],
   },
   profile: {
     title: "Your profile",
-    body: "Tap Profile to send feedback, manage your account or replay this tour.",
+    body: "Tap Profile. You can replay this tour there.",
     tryIt: true,
     targets: ['[data-tour="profile-tab"]'],
   },
@@ -82,7 +88,8 @@ const SPOTLIGHT_PADDING = 6;
 
 function findTarget(selectors: string[]): HTMLElement | null {
   for (const selector of selectors) {
-    const element = document.querySelector<HTMLElement>(selector);
+    // A section that is not showing keeps its layout but is hidden and inert; skip it.
+    const element = [...document.querySelectorAll<HTMLElement>(selector)].find(candidate => !candidate.closest('[aria-hidden="true"], [inert]'));
     const box = element?.getBoundingClientRect();
     if (element && box && box.width > 0 && box.height > 0) return element;
   }

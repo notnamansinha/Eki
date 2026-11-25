@@ -194,8 +194,8 @@ export default function PassengerWorkspace() {
     const { pathname, search } = window.location;
     if (window.location.hash !== hash) window.history.pushState(null, "", pathname + search + hash);
     showSection(section);
-    // The tour asked for this tab.
-    if (section === "routes" || section === "profile") advanceTour(section);
+    // The tour asked for this tab (Routes moves on once a route is opened).
+    if (section === "profile") advanceTour(section);
   }
 
   const { routes: configuredRoutes, error: routesError, retry: retryRoutes } = useRoutes();
@@ -211,6 +211,8 @@ export default function PassengerWorkspace() {
   // account already checked for a first sign-in.
   const [tour, setTour] = useState<{ steps: TourStepId[]; index: number } | null>(null);
   const [tourTrip, setTourTrip] = useState<{ boardingStopId: string; alightingStopId: string }>();
+  // Bumped by Next on the Routes step to open the first route's timetable.
+  const [tourOpenRoute, setTourOpenRoute] = useState(0);
   const tourCheckedUid = useRef<string | null>(null);
   const [mapEstimates, setMapEstimates] = useState<PassengerStopEstimates>();
   const updateStopEstimates = useCallback((next: PassengerStopEstimates) => {
@@ -679,7 +681,11 @@ export default function PassengerWorkspace() {
       if (from >= 0 && isDemoRouteId(effectiveRouteId)) {
         setTourTrip({ boardingStopId: stops[from].id, alightingStopId: stops[stops.length - 1].id });
       }
-    } else if (step === "routes" || step === "profile") {
+    } else if (step === "routes") {
+      // Open Routes and the first route's timetable, as two taps would.
+      tourSection("routes");
+      setTourOpenRoute(count => count + 1);
+    } else if (step === "profile") {
       setIsMessagingOpen(false);
       tourSection(step);
     }
@@ -707,7 +713,7 @@ export default function PassengerWorkspace() {
     // The ride steps need the demo ride and live data; otherwise the tour
     // still introduces Live routes, Routes and Profile.
     const steps: TourStepId[] = showDemoRide
-      ? ["welcome", "stops", "drawer", "routes", "profile"]
+      ? ["welcome", "stops", "drawer", "chat", "routes", "profile"]
       : ["welcome-no-ride", "routes", "profile"];
     setIsMessagingOpen(false);
     tourSection("home");
@@ -723,6 +729,7 @@ export default function PassengerWorkspace() {
     if (user) markTourSeen(user.uid);
     setTour(null);
     setTourTrip(undefined);
+    setTourOpenRoute(0);
     setIsMessagingOpen(false);
     tourSection(section);
     if (keyboard && section === "home") window.requestAnimationFrame(() => liveRoutesHeading.current?.focus({ preventScroll: true }));
@@ -740,6 +747,7 @@ export default function PassengerWorkspace() {
       markTourSeen(uid);
       setTour(null);
       setTourTrip(undefined);
+      setTourOpenRoute(0);
     };
     window.addEventListener("popstate", closeOnBack);
     return () => window.removeEventListener("popstate", closeOnBack);
@@ -785,9 +793,13 @@ export default function PassengerWorkspace() {
   const homeSheetSwipe = useSheetSwipe({ isOpen: homeSheetOpen, onToggle: toggleHomeSheet });
   // A status card joins the top line only when there is something to say.
   const headerCardShown = !activeBusOnRoute || showBusSelector || !busSelectable || !boardingAvailable;
-  const chatButton = chatAvailable && activeSessionId && isLiveChatDeviceOnline(activeBusOnRoute) && !chatShown(visibleView) ? (
+  // The demo ride has no driver to text; the tour shows where chat sits on a real bus.
+  const tourChatPreview = tourStep === "chat" && trackingDemo;
+  const chatButton = tourChatPreview || (chatAvailable && activeSessionId && isLiveChatDeviceOnline(activeBusOnRoute) && !chatShown(visibleView)) ? (
     <button
-      onClick={handleOpenMessaging}
+      type="button"
+      data-tour="chat"
+      onClick={tourChatPreview ? undefined : handleOpenMessaging}
       className="pp-map-button relative ml-auto pointer-events-auto animate-scale-in"
       aria-label={activeSessionId ? "Open live chat" : "Open live chat status"}
       title={activeSessionId ? "Open live chat" : "Device online; chat will unlock when the ride is armed"}
@@ -1153,7 +1165,12 @@ export default function PassengerWorkspace() {
 
         {/* ── ROUTES (SCHEDULE) VIEW ── */}
         <div inert={visibleView !== "routes"} aria-hidden={visibleView !== "routes"} className={`absolute inset-0 z-30 flex flex-col transition-[opacity,transform] duration-200 ${visibleView === "routes" ? "opacity-100 translate-y-0 pointer-events-auto" : "opacity-0 translate-y-2 pointer-events-none"}`}>
-          {routesMounted && <RoutesTab />}
+          {routesMounted && (
+            <RoutesTab
+              onRouteOpen={tourStep === "routes" && visibleView === "routes" ? () => advanceTour("routes") : undefined}
+              openFirstRoute={tourOpenRoute > 0 ? tourOpenRoute : undefined}
+            />
+          )}
         </div>
 
         {/* ── PROFILE VIEW ── */}

@@ -119,6 +119,22 @@ describe("passenger Routes tab", () => {
     expect(document.activeElement).toBe(screen.getByRole("heading", { name: "Routes" }));
   });
 
+  it("tells the app tour when a route is opened, and opens the first route on request", async () => {
+    const onRouteOpen = vi.fn();
+    const view = render(<RoutesTab onRouteOpen={onRouteOpen} />);
+    // The first row is the one the tour spotlights.
+    expect(screen.getByRole("button", { name: "View schedule for Express" }).dataset.tour).toBe("route-row");
+    expect(onRouteOpen).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole("button", { name: "View schedule for Campus Loop" }));
+    expect(onRouteOpen).toHaveBeenCalledOnce();
+    view.unmount();
+
+    // Next in the tour: open the first listed route without a tap.
+    render(<RoutesTab openFirstRoute={1} />);
+    expect(screen.getByRole("button", { name: "Back to all routes" })).toBeTruthy();
+    expect(screen.getByRole("heading", { level: 2, name: "Express" })).toBeTruthy();
+  });
+
   it("shows a missing time as not set", () => {
     render(<RoutesTab />);
     const [north, south] = stopItems("Express");
