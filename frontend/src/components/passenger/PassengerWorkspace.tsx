@@ -194,8 +194,7 @@ export default function PassengerWorkspace() {
     const { pathname, search } = window.location;
     if (window.location.hash !== hash) window.history.pushState(null, "", pathname + search + hash);
     showSection(section);
-    // The tour asked for this tab (Routes moves on once a route is opened).
-    if (section === "profile") advanceTour(section);
+    // The tour waits on these tabs: Routes for a route, Profile for Done.
   }
 
   const { routes: configuredRoutes, error: routesError, retry: retryRoutes } = useRoutes();
@@ -697,8 +696,16 @@ export default function PassengerWorkspace() {
     if (tour.index >= tour.steps.length - 1) { endTour(step === "profile" ? "profile" : "home"); return; }
     setTour({ ...tour, index: tour.index + 1 });
   };
+  // Routes and Profile change once the passenger is on that screen: Routes
+  // asks for a route, and Profile shows the closing card beside Replay.
+  const tourStepReached = (tourStep === "routes" || tourStep === "profile") && visibleView === tourStep;
   const nextTourStep = () => {
     if (!tourStep) return;
+    // Profile: the first Next opens it; Done on the closing card ends the tour there.
+    if (tourStep === "profile") {
+      if (tourStepReached) endTour("profile"); else performTourStep("profile");
+      return;
+    }
     performTourStep(tourStep);
     advanceTour(tourStep);
   };
@@ -1221,7 +1228,16 @@ export default function PassengerWorkspace() {
         </nav>
       </div>
     </div>
-    {tour && <AppTour steps={tour.steps} index={tour.index} onNext={nextTourStep} onSkip={() => endTour()} />}
+    {tour && (
+      <AppTour
+        steps={tour.steps}
+        index={tour.index}
+        reached={tourStepReached}
+        onNext={nextTourStep}
+        // Escape on the closing card leaves the passenger on Profile.
+        onSkip={() => endTour(tourStep === "profile" && tourStepReached ? "profile" : "home")}
+      />
+    )}
     </>
   );
 }

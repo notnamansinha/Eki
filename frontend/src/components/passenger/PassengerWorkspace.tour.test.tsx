@@ -108,16 +108,22 @@ describe("app tour", () => {
     expect(document.querySelector('[data-tour="chat"]')).toBeNull();
     expect(section()).toBe("tracking");
 
-    // Routes waits for a route to be opened, not just the tab.
+    // Routes asks for the tab, then for a route, and moves on once one opens.
+    expect(screen.getByText("Tap Routes.")).toBeTruthy();
     await userEvent.click(screen.getByRole("button", { name: "Routes" }));
     expect(section()).toBe("routes");
-    expect(screen.getByRole("heading", { name: "Timetables" })).toBeTruthy();
+    expect(await screen.findByText("Tap a route to see its stops and times.")).toBeTruthy();
     await userEvent.click(await screen.findByRole("button", { name: "View schedule for QA route" }));
     expect(await screen.findByRole("heading", { name: "Your profile" })).toBeTruthy();
+    expect(screen.getByText("Tap Profile.")).toBeTruthy();
     expect(screen.getByRole("heading", { name: "QA route timetable" })).toBeTruthy();
 
-    // Opening Profile finishes the tour there, beside Replay app tour.
+    // Tapping Profile shows the closing card beside Replay app tour; Done ends it there.
     await userEvent.click(screen.getByRole("button", { name: "Profile" }));
+    expect(await screen.findByRole("heading", { name: "You're all set" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Skip tour" })).toBeNull();
+    expect(section()).toBe("profile");
+    await next("Done");
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(section()).toBe("profile");
     expect(window.location.hash).toBe("#profile");
@@ -147,6 +153,9 @@ describe("app tour", () => {
     expect(await screen.findByRole("heading", { name: "QA route timetable" })).toBeTruthy();
     expect(section()).toBe("routes");
     expect(window.location.hash).toBe("#routes");
+    // Next opens Profile and shows the closing card.
+    await next();
+    expect(await screen.findByRole("heading", { name: "You're all set" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Skip tour" })).toBeNull();
     await next("Done");
 

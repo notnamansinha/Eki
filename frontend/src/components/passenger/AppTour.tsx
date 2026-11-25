@@ -22,6 +22,8 @@ interface StepContent {
   tryIt?: boolean;
   /** The first selector that matches a visible element is spotlit. */
   targets: string[];
+  /** Shown once the passenger is on the step's screen (Routes, Profile). */
+  reached?: Omit<StepContent, "reached">;
 }
 
 export const TOUR_STEPS: Record<TourStepId, StepContent> = {
@@ -56,22 +58,36 @@ export const TOUR_STEPS: Record<TourStepId, StepContent> = {
   },
   routes: {
     title: "Timetables",
-    body: "Tap Routes, then a route.",
+    body: "Tap Routes.",
     tryIt: true,
-    // Once Routes is open, a route row is the part to tap.
-    targets: ['[data-tour="route-row"]', '[data-tour="routes-tab"]'],
+    targets: ['[data-tour="routes-tab"]'],
+    // On Routes, a route row is the part to tap; the step ends when its timetable opens.
+    reached: {
+      title: "Timetables",
+      body: "Tap a route to see its stops and times.",
+      tryIt: true,
+      targets: ['[data-tour="route-row"]'],
+    },
   },
   profile: {
     title: "Your profile",
-    body: "Tap Profile. You can replay this tour there.",
+    body: "Tap Profile.",
     tryIt: true,
     targets: ['[data-tour="profile-tab"]'],
+    // On Profile the tour closes beside the row that replays it.
+    reached: {
+      title: "You're all set",
+      body: "Replay this tour any time from here.",
+      targets: ['[data-tour="replay-tour"]'],
+    },
   },
 };
 
 interface Props {
   steps: TourStepId[];
   index: number;
+  /** The passenger is on this step's screen; show its `reached` content. */
+  reached?: boolean;
   onNext: () => void;
   onSkip: () => void;
 }
@@ -118,10 +134,14 @@ function cardPosition({ target, viewport, card }: Layout): { top: number; left: 
   };
 }
 
-export default function AppTour({ steps, index, onNext, onSkip }: Props) {
+export default function AppTour({ steps, index, reached = false, onNext, onSkip }: Props) {
   const stepId = steps[index];
-  const step = TOUR_STEPS[stepId];
-  const last = index === steps.length - 1;
+  const base = TOUR_STEPS[stepId];
+  const step = reached && base.reached ? base.reached : base;
+  // Each phase of a step is spotlit and scrolled to on its own.
+  const phase = reached && base.reached ? `${stepId}:reached` : stepId;
+  // The closing card: the last step once nothing is left to try.
+  const finishing = index === steps.length - 1 && !step.tryIt;
   const id = useId();
   const dialogRef = useDialogFocus<HTMLDivElement>(true, onSkip);
   const [layout, setLayout] = useState<Layout>({ target: null, viewport: { width: 0, height: 0 }, card: { width: 0, height: 0 } });
@@ -134,8 +154,8 @@ export default function AppTour({ steps, index, onNext, onSkip }: Props) {
     let frame = 0;
     const measureOnce = () => {
       const element = findTarget(step.targets);
-      if (element && scrolledStep.current !== stepId) {
-        scrolledStep.current = stepId;
+      if (element && scrolledStep.current !== phase) {
+        scrolledStep.current = phase;
         element.scrollIntoView?.({ block: "nearest" });
       }
       const box = element?.getBoundingClientRect();
@@ -157,7 +177,7 @@ export default function AppTour({ steps, index, onNext, onSkip }: Props) {
       window.cancelAnimationFrame(frame);
       window.clearInterval(timer);
     };
-  }, [step, stepId, dialogRef]);
+  }, [step, phase, dialogRef]);
 
   const position = cardPosition(layout);
   const { target, viewport } = layout;
@@ -207,7 +227,7 @@ export default function AppTour({ steps, index, onNext, onSkip }: Props) {
             {index + 1} of {steps.length}
             {step.tryIt && <span className="pp-tour-try"> · Your turn</span>}
           </p>
-          {!last && (
+          {!finishing && (
             <button type="button" className="pp-tour-skip" onClick={onSkip} aria-label="Skip tour">
               Skip
             </button>
@@ -223,7 +243,7 @@ export default function AppTour({ steps, index, onNext, onSkip }: Props) {
             ))}
           </div>
           <button type="button" className="pp-btn-primary pp-tour-next" onClick={onNext}>
-            {last ? "Done" : "Next"}
+            {finishing ? "Done" : "Next"}
           </button>
         </div>
         </div>

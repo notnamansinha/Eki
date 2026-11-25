@@ -117,7 +117,7 @@ export default function AccountTab({ onReplayTour }: { onReplayTour?: () => void
               <ChevronRight className="pp-list-chevron w-4 h-4" aria-hidden="true" />
             </button>
             {onReplayTour && (
-              <button type="button" className="pp-list-row" onClick={onReplayTour}>
+              <button type="button" className="pp-list-row" data-tour="replay-tour" onClick={onReplayTour}>
                 <span className="pp-list-icon">
                   <Compass className="w-[18px] h-[18px]" aria-hidden="true" />
                 </span>
