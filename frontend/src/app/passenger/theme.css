@@ -1436,6 +1436,10 @@ button.pp-picker-passed:hover { background: var(--surface-3); }
   position: fixed;
   pointer-events: auto;
   width: min(22rem, calc(100vw - 2rem));
+  /* In a short window or with large text the card scrolls, so Next stays reachable. */
+  max-height: calc(100dvh - 2rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 1rem 1.25rem 1.125rem;
   border: var(--pp-float-border);
   border-radius: var(--pp-dialog-radius);

@@ -191,11 +191,14 @@ export default function PassengerWorkspace() {
   }, [showSection]);
 
   function navigateSection(section: PassengerSection) {
+    // During the tour a tab tap replaces the history entry, as Next does, so
+    // the tour adds nothing to Back. The tour waits on Routes for a route and
+    // on Profile for Done.
+    if (tour) { tourSection(section); return; }
     const hash = section === "home" ? "" : "#" + section;
     const { pathname, search } = window.location;
     if (window.location.hash !== hash) window.history.pushState(null, "", pathname + search + hash);
     showSection(section);
-    // The tour waits on these tabs: Routes for a route, Profile for Done.
   }
 
   const { routes: configuredRoutes, error: routesError, retry: retryRoutes } = useRoutes();
@@ -720,8 +723,11 @@ export default function PassengerWorkspace() {
   };
   const startTour = () => {
     // The ride steps need the demo ride and live data; otherwise the tour
-    // still introduces Live routes, Routes and Profile.
-    const steps: TourStepId[] = showDemoRide
+    // still introduces Live routes, Routes and Profile. A passenger joined to
+    // a real ride also gets the short tour: a demo boarding must never replace
+    // the ride they are on.
+    const realRideJoined = Boolean(trackedSessionId) && !isDemoRouteId(joinedRouteId);
+    const steps: TourStepId[] = showDemoRide && !realRideJoined
       ? ["welcome", "stops", "drawer", "chat", "routes", "profile"]
       : ["welcome-no-ride", "routes", "profile"];
     setIsMessagingOpen(false);
