@@ -173,12 +173,15 @@ Keep it marked "Not a real bus" and out of the route count.
 
 After an account's first sign-in the passenger app runs a short, hands-on
 tour (`AppTour`, checked by `src/lib/firstRunTour.ts`) over the real screens,
-with Skip at the top of the card and Next at the bottom (2026-11-25: the user
-asked for it to be interactive, not just steps). On a "Your turn" step the
-spotlight stays usable and the tour moves on when the passenger acts: they tap
-the demo ride, choose their own stops so the From → To bar docks into the
-Thumb drawer, then tap Routes and Profile, where it ends. Next does each step
-for them and is the keyboard and screen reader path. Profile has **Replay app
-tour** (Lucide Compass). Keep it to five steps, in the passenger palette and
-type (Playfair title, gold rule, Roboto copy, AU Red Next). A finished or
-skipped tour is remembered per account in this browser.
+with Skip at the top of the card and Next at the bottom. On a "Your turn" step
+the spotlight stays usable and the tour moves on when the passenger acts: they
+tap the demo ride, choose their own stops so the From → To bar docks into the
+Thumb drawer, see where live chat sits (the demo ride has no driver, so the
+tour shows the chat button for that step only), tap Routes and open a route's
+timetable, then tap Profile, where it ends. Next does each step for them and
+is the keyboard and screen reader path. Profile has **Replay app tour**
+(Lucide Compass). Keep it to six steps with one short line of copy each
+(2026-11-25: the user asked for it hands-on, not just steps; 2026-11-26:
+less text), in the passenger palette and type
+(Playfair title, gold rule, Roboto copy, AU Red Next). A finished or skipped
+tour is remembered per account in this browser.
