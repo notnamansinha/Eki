@@ -1,0 +1,3 @@
+# Baselines are compared byte for byte by Playwright; keep them out of line-ending conversion.
+*.png binary
+*.aria.yml text eol=lf

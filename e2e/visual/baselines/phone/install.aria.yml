@@ -1,0 +1,12 @@
+- main:
+  - heading "Install Eki" [level=1]
+  - paragraph: Add Eki to your home screen to open it like an app.
+  - list:
+    - listitem: Open this page in Chrome.
+    - listitem: Tap the ⋮ menu.
+    - listitem:
+      - text: Tap
+      - strong: Install app
+      - text: or
+      - strong: Add to Home screen
+      - text: .

@@ -1,0 +1,15 @@
+- main:
+  - heading "Profile" [level=1]
+  - region "Account":
+    - group "Profile photo":
+      - img "Default profile"
+    - heading "QA Passenger" [level=2]
+    - text: Passenger
+  - button "Send feedback"
+  - button "Sign out"
+  - button "Delete account"
+  - paragraph: Eki
+- navigation "Passenger sections":
+  - button "Live"
+  - button "Routes"
+  - button "Profile"

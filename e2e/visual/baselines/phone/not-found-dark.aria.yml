@@ -1,0 +1,6 @@
+- main:
+  - paragraph: /\d+/
+  - heading "This page does not exist" [level=1]
+  - paragraph: The link may be old or mistyped. Live buses and routes are on Eki's home page.
+  - link "Go to Eki home":
+    - /url: /
