@@ -7,6 +7,8 @@ const restore = title => ({ path: 'frontend/src/components/passenger/PassengerWo
 const feedback = title => ({ path: 'frontend/src/components/shared/FeedbackModal.test.tsx', name: `passenger feedback workflow > ${title}`, level: 'L1' });
 const authSources = ['frontend/src/hooks/useAuth.ts', 'frontend/src/lib/authState.ts', 'frontend/src/lib/firebaseAppCheck.ts'];
 const boardingSources = ['frontend/src/components/passenger/PassengerBoardingView.tsx'];
+const demoRide = title => ({ path: 'frontend/src/lib/demoRide.test.ts', name: title, level: 'L1' });
+const demoWorkspace = title => ({ path: 'frontend/src/components/passenger/PassengerWorkspace.demoRide.test.tsx', name: title, level: 'L1' });
 const feedbackSources = ['frontend/src/components/shared/FeedbackModal.tsx', 'frontend/src/lib/feedbackStore.ts'];
 const rows = [
   ['AUTH07', 'Mounted auth provider keeps readiness closed after the eight-second restoration guard and before mocked role verification resolves; actual ten-second role-fetch/browser recovery remains separate.', authSources, [
@@ -44,6 +46,10 @@ const rows = [
   ['FEED07', 'Mounted feedback modal submits without a backend URL or tunnel and refuses Firestore connection failures without a success or local cooldown; durable atomic rules outcomes are covered by the emulator suite.', feedbackSources, [
     feedback('shows a connection error without success or a local cooldown'), feedback('submits to Firestore with the tunnel offline and no backend URL')]],
   ['FEED09', 'Mounted general-feedback modal disables empty submission and handles Escape/close without sending; rating/backdrop/focus and retained draft partitions remain separate.', feedbackSources, [feedback('supports close and Escape without submitting an empty form')]],
+  ['PAX13', 'The browser-simulated demo ride publishes a completed state for its session at the terminus, then starts the next ride as a new session; a mounted workspace with a joined demo ride shows "Demo ride complete" without the feedback prompt, a joined-ride pointer or any HTTP request. Real RTDB completion, feedback eligibility for real rides and the server session lifecycle remain separate.', ['frontend/src/lib/demoRide.ts', 'frontend/src/components/passenger/PassengerWorkspace.tsx'], [
+    demoRide('scripted ride > waits at the terminus, then completes so a joined passenger sees the ride end'),
+    demoRide('shared demo ride > starts a fresh ride on request, and the next one after a ride completes'),
+    demoWorkspace('riding the demo > boards without location or the backend, keeps no joined-ride pointer, and ends without feedback')]],
 ];
 export const componentTestMap = rows.map(([caseId, scope, sourcePaths, tests]) => ({ caseId, scope, sourcePaths,
   tests: tests.map(link => ({ ...link, semantics: scope })) }));
