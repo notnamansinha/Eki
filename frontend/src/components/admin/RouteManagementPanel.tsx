@@ -196,7 +196,7 @@ function RouteCard({ route, onEdit, onDelete }: { route: RouteData; onEdit: () =
           {route.stops?.length ?? 0} Stops
           {stopsOpen ? <ChevronUp className="w-2.5 h-2.5" /> : <ChevronDown className="w-2.5 h-2.5" />}
         </button>
-        {route.distanceMeters && (
+        {typeof route.distanceMeters === "number" && route.distanceMeters > 0 && (
           <span className="text-xs text-ui-quiet tabular-nums">{(route.distanceMeters / 1000).toFixed(1)} km</span>
         )}
       </div>

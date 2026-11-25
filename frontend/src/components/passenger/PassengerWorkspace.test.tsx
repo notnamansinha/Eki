@@ -550,6 +550,59 @@ describe("phone Live routes sheet", () => {
     expect(screen.queryByRole("button", { name: /live routes$/ })).toBeNull();
   });
 });
+describe("passenger live data permission denial", () => {
+  it("tells riders a denied catalog read is not a connection problem", () => {
+    setScenario("empty");
+    const resume = vi.spyOn(fixtures, "useRTDBResume").mockReturnValue({ isConnected: true, isResuming: true,
+      resumeGeneration: 0, connectionGeneration: 1, markSnapshotReceived: () => {} });
+    const catalog = vi.spyOn(fixtures, "useLiveRouteCatalog").mockReturnValue({ catalog: {}, projectionReady: true, catalogReady: false,
+      error: "Live route availability could not be loaded: access to live data was denied.", accessDenied: true, retry: () => {} } as unknown as ReturnType<typeof fixtures.useLiveRouteCatalog>);
+    try {
+      render(<PassengerWorkspace />);
+      expect(screen.getByText("Live bus data is unavailable.")).toBeTruthy();
+      expect(screen.getAllByText(/This is not a connection problem/).length).toBeGreaterThan(0);
+      expect(screen.queryByText("Check your connection, then try again.")).toBeNull();
+      expect(screen.queryByText(/Check your connection\./)).toBeNull();
+    } finally { catalog.mockRestore(); resume.mockRestore(); }
+  });
+  it("keeps a route's denial through a retry's network error until that route delivers again", async () => {
+    setScenario("forward");
+    const original = fixtures.subscribeLiveBusChangesByRoute;
+    let fail: ((error: Error) => void) | undefined;
+    const detail = vi.spyOn(fixtures, "subscribeLiveBusChangesByRoute").mockImplementation((routeId, listener, error) => {
+      fail = error;
+      return original(routeId, listener, error);
+    });
+    try {
+      render(<PassengerWorkspace />); const user = userEvent.setup();
+      await user.click(await screen.findByRole("button", { name: "Track QA route" }));
+      await waitFor(() => expect(fail).toBeDefined());
+      act(() => fail!(Object.assign(new Error("permission_denied at /publicRouteBuses"), { code: "PERMISSION_DENIED" })));
+      // The live store's retry then fails for another reason.
+      act(() => fail!(new Error("Network request failed")));
+      expect(screen.getByText("Live bus data is unavailable.")).toBeTruthy();
+      expect(screen.getAllByText(/This is not a connection problem/).length).toBeGreaterThan(0);
+      expect(screen.queryByText("Check your connection, then try again.")).toBeNull();
+      act(() => setScenario("forward"));
+      await waitFor(() => expect(screen.queryByText("Live bus data is unavailable.")).toBeNull());
+      expect(screen.queryByText(/This is not a connection problem/)).toBeNull();
+    } finally { detail.mockRestore(); }
+  });
+  it("tells riders a denied route detail read is not a connection problem", async () => {
+    setScenario("forward");
+    const detail = vi.spyOn(fixtures, "subscribeLiveBusChangesByRoute").mockImplementation((_routeId, _listener, error) => {
+      queueMicrotask(() => error?.(Object.assign(new Error("permission_denied at /publicRouteBuses"), { code: "PERMISSION_DENIED" })));
+      return () => {};
+    });
+    try {
+      render(<PassengerWorkspace />); const user = userEvent.setup();
+      await user.click(await screen.findByRole("button", { name: "Track QA route" }));
+      expect(await screen.findByText("Live bus data is unavailable.")).toBeTruthy();
+      expect(screen.getAllByText(/This is not a connection problem/).length).toBeGreaterThan(0);
+      expect(screen.queryByText("Check your connection, then try again.")).toBeNull();
+    } finally { detail.mockRestore(); }
+  });
+});
 describe("joined ride chat unread badge", () => {
   // The real panel scrolls to the newest message; jsdom has no layout or media queries.
   const scrollIntoView = Object.getOwnPropertyDescriptor(Element.prototype, "scrollIntoView");

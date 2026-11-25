@@ -55,6 +55,7 @@ import PassengerDate from "@/components/passenger/ui/PassengerDate";
 import { useSheetSwipe } from "@/components/passenger/ui/useSheetSwipe";
 import { isLiveChatDeviceOnline } from "@/lib/activeBusEntries";
 import { stopEstimateContext, stopEstimateLabel, type PassengerStopEstimates } from "@/lib/passengerStopEstimates";
+import { isPermissionDeniedError, PASSENGER_LIVE_ACCESS_DENIED_MESSAGE } from "@/lib/liveDataErrors";
 import {
   passengerBusAvailabilities,
   reuseUnchangedAvailabilities,
@@ -220,7 +221,7 @@ export default function PassengerWorkspace() {
     ...(demoRideEnabled ? [demoRoute] : []),
     ...(tourRide ? [tourRide.route] : []),
   ], [configuredRoutes, demoRideEnabled, tourRide]);
-  const { catalog: routeCatalog, projectionReady, catalogReady, error: catalogError, retry: retryCatalog } = useLiveRouteCatalog(`${connectionGeneration}:${resumeGeneration}`);
+  const { catalog: routeCatalog, projectionReady, catalogReady, error: catalogError, accessDenied: catalogAccessDenied, retry: retryCatalog } = useLiveRouteCatalog(`${connectionGeneration}:${resumeGeneration}`);
   const [selectedRouteId, setSelectedRouteId] = useState("");
   const [selectedDestinationStopId, setSelectedDestinationStopId] = useState("");
   const [selectedBoardingStopId, setSelectedBoardingStopId] = useState("");
@@ -246,6 +247,9 @@ export default function PassengerWorkspace() {
   const [trackedSessionId, setTrackedSessionId] = useState("");
   const [joinedRouteId, setJoinedRouteId] = useState("");
   const [detailDataError, setDetailDataError] = useState<string | null>(null);
+  // Routes whose detail read was denied and has not delivered since. Tracked per
+  // route so another route's network failure cannot clear an unresolved denial.
+  const [detailDeniedRoutes, setDetailDeniedRoutes] = useState<ReadonlySet<string>>(() => new Set());
   const [rideRecoveryError, setRideRecoveryError] = useState<string | null>(null);
   const [rideRecoveryNotice, setRideRecoveryNotice] = useState<string | null>(null);
   const [rideStatusRetry, setRideStatusRetry] = useState(0);
@@ -312,6 +316,10 @@ export default function PassengerWorkspace() {
   // to recover them. Catalog scope and user-selectable availability differ.
   const effectiveRouteId = ((currentView === "tracking" && Boolean(selectedRouteId)) || catalogRoutes.some(route => route.id === selectedRouteId))
     ? selectedRouteId : catalogRoutes[0]?.id ?? "";
+  // A permission denial is not a connection problem; never tell riders to check
+  // theirs. Only denials on routes still subscribed count.
+  const detailAccessDenied = [...detailDeniedRoutes].some(routeId => routeId === effectiveRouteId || routeId === joinedRouteId);
+  const liveAccessDenied = Boolean((catalogError && catalogAccessDenied) || (detailDataError && detailAccessDenied));
 
   // Listen to Firebase Realtime Database for active buses using the existing
   // Firebase session established by the root auth provider.
@@ -326,6 +334,12 @@ export default function PassengerWorkspace() {
     // Keep an explicitly joined ride observable while browsing another route.
     const subscribedRoutes = [...new Set([effectiveRouteId, joinedRouteId].filter((id): id is string => Boolean(id)))];
     const authoritative = new Set<string>();
+    const markRouteDenied = (routeId: string, denied: boolean) => setDetailDeniedRoutes(previous => {
+      if (previous.has(routeId) === denied) return previous;
+      const next = new Set(previous);
+      if (denied) next.add(routeId); else next.delete(routeId);
+      return next;
+    });
     const disposals = subscribedRoutes.map(routeId => subscribeRouteBusChanges(routeId, (change) => {
         if (!current()) return;
         const trackedRideSessionId =
@@ -385,13 +399,21 @@ export default function PassengerWorkspace() {
         ));
         if (isAuthoritativeLiveBusDelivery(change.source)) {
           authoritative.add(routeId);
+          markRouteDenied(routeId, false);
           if (authoritative.size === subscribedRoutes.length) { setDetailDataError(null); if (!catalogError) markSnapshotReceived(); }
         }
         if (change.source === "invalidation") authoritative.delete(routeId);
       }, (error) => {
         if (!current()) return;
         authoritative.delete(routeId);
-        setDetailDataError(`Live bus data could not be loaded. ${error.message}. Retry after checking your connection.`);
+        const denied = isPermissionDeniedError(error);
+        // The store retries failed listeners; a later non-permission error is
+        // not evidence that access returned. Only an authoritative delivery
+        // from this route clears its denial.
+        if (denied) markRouteDenied(routeId, true);
+        setDetailDataError(denied
+          ? "Live bus data could not be loaded: access to live data was denied."
+          : `Live bus data could not be loaded. ${error.message}. Retry after checking your connection.`);
       }));
 
     return () => {
@@ -485,6 +507,8 @@ export default function PassengerWorkspace() {
   // can still be waiting on the backend projection.
   const pausedNotice = !isConnected
     ? { title: "Live tracking paused", detail: "This device is reconnecting to live bus data. The last known location is shown; live ETAs and boarding resume when the connection returns." }
+    : liveAccessDenied
+      ? { title: "Live tracking paused", detail: `${PASSENGER_LIVE_ACCESS_DENIED_MESSAGE} The last known location is shown.` }
     : isResuming || liveDataError
       ? { title: "Live tracking paused", detail: "Live bus data is not available right now. The last known location is shown; live ETAs and boarding resume when it returns." }
       : activeBusOnRoute?.automaticServicePaused === true
@@ -882,7 +906,9 @@ export default function PassengerWorkspace() {
   // Only ride-recovery messages are written for riders; the others name internals.
   const plainDataError = !routesError && !catalogError && !detailDataError && rideRecoveryError
     ? rideRecoveryError
-    : "Check your connection, then try again.";
+    : liveAccessDenied && !routesError
+      ? PASSENGER_LIVE_ACCESS_DENIED_MESSAGE
+      : "Check your connection, then try again.";
 
   return (
     <>
@@ -986,6 +1012,8 @@ export default function PassengerWorkspace() {
                       <p className="pp-empty-detail">
                         {!isConnected
                           ? "Unable to reach live data. Check your connection."
+                          : liveAccessDenied
+                          ? PASSENGER_LIVE_ACCESS_DENIED_MESSAGE
                           : isResuming || liveDataError
                             ? "Live bus data is not available right now."
                             : formatNoBusesSubMessage(settings.noBusesSubMessage || "Service starts at {time}", settings.serviceStartTime || PASSENGER_BUS_START_TIME)}

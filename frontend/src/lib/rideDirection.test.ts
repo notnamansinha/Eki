@@ -6,6 +6,7 @@ import {
   normalizeRideDirection,
   persistedDirectionLabel,
   persistedDirectionLabelState,
+  REMOVED_STOP_LABEL,
   routeInRideDirection,
   routeInRideDirectionState,
 } from "./rideDirection";
@@ -67,6 +68,13 @@ describe("directional route views", () => {
     const reverse = routeInRideDirection(legacy, "reverse");
     expect(reverse.polyline).toBe("legacy-forward");
     expect(reverse.polylineQuality).toBeUndefined();
+  });
+
+  it("labels a session endpoint deleted from the route by its recorded name, never its stop ID", () => {
+    const recorded = [{ stopId: "stop-1792491592188-7k28u2", stopName: " Old Gate " }, { stopId: "z", stopName: "" }];
+    expect(persistedDirectionLabel("forward", route.stops, "stop-1792491592188-7k28u2", "z", recorded)).toBe("Old Gate → Z");
+    expect(persistedDirectionLabel("forward", route.stops, "a", "stop-deleted")).toBe(`A → ${REMOVED_STOP_LABEL}`);
+    expect(persistedDirectionLabelState("reverse", route.stops, "stop-deleted", "a", recorded)).toBe("Removed stop → A");
   });
 
   it("keeps persisted session endpoints stable after the route is edited", () => {

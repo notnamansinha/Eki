@@ -18,6 +18,18 @@ vi.mock("@/components/maps/DirectionsRoute", () => ({ default: () => null }));
 beforeEach(() => { mocks.save.mockReset(); mocks.newId.mockReset().mockReturnValue("qa-save-operation"); });
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 async function edit() { render(<RouteManagementPanel />); const user = userEvent.setup(); await user.click(screen.getByRole("button", { name: "Edit route QA route" })); return user; }
+describe("route card distance", () => {
+  const stopsRow = () => screen.getByRole("button", { name: /2 Stops/ }).parentElement!;
+  it.each([[0, "2 Stops"], [undefined, "2 Stops"], [12_345, "2 Stops12.3 km"]])("shows distance %s without a stray zero", (distanceMeters, text) => {
+    const route = mocks.route as typeof mocks.route & { distanceMeters?: number };
+    route.distanceMeters = distanceMeters;
+    try {
+      render(<RouteManagementPanel />);
+      expect(stopsRow().textContent).toBe(text);
+    } finally { delete route.distanceMeters; }
+  });
+});
+
 describe("route editing and operation recovery", () => {
   it("clears predictions immediately for a changed query and ignores a cancelled response", async () => {
     vi.stubEnv("NEXT_PUBLIC_BACKEND_URL", "https://qa.ngrok-free.dev");

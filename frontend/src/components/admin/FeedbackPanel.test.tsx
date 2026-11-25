@@ -29,6 +29,10 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.restoreAllMocks(); });
 async function expand() { const user = userEvent.setup(); await user.click(await screen.findByRole("button", { expanded: false })); return user; }
 describe("admin feedback Firestore workflow", () => {
+  it("titles the standalone console with a real page heading", async () => {
+    render(<FeedbackPanel />); await screen.findByText("QA Passenger");
+    expect(screen.getByRole("heading", { level: 1, name: "Feedback Console" })).toBeTruthy();
+  });
   it.each([false, true])("loads with no backend URL or tunnel (embedded=%s)", async embedded => {
     vi.stubGlobal("fetch", vi.fn(() => { throw new Error("Tunnel offline"); }));
     render(<FeedbackPanel embedded={embedded} />); await screen.findByText("QA Passenger");

@@ -2,9 +2,11 @@
 import { lazy, Suspense, type ComponentType } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, act, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import PassengerWorkspace from "./PassengerWorkspace";
 import { saveJoinedRidePointer, readJoinedRidePointer } from "@/lib/joinedRidePointer";
 import { setScenario } from "../../../../e2e/fixtures/state";
+import * as fixtures from "../../../../e2e/fixtures/state";
 const state = vi.hoisted(() => ({
   user: { uid: "qa-passenger", role: "passenger", displayName: "QA Passenger" },
   status: vi.fn(),
@@ -61,5 +63,27 @@ describe("verified reload boarding recovery", () => {
     state.status.mockResolvedValue({ ...verified, status: "interrupted" }); saveJoinedRidePointer(state.user.uid, "qa-session"); render(<PassengerWorkspace />);
     await screen.findByText("Your joined ride has ended."); expect(readJoinedRidePointer(state.user.uid)).toBeNull();
     expect(screen.queryByText("Verified a b")).toBeNull();
+  });
+  it("keeps a joined route's permission denial when another browsed route then fails to connect", async () => {
+    setScenario("two-routes");
+    state.status.mockResolvedValue(verified);
+    const original = fixtures.subscribeLiveBusChangesByRoute;
+    const failures = new Map<string, (error: Error) => void>();
+    const subscribe = vi.spyOn(fixtures, "subscribeLiveBusChangesByRoute").mockImplementation((routeId, listener, error) => {
+      if (error) failures.set(routeId, error);
+      return original(routeId, listener, error);
+    });
+    try {
+      saveJoinedRidePointer(state.user.uid, "qa-session"); render(<PassengerWorkspace />); const user = userEvent.setup();
+      expect(await screen.findByText("Verified a b")).toBeTruthy();
+      await user.click(screen.getByRole("button", { name: "Back to home" }));
+      await user.click(await screen.findByRole("button", { name: "Track QA route B" }));
+      await waitFor(() => expect(failures.has("qa-route") && failures.has("qa-route-2")).toBe(true));
+      act(() => failures.get("qa-route")!(Object.assign(new Error("permission_denied at /publicRouteBuses"), { code: "PERMISSION_DENIED" })));
+      act(() => failures.get("qa-route-2")!(new Error("Network request failed")));
+      expect(screen.getByText("Live bus data is unavailable.")).toBeTruthy();
+      expect(screen.getAllByText(/This is not a connection problem/).length).toBeGreaterThan(0);
+      expect(screen.queryByText("Check your connection, then try again.")).toBeNull();
+    } finally { subscribe.mockRestore(); }
   });
 });

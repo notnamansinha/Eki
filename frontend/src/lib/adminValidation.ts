@@ -26,6 +26,23 @@ export function validateOperatorInput(id: string, name: string, authUid: string)
   return null;
 }
 
+// "6:30 am", "6 pm", "6:30 a.m." (12-hour) or "06:30" / "18:30" (24-hour).
+const SERVICE_START_TIME_12H = /^(?:1[0-2]|0?[1-9])(?::[0-5]\d)?\s?(?:am|pm|a\.m\.|p\.m\.)$/i;
+const SERVICE_START_TIME_24H = /^(?:[01]?\d|2[0-3]):[0-5]\d$/;
+
+/**
+ * Passengers read this value inside "Service starts at {time}", so it must be
+ * a clock time. Checked as the admin types, not only on Save.
+ */
+export function validateServiceStartTime(value: string): string | null {
+  const time = value.trim();
+  if (!time) return "Service start time is required.";
+  if (!SERVICE_START_TIME_12H.test(time) && !SERVICE_START_TIME_24H.test(time)) {
+    return 'Service start time must be a clock time such as "6:30 am" or "18:30".';
+  }
+  return null;
+}
+
 export function validateSettingsInput(settings: {
   serviceStartTime: string;
   noBusesMessage: string;
