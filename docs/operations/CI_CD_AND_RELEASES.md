@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-OPS-001 | 4.2 | Current | 2026-11-21 |
+| EKI-OPS-001 | 5.0 | Current | 2026-11-24 |
 
 ## 1. Purpose
 
@@ -94,7 +94,7 @@ Before these steps, `deploy-staging` refuses a commit that `main` does not conta
 
 1. `npm ci`.
 2. `node scripts/verify-rtdb-deploy-target.mjs --project <project>`, then `npm run verify:rtdb-instance -- --require-region`. The first requires `firebase.json` to declare the RTDB rules as deploy targets and `.firebaserc` to map each target to an instance for the project, so a project without the mapping, such as `eki-production`, stops here, before App Check or the index deploy run. The second requires the backend and frontend database URLs to name the same RTDB instance, in the region that `RTDB_EXPECTED_REGION` names; the release fails when that variable is unset.
-3. `npm run build:production`: strict build that fails when one of the ten `NEXT_PUBLIC_*` values is missing or when the RTDB or backend URL is not a non-local HTTPS URL (`frontend/next.config.ts`), then regenerates the service worker and the CSP in `firebase.json` with the backend origin, and checks that the backend origin is in the CSP `connect-src` directive ([web and backend release check](../api/HTTP_CONTRACT.md#33-web-and-backend-release-check)).
+3. `npm run build:production`: strict build that fails when one of the ten `NEXT_PUBLIC_*` values is missing or when the RTDB or backend URL is not a non-local HTTPS URL (`frontend/next.config.ts`), marks the landing page's start-up chunks for eager compilation and fails when they exceed their gzip budget (`scripts/compile-hints.mjs`), then regenerates the service worker and the CSP in `firebase.json` with the backend origin, and checks that the backend origin is in the CSP `connect-src` directive ([web and backend release check](../api/HTTP_CONTRACT.md#33-web-and-backend-release-check)).
 4. `npm run verify:web-backend-contract` with `EKI_RUNTIME_SMOKE=1`, on every run of `deploy-production` and on a `deploy-staging` run only when the dispatch also sets `deploy_backend: true`: the live backend at `NEXT_PUBLIC_BACKEND_URL` must answer `/health` with `status: ok`, allow the frontend origin (`https://bustrack-be165.web.app` or `https://eki-production.web.app`) in CORS, and accept the preflight for `POST /api/users/bootstrap`. While `/health` answers 502, 503 or 504, or does not answer within 10 s, the check retries for up to 90 s, because a backend that scaled to zero answers 503 until its first Firestore and RTDB probes succeed. Any other failure stops the release at once. An automatic staging release and a staging dispatch without `deploy_backend` skip this step: the probe would wake the wake-on-traffic staging service and would fail whenever that service does not accept public requests.
 5. `node scripts/disable-appcheck-enforcement.mjs --project <project> --disable`: sets App Check enforcement for Firestore and RTDB to `UNENFORCED` and verifies the result. The web app does not use App Check.
 6. Deploy `firestore:indexes`, then wait up to 30 minutes for the deployed query shapes ([Firestore index deployment](FIRESTORE_INDEX_DEPLOYMENT.md)).

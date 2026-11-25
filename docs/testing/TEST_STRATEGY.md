@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-TST-002 | 4.0 | Current | 2026-11-25 |
+| EKI-TST-002 | 4.0 | Current | 2026-11-26 |
 
 ## 1. Purpose and scope
 
@@ -71,7 +71,7 @@ Run every command from the repository root unless stated otherwise.
 npm run verify
 ```
 
-`verify` runs, in order: frontend and backend ESLint; `npm test`; `npm run build`; `npm audit --omit=dev --omit=optional`. `npm test` runs the script tests (`node --test scripts/*.test.mjs`), `verify:openapi`, `verify:ui-contracts`, then the backend and frontend Vitest suites. `npm run build` compiles the backend, builds the static frontend export, injects the Workbox service worker, regenerates CSP hashes and checks that the configured backend origin is in the CSP `connect-src`.
+`verify` runs, in order: frontend and backend ESLint; `npm test`; `npm run build`; `npm audit --omit=dev --omit=optional`. `npm test` runs the script tests (`node --test scripts/*.test.mjs`), `verify:openapi`, `verify:ui-contracts`, then the backend and frontend Vitest suites. `npm run build` compiles the backend, builds the static frontend export, marks the landing page's start-up chunks for eager compilation and fails when they exceed their gzip budget (`scripts/compile-hints.mjs`), injects the Workbox service worker, regenerates CSP hashes and checks that the configured backend origin is in the CSP `connect-src`.
 
 `verify` does not run the emulator suites, any Playwright suite or PlatformIO. The backend emulator suites are declared with `describe.skip` unless `FIREBASE_RULES_TEST=1`, so `npm test` passes while they are skipped. Run `npm run test:rules` to execute them.
 
