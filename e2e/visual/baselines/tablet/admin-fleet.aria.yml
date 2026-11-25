@@ -1,0 +1,43 @@
+- main:
+  - tablist "Administration sections":
+    - tab "Live Ops"
+    - tab "Routes"
+    - tab "Fleet & People" [selected]
+    - tab "History"
+    - tab "Feedback"
+    - tab "Settings"
+  - link "Passenger Panel":
+    - /url: /passenger
+  - tabpanel "Fleet & People":
+    - heading "Fleet Vehicles" [level=2]
+    - paragraph: Manage Bus IDs
+    - paragraph: Register new vehicle
+    - textbox "New vehicle Bus ID":
+      - /placeholder: Bus ID (e.g. bus_01)
+    - textbox "New vehicle display name":
+      - /placeholder: Display Name (e.g. Red Line Express)
+    - text: Assign Allowed Routes
+    - checkbox "Ahmedabad University Extended Campus and Science Research Shuttle"
+    - text: Ahmedabad University Extended Campus and Science Research Shuttle
+    - button "Add new vehicle": Add Vehicle
+    - button "Collapse saved vehicles": Saved Vehicles 1
+    - text: Synthetic bus qa-bus In Service Device online 0 km/h
+    - button "Edit vehicle Synthetic bus"
+    - button "Delete vehicle Synthetic bus"
+    - heading "Driver Personnel" [level=2]
+    - paragraph: Manage Operator IDs
+    - paragraph: Register new operator
+    - textbox "New operator ID":
+      - /placeholder: Operator ID (e.g. drv_1)
+    - textbox "New operator display name":
+      - /placeholder: Display Name (e.g. Ravi Kumar)
+    - textbox "Firebase Auth UID for new operator":
+      - /placeholder: Firebase Auth UID
+    - combobox "Assign vehicle to new operator":
+      - option "— Assign Vehicle —" [selected]
+      - option "Synthetic bus (qa-bus)"
+    - button "Add new operator": Add Operator
+    - button "Collapse saved operators": Saved Operators 1 1 Live
+    - text: Synthetic operator qa-driver In Service 0 km/h
+    - button "Edit operator Synthetic operator"
+    - button "Delete operator Synthetic operator"

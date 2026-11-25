@@ -1,0 +1,19 @@
+- main:
+  - tablist "Administration sections":
+    - tab "Live Ops"
+    - tab "Routes" [selected]
+    - tab "Fleet & People"
+    - tab "History"
+    - tab "Feedback"
+    - tab "Settings"
+  - link "Passenger Panel":
+    - /url: /passenger
+  - tabpanel "Routes":
+    - heading "Routes" [level=2]
+    - paragraph: Manage bus routes and stops
+    - button "Add Route"
+    - paragraph: Ahmedabad University Extended Campus and Science Research Shuttle
+    - paragraph: qa-route
+    - button "Edit route Ahmedabad University Extended Campus and Science Research Shuttle"
+    - button "Delete route Ahmedabad University Extended Campus and Science Research Shuttle"
+    - button "2 Stops"
