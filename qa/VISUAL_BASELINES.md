@@ -92,7 +92,7 @@ Run every command from the repository root.
 npm run qa:visual
 ```
 
-Expected result: every test passes (53 tests, plus one skipped on `desktop`). A comparison never writes a baseline, so a missing baseline fails. Differences, traces and an HTML report go to `artifacts/visual/`; CI keeps them for 7 days as the `visual-baselines` artifact. Arguments after `--` go to `playwright test`, for example `npm run qa:visual -- --project=phone -g "profile"`.
+Expected result: every test passes, except that the touch-only `passenger-live-routes` state is skipped on `desktop` (Section 2.2). A comparison never writes a baseline, so a missing baseline fails. Differences, traces and an HTML report go to `artifacts/visual/`; CI keeps them for 7 days as the `visual-baselines` artifact. Arguments after `--` go to `playwright test`, for example `npm run qa:visual -- --project=phone -g "profile"`.
 
 ### 4.2 Update and review baselines after an intended change
 
