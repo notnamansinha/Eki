@@ -61,6 +61,18 @@ describe("admin live data read failures", () => {
     expect(screen.getByText("Offline / reconnecting to live data...")).toBeTruthy();
   });
 
+  it("keeps the denial when a retry then fails for another reason", () => {
+    state.resuming = false;
+    render(<DashboardPanel />);
+    act(() => state.options?.onReadError?.(rtdbError("PERMISSION_DENIED", "permission_denied at /x")));
+    act(() => state.options?.onReadError?.(new Error("network error")));
+    expect(screen.getAllByText("Live data access denied").length).toBeGreaterThan(0);
+    expect(screen.queryByText(/Check your connection/)).toBeNull();
+    act(() => state.options?.onReadRecovered?.());
+    act(() => state.options?.onReadError?.(new Error("network error")));
+    expect(screen.getByRole("alert").textContent).toContain("Check your connection and reload to retry.");
+  });
+
   it("clears the denial once a live delivery recovers the read", () => {
     state.resuming = false;
     render(<DashboardPanel />);

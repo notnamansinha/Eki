@@ -10,7 +10,10 @@ import { classifyLiveReadFailure, type LiveReadFailure } from "@/lib/liveDataErr
  */
 export function useLiveReadFailure() {
   const [failure, setFailure] = useState<LiveReadFailure | null>(null);
-  const onReadError = useCallback((error: Error) => setFailure(classifyLiveReadFailure(error)), []);
+  // A denial stays until a live delivery recovers the read: the store retries after
+  // every listener error, and a later network error must not turn it back into
+  // "check your connection".
+  const onReadError = useCallback((error: Error) => setFailure((current) => (current === "permission_denied" ? current : classifyLiveReadFailure(error))), []);
   const onReadRecovered = useCallback(() => setFailure(null), []);
   return { failure, onReadError, onReadRecovered };
 }
