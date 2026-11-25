@@ -20,7 +20,7 @@ const adminToken = (extra = {}) => jwt({ aud: 'bustrack-be165', iss: 'https://se
   exp: Math.floor(now / 1000) + 3600, user_id: 'test-admin', role: 'admin', admin: true, ...extra });
 const deployedEnv = (overrides = {}) => ({
   EKI_LOAD_TARGET: origin, EKI_LOAD_CONFIRM_TARGET: origin,
-  EKI_LOAD_EXPECTED_REVISION: 'eki-backend-staging-00012-x7q', EKI_LOAD_ADMIN_ID_TOKEN: adminToken(), ...overrides,
+  EKI_LOAD_EXPECTED_REVISION: 'eki-backend-staging-00012-x7q', EKI_LOAD_ADMIN_ID_TOKEN: adminToken(), EKI_LOAD_K6_VUS: '40', ...overrides,
 });
 const deployed = (overrides, options = {}) => assertDeployedRun(deployedEnv(overrides), { now, ...options });
 
@@ -29,7 +29,7 @@ test('k6 and Toxiproxy images are pinned by version and digest', () => {
   assert.match(TOXIPROXY_IMAGE, /^ghcr\.io\/shopify\/toxiproxy:\d+\.\d+\.\d+@sha256:[0-9a-f]{64}$/);
 });
 
-test('each of the five profiles is a thin k6 entry point with no remote import', () => {
+test('each of the six profiles is a thin k6 entry point with no remote import', () => {
   assert.deepEqual([...PROFILE_NAMES].sort(), [...PROFILE_ORDER].sort());
   for (const name of [...PROFILE_NAMES, 'common']) {
     const source = readFileSync(resolve(repositoryRoot, `qa/k6/${name}.js`), 'utf8');
@@ -46,7 +46,7 @@ test('each of the five profiles is a thin k6 entry point with no remote import',
 test('thresholds follow issue #518: 800 ms p95 off peak, 900 ms at peak, and shedding only at peak', () => {
   for (const profile of PROFILE_NAMES) {
     const { thresholds } = optionsFor(profile, {});
-    const peak = ['stress', 'spike'].includes(profile);
+    const peak = ['headroom', 'stress', 'spike'].includes(profile);
     assert.deepEqual(thresholds.http_req_failed, ['rate<0.01']);
     assert.deepEqual(thresholds.checks, ['rate>0.99']);
     assert.deepEqual(thresholds['http_req_duration{expected_response:true}'], [`p(95)<${peak ? 900 : 800}`]);
@@ -64,6 +64,8 @@ test('local profiles are bounded to minutes and the spike reaches its peak in 10
   assert.equal(spike.startVUs, 0);
   assert.deepEqual(scenarioFor('stress', settings).stages.filter((_, index) => index % 2 === 1 && index < 6).map(stage => stage.target), [20, 40, 60]);
   assert.equal(peakVus('load', settings), 20);
+  assert.equal(peakVus('headroom', settings), 24, 'headroom holds 1.2 times the expected peak');
+  assert.equal(scenarioFor('headroom', settings).stages[1].duration, settings.duration);
 });
 
 test('settings reject unsafe paths, unbounded VUs and malformed durations', () => {
@@ -148,6 +150,9 @@ test('a deployed run needs the exact confirmed origin, the expected revision and
     [{ EKI_LOAD_ADMIN_ID_TOKEN: adminToken({ aud: 'eki-production', iss: 'https://securetoken.google.com/eki-production' }) }, /not issued for bustrack-be165/],
     [{ EKI_LOAD_ADMIN_ID_TOKEN: adminToken({ admin: false, role: 'passenger' }) }, /no administrator claims/],
     [{ EKI_LOAD_ADMIN_ID_TOKEN: adminToken({ exp: Math.floor(now / 1000) + 1800 }) }, /token life/],
+    [{ EKI_LOAD_K6_VUS: undefined }, /expected peak/],
+    [{ EKI_LOAD_K6_VUS: '0' }, /expected peak/],
+    [{ EKI_LOAD_K6_VUS: '450' }, /1.2 times it must stay at most 500/],
   ];
   for (const [overrides, expected] of refusals) assert.throws(() => deployed(overrides), expected, JSON.stringify(overrides));
   assert.throws(() => deployed({}, { dirty: true }), /clean checkout/);

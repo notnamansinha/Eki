@@ -6,7 +6,7 @@
 
 ## 1. Purpose
 
-`npm run qa:load` and `npm run qa:load:staging` run five k6 load profiles (smoke, load, stress, spike and soak) and Toxiproxy fault drills against one backend process, then write one sanitized report. They answer [issue #518](https://github.com/notnamansinha/Eki/issues/518).
+`npm run qa:load` and `npm run qa:load:staging` run six k6 load profiles (smoke, load, headroom, stress, spike and soak) and Toxiproxy fault drills against one backend process, then write one sanitized report. They answer [issue #518](https://github.com/notnamansinha/Eki/issues/518).
 
 | Mode | Command | Target |
 |---|---|---|
@@ -36,7 +36,8 @@ Each virtual user (VU) repeats one iteration: a GET of the next public path (`PA
 | Profile | Shape | Local default | Deployed default |
 |---|---|---|---|
 | `smoke` | `SMOKE_VUS` constant users for `SMOKE_DURATION` | 2 VUs, 1 min | Same |
-| `load` | Ramp over `RAMP` to `VUS`, hold for `DURATION`, ramp down; the expected peak | 20 VUs, 15 s ramps, 2 min hold | 20 VUs, 5 min hold |
+| `load` | Ramp over `RAMP` to `VUS`, hold for `DURATION`, ramp down; the expected peak | 20 VUs, 15 s ramps, 2 min hold | The `VUS` the operator states, 5 min hold |
+| `headroom` | As `load`, at 1.2 times `VUS`, rounded up | 24 VUs, 15 s ramps, 2 min hold | 1.2 times the stated `VUS`, 5 min hold |
 | `stress` | Three steps to one third, two thirds and all of `STRESS_VUS`, each reached over `RAMP` and held for `STEP` | 20, 40 and 60 VUs, 40 s steps | 1 min steps |
 | `spike` | From 0 to `SPIKE_VUS` in 10 s, held for `SPIKE_HOLD`, down in 10 s | 100 VUs, 30 s hold | 1 min hold |
 | `soak` | `SOAK_VUS` constant users for `SOAK_DURATION` | 10 VUs, 6 min | 10 VUs, 20 min |
@@ -47,9 +48,9 @@ Each virtual user (VU) repeats one iteration: a GET of the next public path (`PA
 | `API_PATHS` | `/api/routes-list,/api/buses,/api/routes/qa_route/geometry`, each with a synthetic account's ID token: VU n uses account n modulo 20 | `/api/health` without a token, so each request expects 401 and spends no test account's read budget |
 | `THINK_S` | 2 s | 2 s |
 
-At 20 VUs the local `load` profile sends about 10 API reads a second, under the 1,000 a minute per-IP budget, and each account about 30 reads a minute. `stress` and `spike` pass the per-IP budget on purpose, because every VU shares the runner's IP.
+At 20 VUs the local `load` profile sends about 10 API reads a second, under the 1,000 a minute per-IP budget, and each account about 30 reads a minute; `headroom` at 24 VUs stays under both. `stress` and `spike` pass the per-IP budget on purpose, because every VU shares the runner's IP.
 
-The runner executes the profiles in the order smoke, load, soak, stress, spike and waits 65 s after stress and after spike, so that the 60 s limiter windows are empty before the next step. Select profiles with `EKI_LOAD_PROFILES` (for example `smoke,load`) and drills with `EKI_LOAD_DRILLS`. Override any setting above with `EKI_LOAD_K6_<NAME>`, for example `EKI_LOAD_K6_SPIKE_VUS=150`; the report records the values used. The profile files also run without the runner, for example `k6 run --no-usage-report -e BASE_URL=http://127.0.0.1:3116 qa/k6/smoke.js`.
+The runner executes the profiles in the order smoke, load, soak, headroom, stress, spike and waits 65 s after headroom, stress and spike, so that the 60 s limiter windows are empty before the next step. Select profiles with `EKI_LOAD_PROFILES` (for example `smoke,load`) and drills with `EKI_LOAD_DRILLS`. Override any setting above with `EKI_LOAD_K6_<NAME>`, for example `EKI_LOAD_K6_SPIKE_VUS=150`; the report records the values used. The profile files also run without the runner, for example `k6 run --no-usage-report -e BASE_URL=http://127.0.0.1:3116 qa/k6/smoke.js`.
 
 ### 3.2 Response classes and thresholds
 
@@ -62,14 +63,14 @@ The runner executes the profiles in the order smoke, load, soak, stress, spike a
 
 The backend has no `SERVER_BUSY` error code; it answers both deliberate load shedding and a briefly unavailable dependency with 503 and `Retry-After`. With healthy dependencies, as in the profiles, such a response is shedding. Every threshold below comes from issue #518.
 
-| Threshold | smoke, load, soak | stress, spike |
+| Threshold | smoke, load, soak | headroom, stress, spike |
 |---|---|---|
 | `http_req_failed` | below 1 % | below 1 % |
 | p95 of `http_req_duration` for expected responses | below 800 ms | below 900 ms |
 | `checks` (response is ok, shed or rate limited) | above 99 % | above 99 % |
 | `eki_shed` and `eki_rate_limited` | each below 1 % | Recorded, no threshold |
 
-The issue's "900 ms at peak" is read as the budget for the two profiles that go beyond the expected peak. A profile passes when k6 reports every threshold as met.
+The issue's "900 ms at peak" is read as the budget for the three profiles that go beyond the expected peak. A profile passes when k6 reports every threshold as met.
 
 ## 4. Fault drills
 
@@ -128,7 +129,7 @@ Run from the repository root of a clean checkout.
 
 1. Pull the images named in `K6_IMAGE` and `TOXIPROXY_IMAGE`, for example `docker pull grafana/k6:2.4.0@sha256:<digest>`. Expected: Docker reports the digest.
 2. Run `npm ci`. Expected: dependencies install from the lock file.
-3. Run `npm run qa:load`. It builds the backend, starts the emulators with a 45 min deadline, signs up the synthetic accounts, starts Toxiproxy and the backend, and runs every profile and drill. Expected: after about 30 min, `artifacts/qa/load-local-report.md` with `verdict: WITHIN_THRESHOLDS`.
+3. Run `npm run qa:load`. It builds the backend, starts the emulators with a 45 min deadline, signs up the synthetic accounts, starts Toxiproxy and the backend, and runs every profile and drill. Expected: after about 35 min, `artifacts/qa/load-local-report.md` with `verdict: WITHIN_THRESHOLDS`.
 
 ### 6.2 Deployed run
 
@@ -136,8 +137,8 @@ The staging service serves the pilot web app and the bus trackers. Run against i
 
 1. Read the serving revision and scaling: `gcloud run services describe <service> --region asia-south2 --format="yaml(status.traffic,spec.template.metadata.annotations)"`. Expected: one revision with `percent: 100` and `autoscaling.knative.dev/maxScale: '1'`.
 2. Read `_worker_leases/trip-state-worker` in the Firestore console of `bustrack-be165` and note `ownerId`, `generation` and `expiresAt`.
-3. In a private browser window, sign in to the web app as the dedicated administrator test account. In the developer tools, open Application, IndexedDB, `firebaseLocalStorageDb`, `firebaseLocalStorage`, select the `firebase:authUser:` entry, copy `value.stsTokenManager.accessToken`, then run `$env:EKI_LOAD_ADMIN_ID_TOKEN = Get-Clipboard`. Expected: the variable holds a token that never appears in the command history or a file. A token lasts 1 h; the runner refuses one that will not outlive the planned campaign by 10 min (about 47 min for the defaults).
-4. Name the target twice and the revision: `$env:EKI_LOAD_TARGET = "<origin>"`, `$env:EKI_LOAD_CONFIRM_TARGET = "<origin>"` and `$env:EKI_LOAD_EXPECTED_REVISION = "<revision from step 1>"`. The origin must be the `https://eki-backend-<name>-<project-number>.<region>.run.app` URL; the runner refuses loopback, private and Hosting hosts and any service whose name contains `prod`.
+3. In a private browser window, sign in to the web app as the dedicated administrator test account. In the developer tools, open Application, IndexedDB, `firebaseLocalStorageDb`, `firebaseLocalStorage`, select the `firebase:authUser:` entry, copy `value.stsTokenManager.accessToken`, then run `$env:EKI_LOAD_ADMIN_ID_TOKEN = Get-Clipboard`. Expected: the variable holds a token that never appears in the command history or a file. A token lasts 1 h; the runner refuses one that will not outlive the planned campaign by 10 min (about 55 min for the defaults, so sign in just before the run or select fewer profiles).
+4. Name the target twice and the revision: `$env:EKI_LOAD_TARGET = "<origin>"`, `$env:EKI_LOAD_CONFIRM_TARGET = "<origin>"` and `$env:EKI_LOAD_EXPECTED_REVISION = "<revision from step 1>"`. Then state the expected peak in VUs: `$env:EKI_LOAD_K6_VUS = "<expected peak>"`. The repository defines none (`docs/context-docs/PERFORMANCE.md`, which the issue cites, does not exist), so the runner refuses a deployed run without it; `load` holds it and `headroom` holds 1.2 times it. The origin must be the `https://eki-backend-<name>-<project-number>.<region>.run.app` URL; the runner refuses loopback, private and Hosting hosts and any service whose name contains `prod`.
 5. Run `npm run qa:load:staging -- --dry-run`. Expected: `verdict: DRY_RUN`, no request, and `artifacts/qa/load-staging/plan.json`, which lists every `docker` command, the Toxiproxy proxies and the toxics. Review it.
 6. Run `npm run qa:load:staging`. The runner reads `/api/health`, stops unless `release.revision` equals `EKI_LOAD_EXPECTED_REVISION`, runs the profiles and the `latency` and `partition` drills, and reads the release again. Expected: `artifacts/qa/load-staging-report.md` with the revision before and after and a verdict.
 7. Repeat step 2 and compare. In Cloud Monitoring, read the service's instance count, container restarts and memory use for the run window.

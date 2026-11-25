@@ -27,7 +27,7 @@ export const PORTS = Object.freeze({
 
 // Run order: the profiles that stay under the per-IP and per-user budgets first,
 // so that stress and spike rejections cannot spill into them.
-export const PROFILE_ORDER = Object.freeze(['smoke', 'load', 'soak', 'stress', 'spike']);
+export const PROFILE_ORDER = Object.freeze(['smoke', 'load', 'soak', 'headroom', 'stress', 'spike']);
 
 // The Firebase project that dedicated test accounts and deployed test targets use.
 export const STAGING_PROJECT_ID = 'bustrack-be165';
@@ -197,6 +197,11 @@ export function assertDeployedRun(env, { now = Date.now(), dirty = false, dryRun
   const revision = env.EKI_LOAD_EXPECTED_REVISION?.trim() ?? '';
   if (!new RegExp(`^${service}-\\d{5}-[a-z0-9]{3}$`).test(revision)) {
     throw new Error(`EKI_LOAD_EXPECTED_REVISION must name a revision of ${service}, such as ${service}-00012-abc`);
+  }
+  // The repository defines no expected peak, so the operator states it: load
+  // holds it and headroom holds 1.2 times it (issue #518).
+  if (!/^[1-9]\d*$/.test(env.EKI_LOAD_K6_VUS?.trim() ?? '')) {
+    throw new Error('EKI_LOAD_K6_VUS: required, the expected peak in VUs (load holds it, headroom holds 1.2 times it)');
   }
   const drills = selectNames(env.EKI_LOAD_DRILLS, DRILL_NAMES.filter(name => !DRILLS[name].localOnly), 'EKI_LOAD_DRILLS');
   const profiles = selectNames(env.EKI_LOAD_PROFILES, PROFILE_ORDER, 'EKI_LOAD_PROFILES');

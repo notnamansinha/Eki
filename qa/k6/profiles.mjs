@@ -2,11 +2,16 @@
 // Both runtimes load this file: k6 through common.js, and Node through
 // scripts/qa/load-plan.mjs and its tests. It therefore imports nothing.
 
-export const PROFILE_NAMES = Object.freeze(['smoke', 'load', 'stress', 'spike', 'soak']);
+export const PROFILE_NAMES = Object.freeze(['smoke', 'load', 'headroom', 'stress', 'spike', 'soak']);
 
 // Profiles that push past the expected peak. They get the 900 ms p95 budget and
 // may be rate limited or shed; the others may not.
-export const PEAK_PROFILES = Object.freeze(['stress', 'spike']);
+export const PEAK_PROFILES = Object.freeze(['headroom', 'stress', 'spike']);
+
+// The load profile holds VUS, the expected peak; headroom holds 1.2 times it
+// (issue #518), rounded up.
+export const HEADROOM_PERCENT = 120;
+export const headroomVus = vus => Math.ceil(vus * HEADROOM_PERCENT / 100);
 
 // Thresholds from issue #518.
 export const LIMITS = Object.freeze({
@@ -102,6 +107,7 @@ export function readSettings(env = {}) {
     timeout: duration(env, 'TIMEOUT'),
   };
   if (!settings.paths.length && !settings.apiPaths.length) throw new Error('PATHS and API_PATHS are both empty');
+  if (headroomVus(settings.vus) > MAX_VUS) throw new Error(`VUS: 1.2 times it must stay at most ${MAX_VUS}`);
   return settings;
 }
 
@@ -113,6 +119,8 @@ export function scenarioFor(profile, settings) {
     case 'smoke': return { executor: 'constant-vus', vus: s.smokeVus, duration: s.smokeDuration, gracefulStop: GRACEFUL_STOP };
     case 'load': return ramping([
       { duration: s.ramp, target: s.vus }, { duration: s.duration, target: s.vus }, { duration: s.ramp, target: 0 }]);
+    case 'headroom': return ramping([
+      { duration: s.ramp, target: headroomVus(s.vus) }, { duration: s.duration, target: headroomVus(s.vus) }, { duration: s.ramp, target: 0 }]);
     case 'stress': return ramping([
       ...[1, 2, 3].flatMap(step => {
         const target = Math.round(s.stressVus * step / 3);
