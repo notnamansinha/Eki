@@ -1,4 +1,7 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
+
+// The stop picker folds passed stops behind "N passed stops", as the approved concept does.
+const showPassed = (page: Page) => page.getByRole("button", { name: /^\d+ passed stops?$/ }).click();
 
 test("ETA follows the later itinerary visit at identical coordinates and heading", async ({ page }, info) => {
   await page.goto("/?loop");
@@ -10,6 +13,7 @@ test("ETA follows the later itinerary visit at identical coordinates and heading
   await picker.press("Escape");
   await page.getByRole("button", { name: "Publish next stop", exact: true }).click();
   await picker.click();
+  await showPassed(page);
   await expect(page.getByRole("option", { name: "First visit", exact: true })).toContainText("Passed");
   await expect(end).toContainText(/min/);
   const laterMinutes = Number(/(\d+)\s*min/.exec(await end.innerText())?.[1]);
@@ -42,6 +46,7 @@ for (const direction of ["forward", "reverse"]) {
     await picker.press("Escape");
     await page.getByRole("button", { name: "Fix inside arrival corridor", exact: true }).click();
     await picker.click();
+    await showPassed(page);
     await expect(page.getByRole("option", { name: nextStop, exact: true })).toContainText("Passed");
     await expect(page.getByRole("option", { name: followingStop, exact: true })).toContainText(/min/);
     await expect(page.getByRole("button", { name: `Show stop ${nextStop} — passed`, exact: true })).toBeVisible();
@@ -59,6 +64,7 @@ test("destination ETA, passed stops, segmented road and one bus glyph stay consi
   await expect(page.locator("[data-position-marker]")).toHaveCount(5); // four stations and one bus
   const picker = page.getByRole("combobox", { name: "Destination station" });
   await picker.click();
+  await showPassed(page);
   await expect(page.getByRole("option", { name: "Alpha" })).toContainText("Passed");
   await expect(page.getByRole("option", { name: "Beta" })).toContainText("Passed");
   await expect(page.getByRole("option", { name: "Gamma" })).toContainText(/min/);
@@ -80,6 +86,7 @@ test("destination ETA, passed stops, segmented road and one bus glyph stay consi
   await page.getByRole("button", { name: "Publish next stop", exact: true }).click();
   await expect(page.getByRole("button", { name: "Show stop Gamma — passed", exact: true })).toBeVisible();
   await picker.click();
+  await showPassed(page);
   await expect(page.getByRole("option", { name: "Gamma" })).toContainText("Passed");
   // Lost after 30 s of silence (SIGNAL_LOST_MS), not 90-105 s.
   await page.clock.runFor(31_000);
@@ -144,15 +151,24 @@ test("field ride 29 Oct 2026: A marked at A, B at B, GNSS loss and silence shown
   const picker = page.getByRole("combobox", { name: "Destination station" });
   await picker.click();
   await expect(page.getByRole("option", { name: "Beta", exact: true })).toContainText("Bus is here");
+  await showPassed(page);
   await expect(page.getByRole("option", { name: "Alpha", exact: true })).toContainText("Passed");
   await picker.press("Escape");
   await page.screenshot({ path: info.outputPath("at-beta.png"), fullPage: true });
+  // Both stops set: the bar slides into the drawer, waiting for the bus at Gamma.
+  await page.getByRole("combobox", { name: "Boarding stop" }).click();
+  await page.getByRole("option", { name: "Gamma", exact: true }).click();
+  await page.getByRole("option", { name: "Delta", exact: true }).click();
+  await page.clock.runFor(1_000);
+  const trip = page.getByRole("group", { name: "Your trip", exact: true });
+  await expect(trip).toContainText("Gamma");
+  await expect(page.getByRole("button", { name: "Board", exact: true })).toHaveCount(0);
 
   // GNSS disconnected: the single loss packet is reported at once, boarding withheld.
   await page.getByRole("button", { name: "Publish GNSS loss", exact: true }).click();
   await expect(page.getByText("GPS signal lost").first()).toBeVisible();
   // The card stays (a chosen stop or "On board" survives the blip); boarding waits for GPS.
-  await expect(page.getByRole("button", { name: "Board", exact: true })).toBeDisabled();
+  await expect(trip).toContainText("Gamma");
   await expect(page.getByText("Boarding resumes when live tracking returns.")).toBeVisible();
   await expect(page.getByTitle(/GPS signal lost, last known location/)).toBeVisible();
   await page.screenshot({ path: info.outputPath("gnss-lost.png"), fullPage: true });

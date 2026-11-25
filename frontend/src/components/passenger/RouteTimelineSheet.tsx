@@ -21,6 +21,8 @@ interface RouteTimelineSheetProps {
   unobservedStopIndices?: number[];
   aggregateArrivals?: boolean;
   geometryUnavailable?: boolean;
+  /** The followed bus's location is live, so the peek can say so. */
+  live?: boolean;
 }
 
 /** The passenger map draws every route in AU Red; the timeline follows it. */
@@ -38,6 +40,7 @@ export default function RouteTimelineSheet({
   preview = false,
   aggregateArrivals = false,
   geometryUnavailable = false,
+  live = false,
 }: RouteTimelineSheetProps) {
   const [isOpen, setIsOpen] = useState(false);
   if (!route || !route.stops || route.stops.length === 0) return null;
@@ -47,12 +50,26 @@ export default function RouteTimelineSheet({
   const progress = nextStopIndex === undefined ? undefined
     : stopProgress(route.stops.length, { currentStopIndex: nextStopIndex, atStopIndex, unobservedStopIndices });
 
+  // The peek says where the bus is without opening the sheet (FR-PAS-040).
+  const peekStop = progress?.atStopIndex !== undefined ? { prefix: "At", stop: route.stops[progress.atStopIndex] }
+    : progress?.nextStopIndex !== undefined ? { prefix: "Next ·", stop: route.stops[progress.nextStopIndex] } : undefined;
+  const headerSummary = !preview && peekStop ? (
+    <>
+      <span className="pp-peek-text">
+        <span className="pp-peek-prefix">{peekStop.prefix} </span>
+        <span className="pp-peek-stop">{peekStop.stop.name}</span>
+      </span>
+      {live && <span className="pp-peek-live"><span className="pp-peek-dot" aria-hidden="true" />Live</span>}
+    </>
+  ) : undefined;
+
   return (
     <BottomSheet
       isOpen={isOpen}
       onToggle={() => setIsOpen(!isOpen)}
       headerIcon={<RouteIcon className="w-4 h-4" />}
       headerTitle={preview ? "Configured route" : "Route timeline"}
+      headerSummary={headerSummary}
       bottomControls={bottomControls}
     >
       {/* Route name */}

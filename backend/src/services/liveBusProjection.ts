@@ -1,6 +1,6 @@
-import { isDeepStrictEqual } from "node:util";
 import { rtdb } from "../lib/firebaseAdmin";
 import { assertWorkerLeadership, bindWorkerCallback, bindWorkerContext, workerRtdbTransaction, workerGeneration } from "../lib/workerFence";
+import { createLiveBusProjectionWriter, projectionRouteKey } from "./liveBusProjectionWriter";
 import { createLatestPendingScheduler } from "../lib/latestPendingScheduler";
 import { LruCache } from "../lib/lruCache";
 import { createPagedLifecycleReplay } from "./pagedLifecycleReplay";
@@ -8,7 +8,7 @@ import { recordBackgroundFailure } from "../lib/backgroundFailureTracker";
 import { drainDynamicPromises } from "./tripStateLifecycle";
 
 const SAFE_ID = /^[A-Za-z0-9_-]{1,128}$/;
-export const projectionRouteKey = (routeId: string) => `route:${routeId}`;
+export { projectionLeafChanges, projectionRouteKey } from "./liveBusProjectionWriter";
 const projectionBusKey = (key: string) => `node:${key}`;
 const decodeRoute = (key: string) => key.startsWith("route:") ? key.slice(6) : key;
 const decodeBus = (key: string) => key.startsWith("node:") ? key.slice(5) : key;
@@ -118,11 +118,23 @@ export function startLiveBusProjection(): () => Promise<void> {
   // whose first publication (or failed recovery) has not settled yet.
   const startupPublished = new LruCache<string, boolean>(1000);
   const startupPending = new Set<string>();
-  const counters = { events: 0, skipped: 0, sourceReads: 0, sourceReadBytes: 0, reconstructionReads: 0, reconstructionReadBytes: 0, transactionAttempts: 0, committed: 0, publicBytes: 0, catalogTransactionAttempts: 0, committedCatalogWrites: 0, catalogPublicBytes: 0 };
+  const counters = { events: 0, skipped: 0, sourceReads: 0, sourceReadBytes: 0, reconstructionReads: 0, reconstructionReadBytes: 0, transactionAttempts: 0, committed: 0, publicBytes: 0, catalogTransactionAttempts: 0, committedCatalogWrites: 0, catalogPublicBytes: 0,
+    routeClaims: 0, leafWriteAttempts: 0, leafWrites: 0, leafWriteDenials: 0, leafWriteFallbacks: 0, leafWriteDrifts: 0 };
+  // An unfenced run and LIVE_PROJECTION_WRITE_MODE=transaction keep the
+  // whole-node transaction for every publication.
+  const writer = createLiveBusProjectionWriter({ generation, counters, isStopped: () => stopped, mode: process.env.LIVE_PROJECTION_WRITE_MODE });
   let stopped = false;
   let initialized = false, readyPublished = false, readinessWrite: Promise<void> | null = null, stopPromise: Promise<void> | null = null;
   const report = (error: unknown) => recordBackgroundFailure("worker.liveProjection", "Public live projection", "[LiveProjection] Materialization/recovery failed:", error);
   const routeTails = new Map<string, Promise<void>>();
+  /** One publication at a time per route, so the leader's copy changes in the order its writes land. */
+  const inRoute = <T>(routeId: string, work: () => Promise<T>): Promise<T> => {
+    const task = (routeTails.get(routeId) ?? Promise.resolve()).then(work);
+    const tail = task.then(() => {}, () => {});
+    routeTails.set(routeId, tail);
+    void tail.then(() => { if (routeTails.get(routeId) === tail) routeTails.delete(routeId); });
+    return task;
+  };
   // Revisions belong to one publisher generation. Preserve every route's
   // previous lineage when the global catalog first advances to a successor.
   const catalogGenerations = (current: { values?: Record<string, unknown>; generations?: Record<string, number>; _workerGeneration?: number } | null) =>
@@ -167,29 +179,14 @@ export function startLiveBusProjection(): () => Promise<void> {
     const live = publicLiveBus(snapshot.val());
     const value = live?.routeId === routeId && key === `${live.busId}_${routeId}` ? live : null;
     assertWorkerLeadership();
-    const result = await workerRtdbTransaction(rtdb.ref(`publicRouteBuses/${routeKey}`), current => {
-      counters.transactionAttempts++;
-      if (stopped) return;
-      const previous = current?.buses?.[busKey] ?? null;
-      if (isDeepStrictEqual(previous, value)) return current?._workerGeneration === generation ? undefined : { ...current };
-      const buses = { ...(current?.buses ?? {}) };
-      if (value) buses[busKey] = value; else delete buses[busKey];
-      return { ...current, buses, revision: Number(current?.revision ?? 0) + 1 };
-    });
-    if (stopped) return;
+    const publication = await writer.publish(routeId, busKey, value);
+    if (stopped || !publication) return;
     assertWorkerLeadership();
-    if (result.committed) { counters.committed++; counters.publicBytes += Buffer.byteLength(JSON.stringify(value)); }
-    // An abort can also mean a newer generation rejected the write; keep catalog reads canonical.
-    await publishCatalog(routeId, result.snapshot.val());
+    await publishCatalog(routeId, publication.route);
   };
   const scheduler = createLatestPendingScheduler<string, string>(async (key, routeId) => {
-    const previous = routeTails.get(routeId) ?? Promise.resolve();
-    const task = previous.catch(() => {}).then(() => materialize(key, routeId));
-    routeTails.set(routeId, task);
-    try {
-      await task;
-      if (!stopped) { startupPublished.set(key, true); startupPending.delete(key); }
-    } finally { if (routeTails.get(routeId) === task) routeTails.delete(routeId); }
+    await inRoute(routeId, () => materialize(key, routeId));
+    if (!stopped) { startupPublished.set(key, true); startupPending.delete(key); }
   }, (key, error) => {
     startupPublished.delete(key);
     startupPending.delete(key);
@@ -212,6 +209,9 @@ export function startLiveBusProjection(): () => Promise<void> {
     hasCapacity: () => !stopped && scheduler.snapshot().pendingKeys < 32,
     async readPage(cursor, limit) {
       assertWorkerLeadership();
+      // A new pass replays every source bus: refresh each route's copy before
+      // the first replay compares against it, so this pass repairs it.
+      if (!cursor) writer.beginRecoveryPass();
       const position = cursor ? JSON.parse(cursor) : { phase: "live", key: "" };
       if (position.phase === "live") {
         let query = source.orderByKey();
@@ -244,14 +244,7 @@ export function startLiveBusProjection(): () => Promise<void> {
         if (stopped) return { items: [], nextCursor: null };
         const observed = Number(floorSnapshot.val() ?? 0);
         const floor = Number.isSafeInteger(observed) && observed >= 0 ? observed : 0;
-        const restored = await workerRtdbTransaction(rtdb.ref(`publicRouteBuses/${canonicalRoute}`), current => {
-          if (stopped) return;
-          const revision = Number(current?.revision ?? 0);
-          const rebuilding = !current || revision < floor;
-          if (!rebuilding && current?._workerGeneration === generation) return;
-          return { ...current, buses: current?.buses ?? {}, revision: rebuilding ? Math.max(revision, floor) + 1 : revision };
-        });
-        recoveredView = restored.snapshot.val();
+        recoveredView = await writer.restoreLineage(routeId, floor);
       }
       if (stopped) return { items: [], nextCursor: null };
       assertWorkerLeadership();
@@ -289,7 +282,7 @@ export function startLiveBusProjection(): () => Promise<void> {
   });
   const fail = bindWorkerCallback(() => replay.request());
   source.on("child_added", receive, fail); source.on("child_changed", receive, fail); source.on("child_removed", removed, fail);
-  projectionStatus = () => ({ ...scheduler.snapshot(), ...counters });
+  projectionStatus = () => ({ ...scheduler.snapshot(), ...counters, writeMode: writer.writeMode() });
   replay.request();
   function publishReadiness(ready: boolean) {
     if (stopped || readinessWrite) return;

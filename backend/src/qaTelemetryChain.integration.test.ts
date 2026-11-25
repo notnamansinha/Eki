@@ -4,13 +4,14 @@ import { initializeApp, deleteApp, type App } from "firebase-admin/app";
 import { Firestore, Timestamp } from "firebase-admin/firestore";
 import { getDatabase, type Database } from "firebase-admin/database";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { emulatorDatabaseUrl } from "./test-support/emulatorIsolation";
-const state = vi.hoisted(() => ({ firestore: null as Firestore | null, realtime: null as Database | null }));
+import { emulatorDatabaseUrl, installCommittedDatabaseRules } from "./test-support/emulatorIsolation";
+const state = vi.hoisted(() => ({ firestore: null as Firestore | null, realtime: null as Database | null, writer: null as Database | null }));
 vi.mock("./lib/firebaseAdmin", () => ({
   db: { collection: (name: string) => state.firestore!.collection(name),
     runTransaction: (work: any, options: any) => state.firestore!.runTransaction(work, options),
     batch: () => state.firestore!.batch() },
   rtdb: { ref: (path: string) => state.realtime!.ref(path) }, auth: {},
+  liveProjectionWriterRtdb: () => state.writer!,
 }));
 vi.mock("./lib/googleMaps", () => ({ computeRouteGeometry: () => { throw new Error("QA provider call forbidden"); }, LIVE_REROUTE_TIMEOUT_MS: 3500 }));
 import devicesRouter from "./routes/devices";
@@ -22,7 +23,7 @@ import { drainAutomaticServiceAdmission } from "./services/automaticServiceAdmis
 import { drainDurableRideRecovery } from "./services/durableRideRecovery";
 import { createStaleBusSweeper } from "./services/staleBusSweeper";
 import { runAbandonedRideReconciliation } from "./services/abandonedRideReconciler";
-import { WorkerFence, WORKER_LEASE_ID } from "./lib/workerFence";
+import { RTDB_FENCED_WRITER_AUTH, WorkerFence, WORKER_LEASE_ID } from "./lib/workerFence";
 import { encodePolyline } from "./lib/polylineUtils";
 
 const integration = process.env.FIREBASE_RULES_TEST === "1" ? describe : describe.skip;
@@ -35,7 +36,7 @@ const stops = [{ id: "origin", name: "Synthetic origin", lat: 23, lng: 72 },
   { id: "end", name: "Synthetic end", lat: 23.0036, lng: 72 }];
 
 integration("authenticated telemetry to durable lifecycle and public emulator projection", () => {
-  let app: App; let server: Server; let base: string; let epoch: number;
+  let app: App; let writerApp: App; let server: Server; let base: string; let epoch: number;
   let stopWatcher: (() => void) | undefined, stopEngine: (() => Promise<void>) | undefined, stopProjection: (() => Promise<void>) | undefined;
   const send = (payload: unknown, credential = secret) => fetch(`${base}/api/devices/${device}/telemetry`, {
     method: "POST", headers: { "Content-Type": "application/json", Authorization: `Device ${credential}` },
@@ -48,6 +49,10 @@ integration("authenticated telemetry to durable lifecycle and public emulator pr
       credential: { getAccessToken: async () => ({ access_token: "owner", expires_in: 3600 }) } }, "qa-ingest");
     state.firestore = new Firestore({ projectId: "demo-eki-ingest-test", host: "127.0.0.1:8085", ssl: false });
     state.realtime = getDatabase(app);
+    // The public projection publishes through the rules-bound writer, as in production.
+    writerApp = initializeApp({ ...app.options, databaseAuthVariableOverride: { ...RTDB_FENCED_WRITER_AUTH } }, "qa-ingest-fenced-writer");
+    state.writer = getDatabase(writerApp);
+    await installCommittedDatabaseRules("demo-eki-ingest-test");
     const web = express();
     web.use("/api/devices/:deviceId/telemetry", (_req, res, next) => { res.locals.telemetryServerReceivedAt = Date.now(); next(); });
     web.use("/api/devices/:deviceId/telemetry", express.json({ limit: "512b", strict: true }));
@@ -232,7 +237,7 @@ integration("authenticated telemetry to durable lifecycle and public emulator pr
   }, 30000);
   afterAll(async () => {
     if (server) await new Promise<void>(resolve => { server.closeAllConnections(); server.close(() => resolve()); });
-    await state.firestore?.terminate(); if (app) await deleteApp(app);
+    await state.firestore?.terminate(); if (writerApp) await deleteApp(writerApp); if (app) await deleteApp(app);
     const guard = (globalThis as any).__ekiQaNetworkGuard;
     expect(guard.enabled).toBe(true); expect(guard.allowedConnections).toBeGreaterThan(0); expect(guard.deniedConnections).toBe(0);
     console.log("QA_INGEST_TRANSPORT", JSON.stringify(guard));

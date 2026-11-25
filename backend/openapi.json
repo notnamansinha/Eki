@@ -11544,7 +11544,7 @@
                   "publicProjection": {
                     "type": "object",
                     "additionalProperties": true,
-                    "description": "Public live-bus projection scheduler counters (scheduled, processed, coalesced, failed, rejected)."
+                    "description": "Public live-bus projection status: scheduler counters (scheduled, processed, coalesced, failed, rejected), publication counters (routeClaims, leafWriteAttempts, leafWrites, leafWriteDenials, leafWriteFallbacks, leafWriteDrifts, publicBytes) and writeMode (leaf, transaction or transaction-fallback)."
                   }
                 }
               },

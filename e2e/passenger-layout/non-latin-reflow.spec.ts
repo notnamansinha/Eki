@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { clippingAncestorControl, horizontalReflow, nonLatinSamples, reflowViewport } from "../fixtures/nonLatinText";
-import { raiseLiveRoutes, trackRoute } from "./liveRoutes";
+import { backToHome, raiseLiveRoutes, trackRoute } from "./liveRoutes";
 
 // Eki ships English-only (EKI-ADR-005), but route and stop names are typed by
 // administrators and account names come from Google, so they may be in any script.
@@ -56,7 +56,7 @@ for (const sample of nonLatinSamples) {
     await expect(page.getByText("Waiting for live bus data…", { exact: true })).toBeVisible();
     await expectReflow(page, "tracking header", [sample.name], 1);
 
-    await page.getByRole("button", { name: "Back to home", exact: true }).click();
+    await backToHome(page);
     await page.getByRole("button", { name: "Profile", exact: true }).click();
     await expect(page.locator(".pp-profile-name")).toHaveText(sample.name);
     await expectReflow(page, "Profile", [sample.name], 1);

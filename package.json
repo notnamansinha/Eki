@@ -9,7 +9,7 @@
   ],
   "scripts": {
     "dev": "concurrently \"npm run dev --workspace=frontend\" \"npm run dev --workspace=backend\"",
-    "build": "npm run build --workspace=backend && npm run build --workspace=frontend && node scripts/generate-sw.mjs && node scripts/update-csp.mjs && node scripts/verify-web-backend-contract.mjs",
+    "build": "npm run build --workspace=backend && npm run build --workspace=frontend && node scripts/compile-hints.mjs && node scripts/generate-sw.mjs && node scripts/update-csp.mjs && node scripts/verify-web-backend-contract.mjs",
     "build:production": "node scripts/build-production.mjs",
     "docs:sync": "node scripts/sync-documentation-mirrors.mjs",
     "docs:check": "node --test scripts/documentation-quality.test.mjs && npm exec --workspace=backend -- vitest run src/docsMirror.test.ts src/envDocumentation.test.ts",

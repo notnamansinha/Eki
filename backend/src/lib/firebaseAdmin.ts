@@ -6,9 +6,10 @@ import {
   type Credential,
 } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
-import { getDatabase } from "firebase-admin/database";
+import { getDatabase, type Database } from "firebase-admin/database";
 import { getFirestore } from "firebase-admin/firestore";
 import "dotenv/config";
+import { RTDB_FENCED_WRITER_AUTH } from "./workerFence";
 
 /**
  * Firebase Admin initialization.
@@ -55,3 +56,24 @@ export { firebaseAdminApp };
 export const db = getFirestore(firebaseAdminApp);
 export const auth = getAuth(firebaseAdminApp);
 export const rtdb = getDatabase(firebaseAdminApp);
+
+const LIVE_PROJECTION_WRITER_APP = "live-projection-writer";
+let liveProjectionWriter: Database | undefined;
+
+/**
+ * RTDB handle whose writes are evaluated by `database.rules.json` with
+ * `auth = RTDB_FENCED_WRITER_AUTH`, unlike `rtdb`, which bypasses rules.
+ * The worker leader publishes the public live-bus projection through it so
+ * the rules can reject a superseded generation (see `workerRtdbFencedUpdate`).
+ * Created on first use: only the leader opens this second connection.
+ */
+export function liveProjectionWriterRtdb(): Database {
+  if (!liveProjectionWriter) {
+    const app = getApps().find(candidate => candidate.name === LIVE_PROJECTION_WRITER_APP) ?? initializeApp({
+      ...firebaseAdminApp.options,
+      databaseAuthVariableOverride: { ...RTDB_FENCED_WRITER_AUTH },
+    }, LIVE_PROJECTION_WRITER_APP);
+    liveProjectionWriter = getDatabase(app);
+  }
+  return liveProjectionWriter;
+}

@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-GEN-005 | 1.9 | Current | 2026-11-25 |
+| EKI-GEN-005 | 2.0 | Current | 2026-11-25 |
 
 ## 1. Purpose
 
@@ -48,6 +48,7 @@ The template is a production template. Copied unchanged, it sets `NODE_ENV=produ
 |---|---|---|---|---|
 | `FIREBASE_SERVICE_ACCOUNT` | No | Unset | Firebase Admin service-account JSON object. When unset, the backend uses Application Default Credentials [1]. Malformed JSON refuses startup. Prefer Workload Identity or a secret manager in production. | `lib/firebaseAdmin.ts` |
 | `FIREBASE_DATABASE_URL` | In production | None | Realtime Database (RTDB) origin for Firebase Admin. Outside production a missing value lets the process start, but every RTDB feature fails. Must name the same instance as `NEXT_PUBLIC_FIREBASE_DATABASE_URL`. | `lib/firebaseAdmin.ts` |
+| `LIVE_PROJECTION_WRITE_MODE` | No | Unset (leaf writes) | How the worker leader publishes `publicRouteBuses`. Unset, it writes only the changed fields of one bus, fenced by `database.rules.json`; if the deployed rules deny that write, it falls back to whole-route transactions for 5 minutes at a time and logs a warning. `transaction` (trimmed, any case) forces whole-route transactions, which resend every bus on a route to every listener on each publication. See [live projection leaf writes](testing/LIVE_PROJECTION_LEAF_WRITES_2026_11_21.md#6-rollout). | `services/liveBusProjection.ts` |
 | `GOOGLE_MAPS_API_KEY` | For route geometry | None | Server key for the Google Routes API (`computeRoutes`: route geometry, reroutes and departure traffic) and Places API (New) Text Search (admin place search). Without it, route computation and place search fail and `npm run seed` stops. Use this server key, not the browser key, also in a local `backend/.env`, and restrict it to these two APIs. The staging key has no application restriction, because Cloud Run egress addresses are not fixed; Cloud Run reads it from the Secret Manager secret `google-maps-server-key`. | `lib/googleMaps.ts`, `routes/polyline.ts`, `routes/places.ts` |
 
 ### 3.3 Ride lifecycle and live state
@@ -149,6 +150,7 @@ All frontend variables are `NEXT_PUBLIC_*` values: Next.js compiles them into th
 | `NEXT_PUBLIC_SITE_INDEXING` | No | Enabled | `false` disables search indexing and sitemap discovery; any other value enables them. Use `false` for every non-production build except the staging host, which stays indexable as the public pilot until the production project exists ([OPS-04](operations/ARCHITECTURE_RISK_REGISTER.md#311-ops-04-the-staging-host-is-indexable-without-access-control)). | `src/lib/siteMetadata.ts` |
 | `NEXT_PUBLIC_SERVICE_TIME_ZONE` | No | `Asia/Kolkata` | IANA time zone for ride history timestamps. | `src/components/admin/RideHistoryPanel.tsx` |
 | `NEXT_PUBLIC_PASSENGER_BUS_START_TIME` | No | `8:00 am` | Service start time shown to passengers when no bus is running and the admin setting is empty. | `src/config/passenger.ts` |
+| `NEXT_PUBLIC_DEMO_RIDE` | No | Enabled | `false` hides the demo ride from Live routes; any other value shows it. The demo ride is a scripted bus simulated in the browser, marked "Not a real bus", that never contacts Firebase or the backend ([SRS FR-PAS-059](requirements/SOFTWARE_REQUIREMENTS_SPECIFICATION.md#325-boarding)). | `src/lib/demoRide.ts` |
 | `NEXT_PUBLIC_BUS_EXPIRY_MS` | No | `300000` | How long a silent bus stays on the passenger map and route list; Live Ops never removes it. The passenger "Live tracking lost" threshold is the smaller of 30 s and half this value; "Updates delayed" is the smaller of 12 s and that threshold. | `src/lib/liveBusFreshness.ts` |
 | `NEXT_PUBLIC_BUILD_VERSION` | No | Empty | Build label that the passenger **Profile** footer shows as `build <value>`; the footer omits it when empty. No workflow sets it. | `src/config/university.ts`, `src/components/passenger/AccountTab.tsx` |
 | `NEXT_PUBLIC_BUILD_DATE` | No | Empty | Build date that the same footer shows after the build label; omitted when empty. No workflow sets it. | `src/config/university.ts`, `src/components/passenger/AccountTab.tsx` |

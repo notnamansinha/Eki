@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-UIX-001 | 3.5 | Current | 2026-11-21 |
+| EKI-UIX-001 | 4.0 | Current | 2026-11-25 |
 
 ## 1. Purpose
 
@@ -221,23 +221,35 @@ Values in this section are those of the Passenger and Admin workspaces, which us
 
 The map notice (`.pp-notice`) shows the worst state among the displayed buses: a `WifiOff` icon, the title in weight 500 and a one-line summary in `--text-secondary`, on the translucent `--pp-float-bg` surface. A bus is trackable only in `live` or `delayed` while live data is connected. For any other state the map hides that bus's heading pointer and never shows "Bus is here" for it. When no displayed bus is trackable, stop estimates read "GPS signal lost" or "Live tracking lost" instead of minutes.
 
-### 3.2 Tracking header
+### 3.2 Tracking header and Thumb drawer
 
-The ride card at the top of the tracking view (`components/passenger/PassengerBoardingView.tsx`, `components/passenger/PassengerWorkspace.tsx`) is a `.pp-float-card`: `--pp-float-bg`, a 0.5 px hairline border, a 14 px radius and a 20 px backdrop blur. It shows these texts:
+The top line of the tracking view (`components/passenger/PassengerWorkspace.tsx`) holds the 44 px back button and, at the right, the 48 px chat button; **Center on bus** and **Show route overview** continue that column. The top of the map stays clear. A `.pp-float-card` (`--pp-float-bg`, a 0.5 px hairline border, a 14 px radius and a 20 px backdrop blur) appears between Back and chat only when there is something to say: the bus picker when several buses are selectable, the boarding blocked notice, the "Direction pending" or "Bus online · service not started" status with its destination picker, or "Waiting for live bus data…".
 
-| Element | Text | Colour |
+The route timeline's 56 px peek says where the bus is: `Next · <stop>` or `At <stop>` (15 px; the prefix in `--text-secondary`, the stop in weight 500), with a **Live** chip (12 px `--status-live` on `--status-live-bg`, with a dot) while the followed bus is `live`. The toggle keeps the accessible name "Route timeline" and takes the summary as its description. The ride status texts stay in a visually hidden `role="status"` region with `aria-live="polite"` in `components/passenger/PassengerBoardingView.tsx`, so changes are still announced:
+
+| Element | Text | Colour (`data-tone`) |
 |---|---|---|
 | Status line, in service and `live` | `Ride in service · Live` | `--status-live` |
 | Status line, `delayed` | `Ride in service · Updates delayed · 14 s ago` | `--status-warning` |
 | Status line, `gnss_lost` | `Ride in service · GPS signal lost` | `--status-warning` |
 | Status line, `lost` or `offline` | `Ride in service · Live tracking lost` or `· Bus offline` | `--status-danger` |
 | Status line, armed before stop 1 | `Ride armed · awaiting stop 1 · <title>` | `--status-warning`, or `--status-danger` for `lost` and `offline` |
-| Progress line | `At <stop> · Next: <stop>`; a part is left out when unknown | `--text-primary` |
-| Boarding blocked notice | Health title, "Tracking paused" or "Live tracking paused", with a detail line | Title `--status-danger` for danger tone, otherwise `--status-warning`; detail `--text-secondary` |
-| Live location without ride direction | "Direction pending" or "Bus online · service not started" | `--accent` |
-| No live bus | "Waiting for live bus data…" above the route name (Playfair Display, 18 px, weight 600) | `--accent` |
+| Progress line | `At <stop> · Next: <stop>`; a part is left out when unknown | |
+| Joined | `On board` | |
+| Boarding blocked notice (card) | Health title, "Tracking paused" or "Live tracking paused", with a detail line | Title `--status-danger` for danger tone, otherwise `--status-warning`; detail `--text-secondary` |
+| Live location without ride direction (card) | "Direction pending" or "Bus online · service not started" | `--accent` |
+| No live bus (card) | "Waiting for live bus data…" above the route name (Playfair Display, 18 px, weight 600) | `--accent` |
 
-The status line (`.pp-status-title`) and the progress line are 13 px; the status line has weight 500. Both sit in a `role="status"` region with `aria-live="polite"`.
+Choosing stops and the trip drawer sit in the thumb zone, 12 px above the timeline peek and at most 32 rem wide (`.pp-trip-layer` in `app/passenger/theme.css`). This is the approved "Thumb drawer" concept:
+
+| Part | Behaviour and style |
+|---|---|
+| From → To bar | `.pp-trip-bar`: 18 px radius on `--pp-float-bg`. Two comboboxes, "Boarding stop" (a ring icon, "From" over "Your stop") and "Destination station" (`MapPin` in `--accent`, "To" over "Where to?"), joined by a 26 px arrow circle. A chosen stop shows its map letter in a 22 px `--accent` badge, the From kicker adds "bus in <n> min" (or "· on board" in `--status-live` with a tick badge) and the To kicker the ETA. Values are 15 px weight 500 and end in an ellipsis. |
+| Stop picker | Choosing opens the route timeline as the comboboxes' listbox (`components/passenger/StopPickerSheet.tsx`): "Where are you boarding?" with "Upcoming stops · live ETAs", then "Where are you going?" with "Stops after <stop>". Same dots, rail and live ETAs as the timeline; passed stops fold behind "<n> passed stops"; kickers read "Next stop" or "Bus is here" in `--status-live`, "Your stop" in `--accent` and "Terminus". Stops that cannot be chosen stay listed as disabled options at 45 % opacity: the terminus for boarding; the boarding stop (on `--accent-subtle`), earlier stops and stops behind the bus for the destination. The sheet is a bottom sheet on touch screens and a centred 32 rem card on pointer devices. |
+| Drawer | With both stops set, the bar shows the whole trip for 0.9 s, then slides into `.pp-trip-drawer` at the right edge: square on the screen edge with an 18 px left radius on narrow screens, a whole card from 34 rem. It holds **Show trip** (‹), the boarding stop's letter, and the stop name over "Bus in <n> min" or "Bus is here". There is no Board button: the passenger is boarded when the bus reaches the stop (under a minute away, at it, or past it), with a 20 px `--accent` spinner while the check runs, and a failed check adds **Try again** (44 px, `--accent` with a white focus ring). On board it reads **On board** in `--status-live` over "<n> min to <destination>", with a green tick badge. ‹ pulls the full bar back out; a tap on the map or Escape tucks it away. |
+| Note | `.pp-trip-note`, 12 px `--text-secondary`, above the drawer and as wide as it: the location notice before the first join ("When the bus reaches your stop, Eki checks your location once to mark you on board.", or the demo ride's own notice), the paused reason, the progress text while joining, or an error in `--status-danger` with `role="alert"`. |
+
+Focus stays on the combobox while its list is open (`aria-activedescendant`; Up, Down, Page Up, Page Down, Home, End, Enter, Space, Escape, Tab and type-ahead), and the active option is outlined only while the keyboard moves it. Choosing the boarding stop moves focus to the destination combobox; docking moves it to ‹ (or **Try again** after a failed check); ‹ moves it to the boarding combobox; boarding moves it to ‹. While the route timeline sheet is open, the thumb zone is hidden. With reduced motion the bar, drawer and picker appear without movement.
 
 The blocked notice names the connection only while the realtime socket is disconnected ("This device is reconnecting to live bus data. The last known location is shown; live ETAs and boarding resume when the connection returns."). While the client is connected but waiting for the live projection, or after a data error, it reads "Live bus data is not available right now." The reconnect banner likewise appears only while the socket is disconnected, and the empty Live routes panel says "Unable to reach live data. Check your connection." only then. While connected but resuming, or after a data error, the panel shows the same "not available" text, and otherwise the configured service start message.
 
@@ -253,7 +265,7 @@ The blocked notice names the connection only while the realtime socket is discon
 | `passed` | Passed with an observed arrival. | Fill `--text-tertiary` with a white tick badge, label chip `<stop> · Passed` | Dot and rail `--route-passed`, stop name `--text-tertiary` | "Passed" |
 | `unobserved` | Passed without the bus being seen there. | As `passed`, with a dashed white border | As `passed` | "Passed · not confirmed" |
 
-Each map marker is a 24 px circle with a 2 px white border and the stop letter (`lib/stopLabel.ts`: A to Z, then AA) in 12 px bold white, inside a 44 px button. The selected destination has a 2 px `--text-primary` outline. On the timeline its dot gets a 3 px `--accent-subtle` ring and the row carries a "Selected stop", "Boarding stop" or "Destination" chip in `--accent` on `--accent-subtle`. Map label chips (`.pp-stop-label`) are white with a `--border-subtle` border, an 8 px radius and 12 px `--text-primary` text. An ETA above 0 and at most 2 min is shown in `--status-live`; 0 reads "Due".
+Each map marker is a 24 px circle with a 2 px white border and the stop letter (`lib/stopLabel.ts`: A to Z, then AA) in 12 px bold white, inside a 44 px button. The chosen boarding stop and destination have a 2 px `--text-primary` outline and a label chip. On the timeline its dot gets a 3 px `--accent-subtle` ring and the row carries a "Selected stop", "Boarding stop" or "Destination" chip in `--accent` on `--accent-subtle`. Map label chips (`.pp-stop-label`) are white with a `--border-subtle` border, an 8 px radius and 12 px `--text-primary` text. An ETA above 0 and at most 2 min is shown in `--status-live`; 0 reads "Due".
 
 ### 3.4 Route polylines
 
@@ -416,7 +428,7 @@ Tailwind size utilities keep their defaults: `text-xs` 12/16 px, `text-sm` 14/20
 | Date kicker and metadata | UI | 13 px | 500 | 1.5 | "Saturday, 7 November", "6 stops · 18 min route" |
 | Profile rows | UI | 16 px | 500 | 1.5 | "Send feedback" |
 | Profile name | UI | 20 px | 700 | 1.25 | Account name |
-| Buttons (`.pp-btn-*`) | UI | 15 px; 17 px for the feedback submit button | 700 | 1.2 | **Board** |
+| Buttons (`.pp-btn-*`) | UI | 15 px; 17 px for the feedback submit button | 700 | 1.2 | **Try again** |
 | Bottom navigation label | UI | 12 px | 500, active 700 | 1.5 | "Live", "Routes", "Profile" |
 | Tracking status line | UI | 13 px | 500 | 1.5 | `Ride in service · Live` |
 | Timeline stop name | UI | 15 px (next or selected), otherwise 14 px | 500 / 400 | 1.5 | Stop name |
@@ -452,7 +464,7 @@ Spacing uses the Tailwind 4 default unit `--spacing: 0.25rem` (4 px); the projec
 | Map fit padding | Top: the larger of 32 px and header height plus 24 px. Bottom: timeline sheet overlap plus 24 px, at most 65 % of the map height. Sides: 32 px. | `components/maps/PassengerMap.tsx` |
 | Map zoom | Passenger default 15, following a bus 16; admin default 12, 15 when centring a bus | `PassengerMap.tsx`, `DashboardPanel.tsx` |
 
-Short touch screens, at most 480 px tall without a fine pointer (landscape phones), get a compact home in `app/globals.css` and `app/passenger/theme.css`. Besides the spacer above, the panel's top padding drops to 1 rem, the title to 24 px and the date and subtitle to 13 px, hidden at 360 px tall or less. The route list's bottom padding drops from 128 px to 8 px. Together these leave room in the panel for at least one route card. Pointer-equipped `(any-pointer: fine)` windows keep their own centred desktop layout at every height. On any screen at most 480 px tall, the tracking header (back button, ride card and chat button) is hidden while the route timeline sheet is open, because the open sheet reaches it and the header would cover the sheet's handle.
+Short touch screens, at most 480 px tall without a fine pointer (landscape phones), get a compact home in `app/globals.css` and `app/passenger/theme.css`. Besides the spacer above, the panel's top padding drops to 1 rem, the title to 24 px and the date and subtitle to 13 px, hidden at 360 px tall or less. The route list's bottom padding drops from 128 px to 8 px. Together these leave room in the panel for at least one route card. Pointer-equipped `(any-pointer: fine)` windows keep their own centred desktop layout at every height. On any screen at most 480 px tall, the tracking header (back button, any status card and chat button) is hidden while the route timeline sheet is open, because the open sheet reaches it and the header would cover the sheet's handle. On every screen the thumb zone (Section 3.2) is hidden while that sheet is open.
 
 ### 6.2 Radii
 
@@ -562,7 +574,7 @@ flowchart TD
   L["/ landing and Google sign-in"] -->|passenger or driver| P["/passenger"]
   L -->|admin| A["/admin"]
   P --> R["Live: live route cards"]
-  R -->|select a route| T["Tracking: map, ride card, timeline sheet"]
+  R -->|select a route or the demo ride| T["Tracking: map, From → To bar or drawer, timeline sheet"]
   T -->|Back| R
   P --> S["Routes: published route schedules"]
   P --> PR["Profile"]
@@ -590,8 +602,9 @@ Layout follows the input device. On pointer-equipped `(any-pointer: fine)` windo
 | View | Structure |
 |---|---|
 | Live (home) | Artwork above a panel headed by today's date (`components/passenger/ui/PassengerDate.tsx`, for example "Saturday, 7 November"), the title "Live routes", the route count and "Select a route to view the live bus location."; pointer windows at least 44 rem tall add a short gold rule. The panel scrolls the announcement (when active) and one card per route with an active or available bus: route name, first and last stop joined by an arrow (or a direction or vehicle-available message), stop count and duration, and an `--accent` action ("Track route", "View status" or "<n> available"); the selected route carries a "Selected" chip. Pointer windows at least 44 rem tall add the route's line code (`lib/routeLineLabel.ts`). On pointer devices the action ends in a circled arrow that fills AU Red on hover, and the selected card carries a 3 px AU Red inset bar. Touch screens group the cards into one inset white list with hairline separators. Without routes the panel shows the configured no-buses message and service start time, or a connection message. |
-| Tracking | Full-bleed map on `--pp-page`. Over it, at the top: a 44 px round back button and the ride card (bus picker when several buses are selectable, status and progress lines, boarding and destination pickers, **Board**, hints and results), then the 48 px chat button with an AU Red unread badge ("9+" above nine). Map notices sit at the top left and the **Center on bus** and **Show route overview** buttons (48 px) at the top right. The route timeline sheet is collapsed to a 56 px handle above the navigation. Chat opens as an overlay between the header and the navigation. |
-| Route ended | Replaces the tracking view when the tracked ride completes: a flag on a 64 px `--accent-subtle` tile, "Route ended" (Playfair Display, 28 px), "The bus has reached the terminus.", a "Waiting for the next bus" pill in `--status-live` on `--status-live-bg` and **Return to live routes**. After 10 s an eligible passenger sees the feedback modal and the view returns to the live route list. |
+| Tracking | Full-bleed map on `--pp-page`. Over it, at the top: a 44 px round back button and, at the right, the 48 px chat button with an AU Red unread badge ("9+" above nine); a status card sits between them only when needed (Section 3.2). Map notices sit at the top left and the **Center on bus** and **Show route overview** buttons (48 px) continue the chat column. In the thumb zone, the From → To bar or, once both stops are set, the trip drawer (Section 3.2). The route timeline sheet is collapsed to a 56 px peek above the navigation. Chat opens as an overlay between the header and the navigation. |
+| Route ended | Replaces the tracking view when the tracked ride completes: a flag on a 64 px `--accent-subtle` tile, "Route ended" (Playfair Display, 28 px), "The bus has reached the terminus.", a "Waiting for the next bus" pill in `--status-live` on `--status-live-bg` and **Return to live routes**. After 10 s an eligible passenger sees the feedback modal and the view returns to the live route list. A joined demo ride ends with "Demo ride complete" and "The demo bus has reached the terminus. A real ride works the same way.", without the pill or feedback. |
+| Demo ride | `lib/demoRide.ts`, unless `NEXT_PUBLIC_DEMO_RIDE` is `false`. Listed once live data has loaded, after the live routes (or below "No buses running") under a 12 px uppercase "Practice" label: a card with the "Demo" code, "Demo ride" and a "Not a real bus" chip in `--accent`, "SBI Branch → Ahmedabad University", "8 stops · Practice choosing stops and boarding", the action "Try it" and a faint diagonal hatch; its name is "Try the demo ride". Below the card, 12 px `--text-secondary` `.pp-attribution` reads "Demo route data © OpenStreetMap contributors", the last words an underlined link to openstreetmap.org/copyright. It never counts as a live route. A scripted bus runs in the browser along Thaltej Road, Drive-in Road and University Road with three stops already passed. Its tracking view has no chat and no walking-time location notice, and boarding is simulated: when the demo bus reaches the boarding stop, "The demo bus has reached your stop. Marking you on board…" and **On board** after 1.2 s; a stop it has already left gets "The demo bus has already left <stop>. Choose a stop ahead of it." |
 | Routes | `components/passenger/RoutesTab.tsx` shows published schedules as a line diagram, in the order the administrator selected them. The list header is a solid AU Red band with the white title "Routes", "Stops and scheduled times for each route." and, when more than one route is published, a white "Search routes or stops" field that matches route names, line labels and stop names locally. Each row (56 px; 52 px on wide pointer windows) shows an AU Red line badge (a white front-facing bus glyph and the label from `routeLineLabel`: "Line 7" for numbered routes, otherwise initials), the route name, the first and last stop and a chevron. The timetable has an AU Red header band with **Back to all routes** (44 px, narrow layouts only), a white line badge and the route name; a summary with the end stops, "Scheduled stops · <n> stops" and "Scheduled times only"; then the stops on a 4 px Dark Grey rail with white stop circles, AU Red at the first and last stop, each with "Scheduled 7:30 am" or "Time not set". From 64 rem on pointer devices the list and timetable sit side by side, the first matching route shows until another is chosen, and the selected row carries a 3 px AU Red inset bar; narrower windows show one at a time and Back returns focus to the row. States: "Loading routes…" with three skeleton rows, "No routes published yet", "No routes match your search.", "This route is no longer published. Choose another route." and "Route schedules could not be loaded." with **Retry**. The tab renders no map and computes no live ETAs. |
 | Profile | `components/passenger/AccountTab.tsx`: an AU Red title "Profile" over a 40 px AU Red rule, then an AU Red account card (`aria-label="Account"`) with a 60 px photo in a white ring, the name (20 px Bold, white), the email (white at 86 %) and a white role chip with AU Red text, or "Guest" and "Sign in to save preferences" when signed out; at large text sizes the details wrap below the photo. Below it, grouped rows with 32 px AU Red glyph tiles and chevrons, at least 56 px high: **Admin panel** (`ShieldUser`, administrators, AU Red label) and **Send feedback** (`MessageSquareText`). A separate group holds **Sign out** (`LogOut`) and, for passengers, **Delete account** (`UserRoundX`), both with `--status-danger` labels and tiles; signed out, it offers **Sign in with Google** (`LogIn`) in `--accent`. Sign-out and deletion ask for confirmation through `ConfirmModal` with the matching icon. A footer lists the University links whose URL is set in `config/university.ts` and "Eki", followed by the build version and date from `NEXT_PUBLIC_BUILD_VERSION` and `NEXT_PUBLIC_BUILD_DATE` when present. The tracked config supplies empty link URLs, and repository workflows supply neither build value. |
 | Bottom navigation | Three buttons, **Live**, **Routes** and **Profile**, each at least 44 × 44 px and at most 9 rem wide, sharing the bar so they fit a 320 px screen. Touch screens: a full-width translucent bar on the bottom edge. Pointer devices: the floating dock (22 px radius). Labels are `--pp-nav-fg`; the active button is marked with `aria-current="page"` and drawn in AU Red Bold. **Live** stays active during tracking. |
@@ -676,7 +689,8 @@ Paths are relative to `frontend/src/components/`.
 | `MessagingPanel` | `shared/MessagingPanel.tsx` | Ride chat for passengers and administrators, 500 characters per message. |
 | `FeedbackModal` | `shared/FeedbackModal.tsx` | Rating and comment dialog. |
 | `PassengerWorkspace` | `passenger/PassengerWorkspace.tsx` | Passenger shell: banners, views, the phone Live routes sheet and bottom navigation. |
-| `PassengerBoardingView` | `passenger/PassengerBoardingView.tsx` | Ride status, progress, stop pickers and **Board**. |
+| `PassengerBoardingView` | `passenger/PassengerBoardingView.tsx` | The Thumb drawer: From → To bar, docked trip drawer that boards on arrival, and the announced ride status (Section 3.2). |
+| `StopPickerSheet` | `passenger/StopPickerSheet.tsx` | The route timeline as the bar's stop picker. |
 | `RouteTimelineSheet` | `passenger/RouteTimelineSheet.tsx` | Stop timeline with ETAs inside `BottomSheet`. |
 | `RoutesTab` | `passenger/RoutesTab.tsx` | Published route schedules as a route list and timetable. |
 | `AccountTab` | `passenger/AccountTab.tsx` | Profile, account actions and University links. |

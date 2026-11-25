@@ -120,6 +120,16 @@ jobs:
           path: artifacts/passenger-progress/
           if-no-files-found: warn
           retention-days: 7
+      - name: Verify the demo ride and the Thumb drawer stop picker
+        run: npx playwright test --config playwright.demo-ride.config.ts
+      - name: Retain demo ride screenshots
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: demo-ride
+          path: artifacts/demo-ride/
+          if-no-files-found: warn
+          retention-days: 7
       - name: Verify confirmed production audit regressions
         run: npx playwright test --config playwright.production-audit.config.ts
       - name: Retain audit regression screenshots and measurements
