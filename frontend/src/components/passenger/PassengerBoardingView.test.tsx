@@ -250,6 +250,33 @@ describe("passenger boarding workflow", () => {
     expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
   });
 
+  it("tries while the bus is under a minute away, quietly waits if it is still too far, and boards when it is at the stop", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response('{"error":"You must be near the bus to board."}', { status: 403 }))
+      .mockResolvedValue(new Response('{"joined":true}'));
+    vi.stubGlobal("fetch", fetchMock);
+    const { joined, arrive } = await prepare();
+    // An origin is not always marked "at" before departure, so "Bus arriving" counts.
+    arrive({ stopEstimates: { context: "s", minutes: { alpha: 0, beta: 4 }, nextStopIndex: 0 } });
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    await new Promise(resolve => setTimeout(resolve, 50));
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+    expect(joined).not.toHaveBeenCalled();
+    arrive();
+    await waitFor(() => expect(joined).toHaveBeenCalledOnce());
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not try the demo ride before its bus is at the stop", async () => {
+    const joined = vi.fn();
+    render(<PassengerBoardingView sessionId="demo-1" route={route} tripState="in_service" demo onJoined={joined}
+      stopEstimates={{ context: "demo", minutes: { alpha: 0, beta: 4 }, nextStopIndex: 0 }} />);
+    await chooseStops(userEvent.setup());
+    await new Promise(resolve => setTimeout(resolve, 50));
+    expect(screen.queryByRole("alert")).toBeNull(); expect(joined).not.toHaveBeenCalled();
+  });
+
   it("boards a passenger who names a stop the bus has already left, as they may be on it", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response('{"joined":true}')); vi.stubGlobal("fetch", fetchMock);
     const joined = vi.fn();

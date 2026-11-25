@@ -152,10 +152,11 @@ visually hidden polite live region. Keep the combobox names ("Boarding stop",
 join, 44 px targets and the focus moves in FR-PAS-058.
 
 There is no Board button (2026-11-25, at the user's request). The passenger is
-boarded once the bus has reached the boarding stop: at the stop, or already
-past it, since a passenger on board is still within the 150 m check. Each trip
-is sent once and a failed check offers Try again rather than retrying by
-itself (FR-PAS-052).
+boarded once the bus has reached the boarding stop: under a minute away (the
+origin may not be marked "at" before departure), at the stop, or already past
+it, since a passenger on board is still within the 150 m check. Each stage is
+one attempt; a failed check offers Try again rather than retrying by itself
+(FR-PAS-052).
 
 ## Demo ride (2026-11-25)
 

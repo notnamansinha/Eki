@@ -35,6 +35,8 @@ interface Props {
 }
 
 type JoinState = "idle" | "joining" | "joined" | "error";
+/** How far the bus has come to the boarding stop; each stage is a chance to board. */
+type ArrivalStage = "arriving" | "at" | "left";
 
 const PREPARATION_TIMEOUT_MS = 10_000;
 const BOARDING_API_TIMEOUT_MS = 10_000;
@@ -44,6 +46,7 @@ export const TRIP_DOCK_DELAY_MS = 900;
 export const LOCATION_NOTICE = "When the bus reaches your stop, Eki checks your location once to mark you on board.";
 export const DEMO_NOTICE = "Demo ride: you are marked on board when the bus reaches your stop. Your location is not used.";
 const JOINING_NOTICE = "The bus has reached your stop. Checking your location to mark you on board…";
+const ARRIVING_NOTICE = "The bus is almost at your stop. Checking your location to mark you on board…";
 const UPDATING_NOTICE = "Updating your stops…";
 const DEMO_JOINING_NOTICE = "The demo bus has reached your stop. Marking you on board…";
 
@@ -240,20 +243,29 @@ export default function PassengerBoardingView({
   const healthDescription = liveHealth ? describeLiveBusHealth(liveHealth) : undefined;
   const boardingVisit = boardingIndex >= 0 ? progress?.states[boardingIndex] : undefined;
   // The bus has reached the boarding stop: it is there, or it has been and
-  // gone (a passenger already on it is still within the 150 m check).
-  const busReachedBoarding = boardingVisit === "at" || isBehindBus(boardingVisit);
+  // gone (a passenger already on it is still within the 150 m check). A real
+  // bus under a minute away counts too, since the origin may not be marked
+  // "at" before it departs; the demo bus always stops, so it waits for "at".
+  const arrivalStage: ArrivalStage | undefined = boardingVisit === "at" ? "at"
+    : isBehindBus(boardingVisit) ? "left"
+    : !demo && boardingVisit === "next" && boardingDetail === "<1 min" ? "arriving"
+    : undefined;
+  const trip = `${sessionId}|${boardingStopId}|${alightingStopId}`;
+  // A passenger not yet on board gets one attempt per stage; one on board
+  // has each change of stops sent once.
+  const sendKey = hasJoined ? trip : `${trip}|${arrivalStage}`;
 
   // Above the drawer: what is happening now, else why boarding waits, else
   // the location notice until the first join (FR-PAS-053).
   const note: { text: string; tone?: "danger"; role?: "alert" | "status" } | undefined =
     joinState === "error" && joinError ? { text: joinError, tone: "danger", role: "alert" }
-    : joinState === "joining" ? { text: demo ? DEMO_JOINING_NOTICE : hasJoined ? UPDATING_NOTICE : JOINING_NOTICE, role: "status" }
+    : joinState === "joining" ? { text: demo ? DEMO_JOINING_NOTICE : hasJoined ? UPDATING_NOTICE : arrivalStage === "arriving" ? ARRIVING_NOTICE : JOINING_NOTICE, role: "status" }
     : onBoard ? undefined
     : boardingBlockedReason && stopsChosen ? { text: boardingBlockedReason }
     : stopsChosen && !hasJoined ? { text: demo ? DEMO_NOTICE : LOCATION_NOTICE }
     : undefined;
 
-  const joinRide = async () => {
+  const joinRide = async (automatic = false) => {
     // State updates are batched; a ref closes the same-render double-click gap.
     if (joinAbortRef.current) return;
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "");
@@ -274,7 +286,8 @@ export default function PassengerBoardingView({
       return;
     }
 
-    submittedTrip.current = `${sessionId}|${boardingStopId}|${alightingStopId}`;
+    submittedTrip.current = sendKey;
+    const stage = arrivalStage;
     setJoinState("joining");
     setJoinError("");
     const updatingExistingPassenger = hasJoined;
@@ -324,6 +337,7 @@ export default function PassengerBoardingView({
       if (!isCurrent()) return;
       // Try again leaves the drawer once on board; keep keyboard focus in it.
       focusAfterJoin.current = document.activeElement === retryRef.current;
+      submittedTrip.current = trip;
       setHasJoined(true);
       setJoinState("joined");
       onJoined?.();
@@ -332,6 +346,12 @@ export default function PassengerBoardingView({
       // If the server no longer sees the prior manifest entry, the next attempt
       // must perform the first-boarding proximity check again.
       if (updatingExistingPassenger) setHasJoined(false);
+      // Still too far while the bus was arriving: say nothing, and board when
+      // it is at the stop.
+      if (automatic && !updatingExistingPassenger && stage === "arriving" && error instanceof ApiError && error.status === 403) {
+        setJoinState("idle");
+        return;
+      }
       setJoinState("error");
       setJoinError(
         error instanceof ApiError && error.code === "NETWORK_TIMEOUT"
@@ -352,19 +372,19 @@ export default function PassengerBoardingView({
 
   // There is no Board button: the passenger is marked on board when the bus
   // reaches their stop, and changed stops are sent once they are on board.
-  // Each trip is sent once; after a failure only Try again sends it again.
-  const tripKey = `${sessionId}|${boardingStopId}|${alightingStopId}`;
+  // Nothing is sent twice for the same key; after a failure, Try again or the
+  // bus's next stage (at the stop, then gone) tries again.
   const readyToSend = stopsChosen && !boardingBlockedReason && joinState !== "joining" &&
-    (hasJoined || busReachedBoarding);
+    (hasJoined || arrivalStage !== undefined);
   const joinLatest = useRef(joinRide);
   useEffect(() => { joinLatest.current = joinRide; });
   useEffect(() => {
-    if (!readyToSend || submittedTrip.current === tripKey) return;
-    submittedTrip.current = tripKey;
+    if (!readyToSend || submittedTrip.current === sendKey) return;
+    submittedTrip.current = sendKey;
     let current = true;
-    queueMicrotask(() => { if (current) void joinLatest.current(); });
+    queueMicrotask(() => { if (current) void joinLatest.current(true); });
     return () => { current = false; };
-  }, [readyToSend, tripKey]);
+  }, [readyToSend, sendKey]);
 
   const cancelDock = () => {
     if (dockTimer.current) clearTimeout(dockTimer.current);
