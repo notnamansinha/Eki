@@ -1407,7 +1407,11 @@ button.pp-picker-passed:hover { background: var(--surface-3); }
    Profile. The card is a paper dialog in the passenger type: Playfair title
    over a short gold rule, Roboto body, AU Red Next and progress. */
 /* Only the blockers and the card take taps, so a try-it spotlight reaches the app. */
-.pp-tour { position: fixed; inset: 0; z-index: 200; pointer-events: none; }
+/* The tour fades in once its first spotlight is in place; until then nothing
+   moves, so the spotlight and card appear where they belong. */
+.pp-tour { position: fixed; inset: 0; z-index: 200; pointer-events: none; opacity: 0; transition: opacity 0.24s ease; }
+.pp-tour[data-shown] { opacity: 1; }
+.pp-tour:not([data-shown]) :is(.pp-tour-spotlight, .pp-tour-card) { transition: none; }
 .pp-tour-blocker { position: absolute; inset: 0; pointer-events: auto; }
 .pp-tour-scrim { position: absolute; inset: 0; background: rgb(35 37 37 / 0.62); pointer-events: none; }
 .pp-tour-spotlight {
@@ -1448,10 +1452,15 @@ button.pp-picker-passed:hover { background: var(--surface-3); }
   color: var(--text-primary);
   font-family: var(--font-ui);
   transition: top 0.32s cubic-bezier(0.32, 0.72, 0, 1), left 0.32s cubic-bezier(0.32, 0.72, 0, 1);
-  animation: fade-in 0.2s ease;
 }
 .pp-tour-card:focus,
 .pp-tour-content:focus { outline: none; }
+/* Each step's copy rises in gently while the spotlight glides to its part. */
+.pp-tour-copy { animation: pp-tour-copy-in 0.28s cubic-bezier(0.32, 0.72, 0, 1); }
+@keyframes pp-tour-copy-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
 .pp-tour-header { display: flex; min-height: 44px; align-items: center; justify-content: space-between; gap: 1rem; margin-top: -0.5rem; }
 .pp-tour-count { color: var(--text-secondary); font-size: 0.8125rem; font-weight: 500; font-variant-numeric: tabular-nums; }
 .pp-tour-skip {
@@ -1504,9 +1513,10 @@ button.pp-picker-passed:hover { background: var(--surface-3); }
   .pp-trip-board:active:not(:disabled) { transform: none; }
 
   /* The spotlight and card jump between steps. */
+  .pp-tour,
   .pp-tour-spotlight,
   .pp-tour-card,
   .pp-tour-dot { transition: none; }
-  .pp-tour-card,
+  .pp-tour-copy,
   .pp-tour-spotlight[data-live]::after { animation: none; }
 }

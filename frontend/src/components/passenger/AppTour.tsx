@@ -7,10 +7,11 @@ import { useDialogFocus } from "@/hooks/useDialogFocus";
 /*
  * The app tour: a short, hands-on walk through the passenger app. Each step
  * dims everything but one part of the real screen. On a "try it" step that
- * part stays live and pulses: the passenger taps the demo ride, picks their
- * own stops, then opens Routes and Profile, and the tour moves on as they do.
- * Next does the step for them (and is the keyboard and screen reader path);
- * Skip at the top of the card ends the tour.
+ * part stays live and pulses: the passenger opens Vaishnodevi to Campus (a bus
+ * the tour drives in this browser), picks their own stops, then opens Routes
+ * and Profile, and the tour moves on as they do. Next does the step for them
+ * (and is the keyboard and screen reader path); Skip at the top of the card
+ * ends the tour.
  */
 
 export type TourStepId = "welcome" | "welcome-no-ride" | "stops" | "drawer" | "chat" | "routes" | "profile";
@@ -29,9 +30,9 @@ interface StepContent {
 export const TOUR_STEPS: Record<TourStepId, StepContent> = {
   welcome: {
     title: "Welcome to Eki",
-    body: "Tap the demo ride to try a bus.",
+    body: "Tap a route to track its bus.",
     tryIt: true,
-    targets: ['[data-passenger-route="demo-ride"]', ".passenger-home-heading"],
+    targets: ['[data-passenger-route="tour-ride"]', ".passenger-home-heading"],
   },
   "welcome-no-ride": {
     title: "Welcome to Eki",
@@ -53,7 +54,7 @@ export const TOUR_STEPS: Record<TourStepId, StepContent> = {
   },
   chat: {
     title: "Text the driver",
-    body: "On a real bus, tap here to chat.",
+    body: "Chat with your driver from here.",
     targets: ['[data-tour="chat"]'],
   },
   routes: {
@@ -101,6 +102,13 @@ interface Layout {
 const GUTTER = 16;
 const GAP = 14;
 const SPOTLIGHT_PADDING = 6;
+/**
+ * How long a step waits for its own part of the screen (a sheet rising, a
+ * screen sliding in) before it settles for a fallback or for none.
+ */
+const SETTLE_MS = 700;
+/** Before the tour first appears, its target holds still this long: the page may still be laying out. */
+const FIRST_STILL_MS = 150;
 
 function findTarget(selectors: string[]): HTMLElement | null {
   for (const selector of selectors) {
@@ -110,6 +118,16 @@ function findTarget(selectors: string[]): HTMLElement | null {
     if (element && box && box.width > 0 && box.height > 0) return element;
   }
   return null;
+}
+
+/** A finite transition or animation is moving `element` or a part of the page around it. */
+function inMotion(element: HTMLElement): boolean {
+  if (typeof document.getAnimations !== "function") return false;
+  return document.getAnimations().some(animation => {
+    const target = (animation.effect as KeyframeEffect | null)?.target;
+    return animation.playState === "running" && target instanceof Element && target.contains(element) &&
+      animation.effect?.getComputedTiming().iterations !== Infinity;
+  });
 }
 
 function sameLayout(a: Layout, b: Layout) {
@@ -145,27 +163,72 @@ export default function AppTour({ steps, index, reached = false, onNext, onSkip 
   const id = useId();
   const dialogRef = useDialogFocus<HTMLDivElement>(true, onSkip);
   const [layout, setLayout] = useState<Layout>({ target: null, viewport: { width: 0, height: 0 }, card: { width: 0, height: 0 } });
+  // The step whose spotlight is in place. The tour fades in once the first
+  // one is, so it never sweeps in from where a sheet was before it settled.
+  const [placedPhase, setPlacedPhase] = useState<string | null>(null);
+  const everPlaced = useRef(false);
   const scrolledStep = useRef<string | null>(null);
+  // Shown a frame after the first placement, so the card and spotlight are
+  // painted in place before their transitions switch on.
+  const [shown, setShown] = useState(false);
+  const firstPlaced = placedPhase !== null;
+  useEffect(() => {
+    if (!firstPlaced) return;
+    const frame = window.requestAnimationFrame(() => setShown(true));
+    return () => window.cancelAnimationFrame(frame);
+  }, [firstPlaced]);
 
   // Follow the spotlit element every frame: screens slide and sheets rise
   // between steps, and the trip bar turns into the drawer under the spotlight.
-  // A timer backs up the frame loop where frames are throttled.
+  // A new step keeps the last spotlight until its own part has appeared and
+  // stopped moving, then glides there. A timer backs up the frame loop where
+  // frames are throttled.
   useEffect(() => {
     let frame = 0;
+    const started = performance.now();
+    let placed = false;
+    let lastBox = "";
+    let stillSince = started;
+    let missingSince: number | null = null;
     const measureOnce = () => {
+      const now = performance.now();
+      const waited = now - started > SETTLE_MS;
       const element = findTarget(step.targets);
       if (element && scrolledStep.current !== phase) {
         scrolledStep.current = phase;
         element.scrollIntoView?.({ block: "nearest" });
       }
       const box = element?.getBoundingClientRect();
+      const boxKey = box ? `${box.top},${box.left},${box.width},${box.height}` : "";
+      if (boxKey !== lastBox) stillSince = now;
+      const unmoved = boxKey !== "" && boxKey === lastBox && now - stillSince >= (everPlaced.current ? 0 : FIRST_STILL_MS);
+      lastBox = boxKey;
+      missingSince = box ? null : missingSince ?? now;
       const card = dialogRef.current;
-      const next: Layout = {
-        target: box ? { top: box.top, left: box.left, width: box.width, height: box.height } : null,
+      const sizes = {
         viewport: { width: window.innerWidth, height: window.innerHeight },
         card: { width: card?.offsetWidth ?? 0, height: card?.offsetHeight ?? 0 },
       };
+      // Hold the last spotlight until this step's part has settled (in the same
+      // place as last frame, with nothing sliding it), and briefly when a placed
+      // part goes (its screen is changing), so the spotlight glides rather than
+      // flashing to a full dim.
+      const hold = placed
+        ? missingSince !== null && now - missingSince < SETTLE_MS
+        : !waited && !(unmoved && !inMotion(element!));
+      if (hold) {
+        // The card still fits its new copy.
+        setLayout(previous => {
+          const next = { ...previous, ...sizes };
+          return sameLayout(previous, next) ? previous : next;
+        });
+        return;
+      }
+      placed = true;
+      everPlaced.current = true;
+      const next: Layout = { target: box ? { top: box.top, left: box.left, width: box.width, height: box.height } : null, ...sizes };
       setLayout(previous => sameLayout(previous, next) ? previous : next);
+      setPlacedPhase(phase);
     };
     const loop = () => {
       measureOnce();
@@ -187,10 +250,11 @@ export default function AppTour({ steps, index, reached = false, onNext, onSkip 
     width: target.width + SPOTLIGHT_PADDING * 2,
     height: target.height + SPOTLIGHT_PADDING * 2,
   } : null;
-  const live = Boolean(step.tryIt && hole);
+  // The spotlight opens for taps only once it has reached this step's part.
+  const live = Boolean(step.tryIt && hole && placedPhase === phase);
 
   return createPortal(
-    <div className="pp-tour" data-tour-step={stepId}>
+    <div className="pp-tour" data-tour-step={stepId} data-shown={shown || undefined}>
       {/* Taps outside the card and the live spotlight do nothing. On a try-it step four
           blockers frame the spotlight, so taps inside it reach the real control. */}
       {live && hole ? (
@@ -203,10 +267,12 @@ export default function AppTour({ steps, index, reached = false, onNext, onSkip 
       ) : (
         <div className="pp-tour-blocker" aria-hidden="true" />
       )}
+      {/* Keyed apart, so a new spotlight opens where it belongs instead of
+          gliding out of the scrim's corner. */}
       {hole ? (
-        <div className="pp-tour-spotlight" data-live={live || undefined} aria-hidden="true" style={hole} />
+        <div key="spotlight" className="pp-tour-spotlight" data-live={live || undefined} aria-hidden="true" style={hole} />
       ) : (
-        <div className="pp-tour-scrim" aria-hidden="true" />
+        <div key="scrim" className="pp-tour-scrim" aria-hidden="true" />
       )}
       <div
         ref={dialogRef}
@@ -216,8 +282,8 @@ export default function AppTour({ steps, index, reached = false, onNext, onSkip 
         aria-describedby={`${id}-body`}
         tabIndex={-1}
         className="pp-tour-card"
-        // Until the card is measured its place is a guess; keep it transparent, not hidden from assistive tech.
-        style={{ top: position.top, left: position.left, opacity: layout.card.height > 0 ? undefined : 0 }}
+        // Until the first spotlight is in place the tour is transparent (see `data-shown`), not hidden from assistive tech.
+        style={{ top: position.top, left: position.left }}
       >
         {/* The card's content takes focus when it opens, so screen readers read the step and
             touch users see no focus ring; Tab reaches Skip and Next. */}
@@ -233,9 +299,12 @@ export default function AppTour({ steps, index, reached = false, onNext, onSkip 
             </button>
           )}
         </div>
-        <h2 id={`${id}-title`} className="pp-tour-title">{step.title}</h2>
-        <hr className="pp-tour-rule" aria-hidden="true" />
-        <p id={`${id}-body`} className="pp-tour-body">{step.body}</p>
+        {/* Each step's copy fades in as the spotlight moves. */}
+        <div key={phase} className="pp-tour-copy">
+          <h2 id={`${id}-title`} className="pp-tour-title">{step.title}</h2>
+          <hr className="pp-tour-rule" aria-hidden="true" />
+          <p id={`${id}-body`} className="pp-tour-body">{step.body}</p>
+        </div>
         <div className="pp-tour-footer">
           <div className="pp-tour-dots" aria-hidden="true">
             {steps.map((entry, position) => (

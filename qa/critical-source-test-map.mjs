@@ -189,7 +189,7 @@ export const criticalSourceTestMap = [{
 }, {
   caseId: 'MAP17',
   scope: 'The browser-simulated demo ride publishes backend-shaped stop progress on its fixed road: three stops passed at the start, the stop it waits at acknowledged with the next index current, the acknowledgement cleared when it moves on, and forward travel only. Real trip-state reduction, GNSS and RTDB delivery remain separate.',
-  sourcePaths: ['frontend/src/lib/demoRide.ts', 'frontend/src/lib/demoRideRoute.ts'],
+  sourcePaths: ['frontend/src/lib/demoRide.ts', 'frontend/src/lib/rideSimulation.ts', 'frontend/src/lib/demoRideRoute.ts'],
   tests: [link('frontend/src/lib/demoRide.test.ts', 'scripted ride > starts in service with three stops passed, moving towards the fourth',
     'The first record is in service and moving with currentStopIndex 3 and no atStopIndex, so stop progress marks three stops passed and the fourth next.'),
   link('frontend/src/lib/demoRide.test.ts', 'scripted ride > stops at each stop with the stop acknowledged, then moves on',
@@ -201,7 +201,7 @@ export const criticalSourceTestMap = [{
 }, {
   caseId: 'MAP18',
   scope: 'For the demo ride moving at its scripted 45 km/h, the production arrival estimate for the next stop is within 5 s of when the scripted bus reaches it. Stopped-bus speed floors, configured delay and real telemetry speeds remain separate.',
-  sourcePaths: ['frontend/src/lib/demoRide.ts', 'frontend/src/lib/demoRideRoute.ts'],
+  sourcePaths: ['frontend/src/lib/demoRide.ts', 'frontend/src/lib/rideSimulation.ts', 'frontend/src/lib/demoRideRoute.ts'],
   tests: [link('frontend/src/lib/demoRide.test.ts', 'scripted ride > gives honest arrival estimates: the next stop is due when the bus reaches it',
     'busStopArrivalTimestamps over the first demo record and the demo road puts the next stop within 5 s of the scripted drive time.')],
 }, {
