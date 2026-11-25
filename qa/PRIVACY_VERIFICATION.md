@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-TST-018 | 1.0 | Current | 2026-11-24 |
+| EKI-TST-018 | 1.0 | Current | 2026-11-25 |
 
 ## 1. Purpose
 
@@ -65,11 +65,11 @@ Stores outside the code:
 | PRIV-01 | Medium | No record of a completed deletion survives. The worker deletes `_privacy_deletion_requests/{uid}`, the only record of the request, and logs omit UIDs, so nothing shows afterwards that a deletion was requested or when it finished. A completion time cannot be evidenced on a deployed project after the fact |
 | PRIV-02 | Low | `_userAuthorization/{uid}`, in Firestore and RTDB, survives the deletion of an account that was once an operator or administrator. It is keyed by the UID and holds the role and version. The [deletion procedure](../docs/operations/PRIVACY_DELETION.md) does not list it as retained |
 | PRIV-03 | Low | The privacy scan cursor can hold the UID of a pending request until the next scan, also after that account is deleted |
-| PRIV-04 | Unknown | The legacy RTDB `users` and `messages` trees are outside the deletion. Staging sets `LEGACY_RTDB_RETIRED=false`. Whether a deployed project still holds passenger data there is unverified |
+| PRIV-04 | Unknown | The legacy RTDB `users` and `messages` trees are outside the deletion. Staging sets `LEGACY_RTDB_RETIRED=false` ([`staging.service.yaml`](../deploy/cloud-run/staging.service.yaml)). Whether a deployed project still holds passenger data there is unverified |
 | PRIV-05 | Medium | There is no completion-time commitment: the deletion procedure states that there is no guaranteed completion time. The worker scans every 60 s while an instance holds the lease, and staging scales to zero |
 | PRIV-06 | Medium | There is no export or data-access path. No endpoint, screen or procedure gives a passenger a copy or summary of their data |
 | PRIV-07 | High | No privacy notice is published. `UNIVERSITY_LINKS` in [`frontend/src/config/university.ts`](../frontend/src/config/university.ts) leaves the privacy notice and terms URLs empty, so both links are hidden, and no page states purposes, retention, a grievance contact, a lawful basis or sub-processors |
-| PRIV-08 | Low | Many error handlers log the raw error object, for example [`users.ts:127`](../backend/src/routes/users.ts) and [`sessions.ts:68`](../backend/src/routes/sessions.ts). A Firestore error can quote a document path such as `users/{uid}` |
+| PRIV-08 | Low | Many error handlers log the raw error object, for example the profile bootstrap handler in [`users.ts`](../backend/src/routes/users.ts) and `sendBoardingError` in [`sessions.ts`](../backend/src/routes/sessions.ts). A Firestore error can quote a document path such as `users/{uid}` |
 
 Severity is an engineering estimate. The findings are recorded here, not fixed.
 
@@ -109,12 +109,12 @@ Run from a clean checkout. PowerShell is shown. The staging owner first creates 
 1. Read the serving revision: `gcloud run services describe eki-backend-staging --region asia-south2 --format="yaml(status.traffic)"`. Expected: one revision with `percent: 100`.
 2. Sign in with `gcloud auth application-default login` as an operator with read access to Auth, Firestore, RTDB and the Cloud Run service.
 3. In a private browser window, sign in to `https://bustrack-be165.web.app` as the test account, use the passenger features you want covered (board a ride, send a message, send feedback), then open **Profile**, select **Delete account** and confirm. Note the time of the confirmation with its offset.
-4. Set `$env:EKI_PRIVACY_CONFIRM_PROJECT = "bustrack-be165"`, `$env:EKI_PRIVACY_EXPECTED_REVISION = "<revision from step 1>"`, `$env:EKI_PRIVACY_TEST_UID = "<test UID>"` and `$env:EKI_PRIVACY_REQUESTED_AT = "<time, for example 2026-11-24T15:10:00+05:30>"`. Optionally set `EKI_PRIVACY_WAIT_MINUTES` (default 15, at most 60).
+4. Set `$env:EKI_PRIVACY_CONFIRM_PROJECT = "bustrack-be165"`, `$env:EKI_PRIVACY_EXPECTED_REVISION = "<revision from step 1>"`, `$env:EKI_PRIVACY_TEST_UID = "<test UID>"` and `$env:EKI_PRIVACY_REQUESTED_AT = "<time, for example 2026-11-24T15:10:00+05:30>"`. Optionally set `EKI_PRIVACY_WAIT_MINUTES` (default 15, at most 60). The [configuration reference](../docs/CONFIGURATION.md#6-qa-test-and-tooling-variables) lists each variable.
 5. Run `npm run qa:privacy:deletion:staging -- --dry-run`. Expected: `verdict: DRY_RUN`, nothing sent, and `artifacts/qa/privacy-deletion-staging/plan.json` listing every read. Review it.
 6. Run `npm run qa:privacy:deletion:staging`. The runner reads the serving revision through the Cloud Run Admin API and stops unless it equals `EKI_PRIVACY_EXPECTED_REVISION`. It then repeats the read plan every 15 s until the request record and the Auth user are gone or the wait ends, and reads the revision again. Expected: `artifacts/qa/privacy-deletion-staging-report.md` with the per-store outcomes, counts of retained records and an upper bound of the completion time.
 7. Run `Remove-Item Env:EKI_PRIVACY_*` and close the private window. Attach both report files to the tracking issue.
 
-The runner refuses to start when the project confirmation is wrong, the revision is not an `eki-backend-staging` revision name, the UID lacks the test marker, the request time is missing, has no offset, or is not within the last 7 days, or any `*_EMULATOR_HOST` variable is set. Every read in the plan is one of `getUser`, `getDocument`, `getField`, `count`, `countArray`, `countGroup` or `getRtdb`; the executor refuses a plan with any other operation before it reads anything. The report holds booleans and counts, never document contents. `archivedMessages` is not read on staging because no collection-group index covers `senderId` there.
+The guards and the read plan are in [`privacy-staging.mjs`](../scripts/qa/privacy-staging.mjs). The runner refuses to start when the project confirmation is wrong, the revision is not an `eki-backend-staging` revision name, the UID lacks the test marker, the request time is missing, has no offset, or is not within the last 7 days, or any `*_EMULATOR_HOST` variable is set. Every read in the plan is one of `getUser`, `getDocument`, `getField`, `count`, `countArray`, `countGroup` or `getRtdb`; the executor refuses a plan with any other operation before it reads anything. The report holds booleans and counts, never document contents. `archivedMessages` is not read on staging because no collection-group index covers `senderId` there.
 
 ## 5. Evidence and verdicts
 
@@ -123,7 +123,7 @@ The runner refuses to start when the project confirmation is wrong, the revision
 | `artifacts/qa/privacy-deletion-<profile>-report.json`, `.md` | Commit and dirty flag, target, revision (staging), per-account store outcomes, sweep hits, log scan totals and line numbers, access checks, request-to-completion times, findings, verdict |
 | `artifacts/qa/privacy-deletion-local/backend.log` | The fixture's output with synthetic values replaced by their category |
 | `artifacts/qa/privacy-deletion-staging/plan.json` | Every staging read |
-| `artifacts/qa/privacy-hosts-<target>.json`, `.md` | Routes with status and final path, each host with request count, methods, resource types and routes, the vendor map, the hosts the Content-Security-Policy permits, cookies after the run (names and domains only), notice status, verdict |
+| `artifacts/qa/privacy-hosts-<target>.json`, `.md` | Routes with status and final path, each host with request count, methods, resource types and routes, the vendor map, the hosts the Content-Security-Policy permits and the vendors among them that no page loaded, cookies after the run (names and domains only), `localStorage` and `sessionStorage` keys and IndexedDB database names per route (names only), notice status, verdict |
 
 The host check loads `/`, `/install`, `/passenger`, `/admin`, `/feedback`, `/privacy` and `/terms`. The last two show whether such pages exist.
 
@@ -140,13 +140,13 @@ The host check loads `/`, `/install`, `/passenger`, `/admin`, `/feedback`, `/pri
 | `NO_NOTICE` | Hosts | 1 | Nothing undeclared loaded, but there is no notice to compare with |
 | `BLOCKED`, `DRY_RUN` | Both | 1, 0 | Setup failed (`setupError` names the step); plan written and nothing sent |
 
-A declared vendor that never loads is a warning, not a failure: signed-in screens, such as the passenger map, load vendors that the public routes do not.
+A declared vendor that never loads is a warning, not a failure: signed-in screens, such as the passenger map, load vendors that the public routes do not. For the same reason, the report's coverage line names every vendor the Content-Security-Policy permits that no page loaded. A host check says nothing about those vendors, so a verdict that names only Firebase Hosting does not show that Maps, Authentication or Firestore are disclosed.
 
 The first runs and their results are recorded in [privacy verification, 24 November](../docs/testing/PRIVACY_VERIFICATION_2026_11_24.md).
 
 ## 6. DPDP notice and code checklist
 
-This checklist compares what a privacy notice would have to state with what the code does. On 2026-11-24 no notice is published (PRIV-07), so every notice cell reads "Not published". The code column is verified against the sources cited. Whether the code's behaviour satisfies the Digital Personal Data Protection Act, 2023 and its rules is a legal question for the data owner [1].
+This checklist compares what a privacy notice would have to state with what the code does. The notice column reads "Not published" while `UNIVERSITY_LINKS` has no privacy notice URL (PRIV-07); a change that publishes the notice updates this column. The [evidence record](../docs/testing/PRIVACY_VERIFICATION_2026_11_24.md#6-notice-and-code-checklist) states which commit the checklist was last completed against. The code column is verified against the sources cited. Whether the code's behaviour satisfies the Digital Personal Data Protection Act, 2023 and its rules is a legal question for the data owner [1].
 
 | Item | Notice | Code and configuration |
 |---|---|---|
@@ -188,7 +188,7 @@ The data owner records here whether the findings in Section 3.1 and the gaps in 
 
 - The local run proves the code's behaviour against emulators, the compiled backend and synthetic Auth. It does not show deployed indexes, Cloud Logging, request logs, backups or the time a deployed worker takes.
 - `qa:privacy:hosts:live` and `qa:privacy:deletion:staging` contact the public staging site and, for the second, the staging project. They are the exceptions to the [QA programme](README.md) rule that harnesses contact no real Google or Firebase service. Neither runs in CI.
-- The host check sees only public routes without sign-in. The CSP list in the report is the upper bound of what a signed-in session can contact.
+- The host check sees only public routes without sign-in. The CSP list in the report is the upper bound of what a signed-in session can contact, and the coverage line names the permitted vendors the run did not observe. Observing signed-in screens needs a session: a synthetic emulator account locally, or the dedicated test account on staging.
 - Vendor declarations are matched by name in the notice text. A reviewer still reads the notice.
 - No run gives legal approval (Section 6.1).
 

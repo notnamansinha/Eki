@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-EVD-066 | 1.0 | Historical | 2026-11-24 |
+| EKI-EVD-066 | 1.0 | Historical | 2026-11-25 |
 
 First runs of the [privacy verification](../../qa/PRIVACY_VERIFICATION.md) harnesses for [issue #524](https://github.com/notnamansinha/Eki/issues/524). Passenger account deletion ran end to end against disposable emulators; the public-page host check ran against the local static export and, once, against the live staging site `https://bustrack-be165.web.app`. The staging deletion check and the data owner's sign-off were not done; Section 7 lists why. Times are UTC; every run fell on 24 November in India Standard Time (UTC+05:30).
 
@@ -100,7 +100,7 @@ The [runbook](../../qa/PRIVACY_VERIFICATION.md#31-findings) describes each findi
 |---|---|---|
 | PRIV-01 No record of a completed deletion | Medium | Runs D1 and D2: `_privacy_deletion_requests/{uid}` removed, and the sweep found no other record of either request |
 | PRIV-02 `_userAuthorization/{uid}` survives for former operators | Low | Runs D1 and D2: both copies kept for the former operator, with the UID as the key |
-| PRIV-03 The scan cursor can name a pending UID | Low | Code only (`privacyDeletionWorker.ts:113`): a run with fewer than 20 pending requests leaves the cursor `null`, as D1 and D2 did |
+| PRIV-03 The scan cursor can name a pending UID | Low | Code only (the scan checkpoint write in `privacyDeletionWorker.ts`): a run with fewer than 20 pending requests leaves the cursor `null`, as D1 and D2 did |
 | PRIV-04 Legacy RTDB trees outside the deletion | Unknown | Code only: no current writer, so the local runs cannot hold such data; staging was not read |
 | PRIV-05 No completion-time commitment | Medium | `PRIVACY_DELETION.md` Section 3.2; local completion times in Section 2 |
 | PRIV-06 No export or data-access path | Medium | None of the 72 operations in `backend/openapi.json` returns a passenger's own data as an export, and no screen or procedure does |

@@ -1,13 +1,14 @@
 /**
- * Passenger personal-data inventory and the checks around account deletion
- * (issue #524, qa/PRIVACY_VERIFICATION.md).
+ * Passenger personal-data inventory, and the evaluation of a deletion run
+ * against it (qa/PRIVACY_VERIFICATION.md, Section 3).
  *
  * The inventory is derived from backend/src and frontend/src. The unit tests
  * in scripts/qa-privacy.test.mjs fail when the code adds a Firestore
  * collection or RTDB root that is not classified here, or when the deletion
  * worker's list of deleted stores changes. Everything in this module is a pure
- * function of its inputs; scripts/qa/run-privacy-deletion.mjs owns every
- * process, emulator and network step.
+ * function of its inputs. Leak markers are in privacy-markers.mjs and the
+ * staging guards and read plan in privacy-staging.mjs;
+ * scripts/qa/run-privacy-deletion.mjs owns every process, emulator and network step.
  */
 
 export const DELETION_WORKER = 'backend/src/services/privacyDeletionWorker.ts';
@@ -25,18 +26,18 @@ export const DELETION_DOC = 'docs/operations/PRIVACY_DELETION.md';
  */
 export const PASSENGER_STORES = Object.freeze([
   { id: 'auth', store: 'auth', match: '{uid}', fields: 'UID, e-mail, display name, photo URL, sign-in providers, custom claims',
-    writer: 'Firebase Authentication', handling: 'deleted', code: 'privacyDeletionWorker.ts auth.deleteUser' },
+    writer: 'Firebase Authentication', handling: 'deleted' },
   { id: 'profile', store: 'firestore', match: 'users/{uid}', fields: 'uid, email, displayName, photoURL, role, createdAt',
-    writer: 'backend/src/routes/users.ts (POST /api/users/bootstrap)', handling: 'deleted', code: 'privacyDeletionWorker.ts:66' },
+    writer: 'backend/src/routes/users.ts (POST /api/users/bootstrap)', handling: 'deleted' },
   { id: 'feedbackCooldown', store: 'firestore', match: 'feedbackCooldowns/{uid}', fields: 'userId, feedbackId, lastSubmittedAt',
-    writer: 'frontend/src/lib/feedbackStore.ts (browser, under firestore.rules)', handling: 'deleted', code: 'privacyDeletionWorker.ts:66' },
+    writer: 'frontend/src/lib/feedbackStore.ts (browser, under firestore.rules)', handling: 'deleted' },
   { id: 'passengerRequest', store: 'firestore', match: 'passenger_requests/{uid}', fields: 'passengerId, busId, type, lat, lng, status, createdAt',
-    writer: 'Legacy: no current writer; admin PATCH and DELETE /api/requests/{id}', handling: 'deleted', code: 'privacyDeletionWorker.ts:66' },
+    writer: 'Legacy: no current writer; admin PATCH and DELETE /api/requests/{id}', handling: 'deleted' },
   { id: 'chatRateLimit', store: 'firestore', match: 'ride_sessions/*/messageRateLimits/{uid}', fields: 'userId, sentAt, lastSentAt',
-    writer: 'backend/src/routes/sessions.ts (message send)', handling: 'deleted', code: 'privacyDeletionWorker.ts:55' },
+    writer: 'backend/src/routes/sessions.ts (message send)', handling: 'deleted' },
   { id: 'deletionRequest', store: 'firestore', match: '_privacy_deletion_requests/{uid}',
     fields: 'Document ID is the UID; targetCreatedAt (Auth creation time), status, attempt, error and recovery fields',
-    writer: 'backend/src/services/privacyDeletionRequests.ts', handling: 'removed', code: 'privacyDeletionWorker.ts:71', finding: 'PRIV-01' },
+    writer: 'backend/src/services/privacyDeletionRequests.ts', handling: 'removed', finding: 'PRIV-01' },
   { id: 'feedback', store: 'firestore', match: 'feedbacks/*', fields: 'userId, userName, comment, rating, sessionId, busId, driverId, timestamp',
     writer: 'frontend/src/lib/feedbackStore.ts (browser, under firestore.rules)', handling: 'retained' },
   { id: 'rideManifest', store: 'firestore', match: 'ride_sessions/*', fields: 'passengers.{uid}: userId, userName, boardingStopId, alightingStopId, joinedAt; passengerIds[]',
@@ -54,7 +55,7 @@ export const PASSENGER_STORES = Object.freeze([
   { id: 'fleetLock', store: 'firestore', match: '_fleet_reconciliation_locks/singleton', fields: 'privacyRequestId names the UID being deleted',
     writer: 'backend/src/services/fleetMutationLock.ts', handling: 'transient' },
   { id: 'privacyCursor', store: 'firestore', match: '_reconciliation_cursors/privacy-deletions', fields: 'cursor names the last pending UID of a full 20-request page',
-    writer: 'backend/src/services/privacyDeletionWorker.ts:113', handling: 'transient', finding: 'PRIV-03' },
+    writer: 'backend/src/services/privacyDeletionWorker.ts (scan checkpoint)', handling: 'transient', finding: 'PRIV-03' },
   { id: 'legacyRtdbUsers', store: 'rtdb', match: 'users/{uid}', fields: 'Legacy tree; no current writer or reader',
     writer: 'None in current code', handling: 'residual', finding: 'PRIV-04' },
 ]);
@@ -85,24 +86,20 @@ export const OTHER_STORES = Object.freeze({
   },
 });
 
-/** Findings the inventory and the runs support. Severity is an engineering estimate, not a legal assessment. */
+/**
+ * Findings the inventory and the runs support, by ID, severity and title. Each is
+ * described once, in qa/PRIVACY_VERIFICATION.md Section 3.1. Severity is an
+ * engineering estimate, not a legal assessment.
+ */
 export const FINDINGS = Object.freeze([
-  { id: 'PRIV-01', severity: 'Medium', title: 'No record of a completed deletion survives',
-    detail: 'The worker deletes _privacy_deletion_requests/{uid}, the only record of the request, when deletion succeeds, and logs omit UIDs. Nothing shows afterwards that a deletion was requested or when it finished, so the completion time cannot be evidenced on a deployed project.' },
-  { id: 'PRIV-02', severity: 'Low', title: 'Authorization records of former operators survive deletion',
-    detail: '_userAuthorization/{uid} in Firestore and RTDB is keyed by the UID and holds the role and version. Fleet demotion and role sync write it; the deletion worker does not remove it, and PRIVACY_DELETION.md does not list it as retained.' },
-  { id: 'PRIV-03', severity: 'Low', title: 'The privacy scan cursor can name a pending UID',
-    detail: 'When a scan page holds 20 pending requests, _reconciliation_cursors/privacy-deletions.cursor stores the last UID of the page until the next scan, even if that account has been deleted in the meantime.' },
-  { id: 'PRIV-04', severity: 'Unknown', title: 'Legacy RTDB trees are outside the deletion',
-    detail: 'RTDB users and messages have no writer in current code. The deletion worker does not touch them, and the retention sweep removes them only when LEGACY_RTDB_RETIRED=true (staging sets false). Whether a deployed project still holds passenger data there is unverified.' },
-  { id: 'PRIV-05', severity: 'Medium', title: 'No completion-time commitment',
-    detail: 'PRIVACY_DELETION.md states that there is no guaranteed completion time. The worker scans every 60 s while an instance holds the lease; staging scales to zero, so a request waits until an instance starts.' },
-  { id: 'PRIV-06', severity: 'Medium', title: 'No export or data-access path',
-    detail: 'No endpoint, screen or procedure lets a passenger obtain a copy or summary of their data. The browser can read only the passenger\'s own profile, feedback cooldown and feedback by ID.' },
-  { id: 'PRIV-07', severity: 'High', title: 'No privacy notice is published',
-    detail: 'UNIVERSITY_LINKS in frontend/src/config/university.ts leaves the privacy notice and terms URLs empty, so both links are hidden, and no page states purposes, retention, a grievance contact, a lawful basis or sub-processors.' },
-  { id: 'PRIV-08', severity: 'Low', title: 'Error logs print raw error objects',
-    detail: 'Many handlers (for example users.ts:127, sessions.ts:68) log the raw error. Firestore errors can quote a document path such as users/{uid}. The happy-path emulator run logged no synthetic identifier.' },
+  { id: 'PRIV-01', severity: 'Medium', title: 'No record of a completed deletion survives' },
+  { id: 'PRIV-02', severity: 'Low', title: 'Authorization records of former operators survive deletion' },
+  { id: 'PRIV-03', severity: 'Low', title: 'The privacy scan cursor can name a pending UID' },
+  { id: 'PRIV-04', severity: 'Unknown', title: 'Legacy RTDB trees are outside the deletion' },
+  { id: 'PRIV-05', severity: 'Medium', title: 'No completion-time commitment' },
+  { id: 'PRIV-06', severity: 'Medium', title: 'No export or data-access path' },
+  { id: 'PRIV-07', severity: 'High', title: 'No privacy notice is published' },
+  { id: 'PRIV-08', severity: 'Low', title: 'Error logs print raw error objects' },
 ]);
 
 const segmentPattern = segment => segment === '*' || segment === '{uid}' ? '[^/]+' : segment.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -166,53 +163,6 @@ export function workerDeletedCollections(workerSource) {
   return { direct, groups, authDeleted: /auth\.deleteUser\(uid\)/.test(workerSource), requestDeleted: /writer\.delete\(ref\)/.test(workerSource) };
 }
 
-// ---- markers and scanning --------------------------------------------------
-
-/** Distinctive synthetic values for one seeded account, by category. */
-export function markersFor(identity) {
-  const markers = { uid: [identity.uid], email: [identity.email], name: [identity.displayName],
-    photo: identity.photoURL ? [identity.photoURL] : [], coordinates: identity.coordinates ?? [],
-    message: identity.messages ?? [], feedback: identity.feedback ? [identity.feedback] : [],
-    secret: identity.secrets ?? [] };
-  return Object.fromEntries(Object.entries(markers).map(([key, values]) => [key, values.filter(value => typeof value === 'string' && value.length >= 6)]));
-}
-
-const TOKEN_PATTERN = /eyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]*/g;
-const BEARER_PATTERN = /\bBearer\s+(?!eyJ)[A-Za-z0-9._-]{20,}/g; // a JWT is counted once, by TOKEN_PATTERN
-
-/** Categories of markers found in `text`; `token` also catches any JWT or bearer value. */
-export function scanText(text, markers) {
-  const found = {};
-  for (const [category, values] of Object.entries(markers)) {
-    const count = values.reduce((sum, value) => sum + text.split(value).length - 1, 0);
-    if (count) found[category] = count;
-  }
-  const tokens = (text.match(TOKEN_PATTERN)?.length ?? 0) + (text.match(BEARER_PATTERN)?.length ?? 0);
-  if (tokens) found.token = tokens;
-  return found;
-}
-
-/** Scan a log line by line; returns hit counts and the first line numbers, never the text. */
-export function scanLog(text, markers, { maxLines = 20 } = {}) {
-  const totals = {}; const lines = [];
-  text.split(/\r?\n/).forEach((line, index) => {
-    const found = scanText(line, markers);
-    if (!Object.keys(found).length) return;
-    for (const [category, count] of Object.entries(found)) totals[category] = (totals[category] ?? 0) + count;
-    if (lines.length < maxLines) lines.push({ line: index + 1, categories: Object.keys(found).sort() });
-  });
-  return { lineCount: text ? text.split(/\r?\n/).length : 0, totals, lines };
-}
-
-/** Replace every marker and token in `text` with its category label. */
-export function redactText(text, markers) {
-  let result = text;
-  const pairs = Object.entries(markers).flatMap(([category, values]) => values.map(value => [value, `<${category}>`]))
-    .sort((a, b) => b[0].length - a[0].length);
-  for (const [value, label] of pairs) result = result.split(value).join(label);
-  return result.replace(TOKEN_PATTERN, '<token>').replace(BEARER_PATTERN, 'Bearer <token>');
-}
-
 // ---- evaluation ------------------------------------------------------------
 
 /**
@@ -260,88 +210,4 @@ export function deletionVerdict({ accounts, sweepUnexpected, logHits, accessChec
 /** Sweep hits outside the stores the inventory allows to keep data after deletion. */
 export function unexpectedSweepHits(hits) {
   return hits.filter(hit => !['retained', 'residual'].includes(entryForPath(hit.store, hit.path)?.handling));
-}
-
-// ---- staging ---------------------------------------------------------------
-
-export const STAGING_PROJECT_ID = 'bustrack-be165';
-export const STAGING_RTDB_URL = 'https://bustrack-be165-asia-rtdb.asia-southeast1.firebasedatabase.app';
-export const STAGING_SERVICE = 'projects/bustrack-be165/locations/asia-south2/services/eki-backend-staging';
-const STAGING_REVISION = /^eki-backend-staging-[0-9]{5}-[a-z0-9]{3}$/;
-// A dedicated test account is created with an Admin SDK UID that carries this
-// marker. Firebase-generated UIDs are 28 alphanumeric characters without
-// hyphens, so a real passenger's UID cannot match.
-export const TEST_UID = /^eki-qa-privacy-[a-z0-9]+(?:-[a-z0-9]+)*$/;
-const EMULATOR_KEYS = ['FIRESTORE_EMULATOR_HOST', 'FIREBASE_DATABASE_EMULATOR_HOST', 'FIREBASE_AUTH_EMULATOR_HOST'];
-
-/** Preconditions of a read-only staging verification. Throws with the first unmet one. */
-export function assertPrivacyStagingRun(env, now = Date.now()) {
-  if (env.EKI_PRIVACY_CONFIRM_PROJECT !== STAGING_PROJECT_ID) {
-    throw new Error(`EKI_PRIVACY_CONFIRM_PROJECT must equal ${STAGING_PROJECT_ID}`);
-  }
-  const revision = env.EKI_PRIVACY_EXPECTED_REVISION?.trim() ?? '';
-  if (!STAGING_REVISION.test(revision)) throw new Error('EKI_PRIVACY_EXPECTED_REVISION must name the serving eki-backend-staging revision');
-  const uid = env.EKI_PRIVACY_TEST_UID?.trim() ?? '';
-  if (!TEST_UID.test(uid) || uid.length > 64) {
-    throw new Error('EKI_PRIVACY_TEST_UID must be a dedicated test account whose UID starts with eki-qa-privacy-');
-  }
-  const requestedAt = Date.parse(env.EKI_PRIVACY_REQUESTED_AT ?? '');
-  if (!Number.isFinite(requestedAt) || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/.test(env.EKI_PRIVACY_REQUESTED_AT)) {
-    throw new Error('EKI_PRIVACY_REQUESTED_AT must be the ISO 8601 time, with offset, when Delete account was confirmed');
-  }
-  if (requestedAt > now + 60_000 || now - requestedAt > 7 * 24 * 3_600_000) {
-    throw new Error('EKI_PRIVACY_REQUESTED_AT must be within the last 7 days');
-  }
-  const waitMinutes = env.EKI_PRIVACY_WAIT_MINUTES === undefined ? 15 : Number(env.EKI_PRIVACY_WAIT_MINUTES);
-  if (!Number.isInteger(waitMinutes) || waitMinutes < 0 || waitMinutes > 60) throw new Error('EKI_PRIVACY_WAIT_MINUTES must be 0 to 60');
-  for (const key of EMULATOR_KEYS) if (env[key]) throw new Error(`${key} is set: unset it, or the run would read an emulator instead of staging`);
-  return { uid, revision, requestedAt, waitMinutes };
-}
-
-/**
- * Every read the staging verification makes, as data. The runner executes
- * only these operations, and only read operations exist.
- */
-export function stagingReadPlan(uid) {
-  return [
-    { id: 'auth', op: 'getUser', path: uid },
-    { id: 'profile', op: 'getDocument', path: `users/${uid}` },
-    { id: 'feedbackCooldown', op: 'getDocument', path: `feedbackCooldowns/${uid}` },
-    { id: 'passengerRequest', op: 'getDocument', path: `passenger_requests/${uid}` },
-    { id: 'chatRateLimit', op: 'countGroup', group: 'messageRateLimits', field: 'userId', value: uid },
-    { id: 'deletionRequest', op: 'getDocument', path: `_privacy_deletion_requests/${uid}` },
-    { id: 'feedback', op: 'count', collection: 'feedbacks', field: 'userId', value: uid },
-    { id: 'rideManifest', op: 'countArray', collection: 'ride_sessions', field: 'passengerIds', value: uid },
-    { id: 'chatMessage', op: 'countGroup', group: 'messages', field: 'senderId', value: uid },
-    { id: 'authorizationRecord', op: 'getDocument', path: `_userAuthorization/${uid}` },
-    { id: 'authorizationMirror', op: 'getRtdb', path: `_userAuthorization/${uid}` },
-    { id: 'fleetLock', op: 'getField', path: '_fleet_reconciliation_locks/singleton', field: 'privacyRequestId', value: uid },
-    { id: 'privacyCursor', op: 'getField', path: '_reconciliation_cursors/privacy-deletions', field: 'cursor', value: uid },
-    { id: 'legacyRtdbUsers', op: 'getRtdb', path: `users/${uid}` },
-  ];
-}
-export const READ_OPERATIONS = Object.freeze(['getUser', 'getDocument', 'count', 'countArray', 'countGroup', 'getField', 'getRtdb']);
-
-/** Run a staging read plan through read-only readers; any other operation is refused before it runs. */
-export async function executeReadPlan(plan, readers) {
-  for (const step of plan) {
-    if (!READ_OPERATIONS.includes(step.op) || typeof readers[step.op] !== 'function') throw new Error(`Refusing non-read operation ${step.op}`);
-  }
-  const observed = {}; const counts = {};
-  for (const step of plan) {
-    const value = await readers[step.op](step);
-    if (typeof value === 'number') { counts[step.id] = value; observed[step.id] = value > 0; } else observed[step.id] = value === true;
-  }
-  return { observed, counts };
-}
-
-/** The revision that serves 100 % of traffic, from a Cloud Run Admin API v2 service resource. */
-export function servingRevision(service) {
-  const statuses = Array.isArray(service?.trafficStatuses) ? service.trafficStatuses : [];
-  const full = statuses.filter(status => status.percent === 100);
-  if (full.length !== 1) return null;
-  const name = full[0].revision || (full[0].type === 'TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST' ? service.latestReadyRevision : '');
-  const revision = typeof name === 'string' ? name.split('/').at(-1) : '';
-  // A Cloud Run revision name (RFC 1035 label), so the evidence never records other response text.
-  return /^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(revision) ? revision : null;
 }

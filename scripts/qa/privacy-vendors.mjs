@@ -97,6 +97,16 @@ export function evaluateDisclosure({ observedHosts, declared, noticeAvailable = 
   return { verdict, vendors, undeclared, unmapped: [...new Set(unmapped)].sort(), warnings: declaredNotLoaded.map(id => `declared vendor ${id} never loaded`) };
 }
 
+/**
+ * Vendors the Content-Security-Policy permits that no observed request reached.
+ * A host check says nothing about these: they load on screens it did not open.
+ * `permitted` is a list of `{ vendor }` (null for an unmapped CSP host).
+ */
+export function unobservedVendors(permitted, observedVendorIds) {
+  const observed = new Set(observedVendorIds);
+  return [...new Set((permitted ?? []).map(item => item.vendor).filter(id => id && id !== 'local' && !observed.has(id)))].sort();
+}
+
 /** Public routes of the static export that need no sign-in. /privacy and /terms show whether such pages exist. */
 export const PUBLIC_ROUTES = Object.freeze(['/', '/install', '/passenger', '/admin', '/feedback', '/privacy', '/terms']);
 export const LIVE_ORIGIN = 'https://bustrack-be165.web.app';

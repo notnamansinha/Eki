@@ -9,7 +9,7 @@ import { repositoryRoot } from './acceptance-catalog.mjs';
 import { describeDirty, workingTreeState } from './working-tree.mjs';
 import { inlineScriptHashes } from '../inline-script-hashes.mjs';
 import {
-  LIVE_ORIGIN, PUBLIC_ROUTES, configuredNoticeUrl, cspHostSources, declaredVendors, evaluateDisclosure, vendorForCspHost,
+  LIVE_ORIGIN, PUBLIC_ROUTES, configuredNoticeUrl, cspHostSources, declaredVendors, evaluateDisclosure, unobservedVendors, vendorForCspHost,
 } from './privacy-vendors.mjs';
 
 /**
@@ -47,8 +47,10 @@ const report = {
   browser: null, origin: target === 'live' ? LIVE_ORIGIN : `http://127.0.0.1:${port}`,
   notice: { configuredUrl, published: configuredUrl !== '', file: noticeFile ? 'provided' : null,
     sha256: noticeFile ? createHash('sha256').update(noticeText).digest('hex') : null, declared: declaredVendors(noticeText) },
-  routes: [], hosts: {}, cookies: [], csp: null, release: null, permitted: null, permittedUndeclared: [], evaluation: null, verdict: 'BLOCKED', setupError: null,
+  routes: [], hosts: {}, cookies: [], storage: null, csp: null, release: null, permitted: null, permittedUndeclared: [], permittedUnobserved: [],
+  evaluation: null, verdict: 'BLOCKED', setupError: null,
 };
+const storageKinds = ['localStorage', 'sessionStorage', 'indexedDB'];
 
 // ---- local static server ---------------------------------------------------
 
@@ -131,7 +133,7 @@ async function loadRoutes(origin) {
       current = route;
       const page = await context.newPage();
       if (target === 'live') page.on('websocket', socket => record(new URL(socket.url()).host, { method: 'WEBSOCKET', type: 'websocket', route, blocked: false }));
-      const entry = { route, status: null, finalPath: null, title: null, error: null };
+      const entry = { route, status: null, finalPath: null, title: null, storage: null, error: null };
       try {
         const response = await page.goto(`${origin}${route}`, { waitUntil: 'load', timeout: 45_000 });
         entry.status = response?.status() ?? null;
@@ -145,6 +147,11 @@ async function loadRoutes(origin) {
         await page.waitForTimeout(2_000);
         entry.finalPath = new URL(page.url()).pathname;
         entry.title = (await page.title()).slice(0, 120);
+        // Key and database names only, never values: what the page stored for a visitor without a session.
+        entry.storage = await page.evaluate(async () => ({
+          localStorage: Object.keys(localStorage).sort(), sessionStorage: Object.keys(sessionStorage).sort(),
+          indexedDB: ((await indexedDB.databases?.()) ?? []).map(database => database.name).sort(),
+        }));
       } catch (error) {
         entry.error = String(error.message).split('\n')[0].slice(0, 200);
       }
@@ -152,6 +159,8 @@ async function loadRoutes(origin) {
       await page.close();
     }
     report.cookies = (await context.cookies()).map(cookie => ({ domain: cookie.domain, name: cookie.name, sameSite: cookie.sameSite }));
+    report.storage = Object.fromEntries(storageKinds.map(kind =>
+      [kind, [...new Set(report.routes.flatMap(item => item.storage?.[kind] ?? []))].sort()]));
     await context.close();
   } finally {
     await browser.close();
@@ -171,7 +180,9 @@ function markdown() {
     `Source ${report.sourceCommit}; dirty: ${describeDirty(report)}; verdict: ${report.verdict}.`, '',
     `Origin: ${report.origin}. ${report.browser ?? 'Browser not started'}. Started ${report.startedAt}, finished ${report.finishedAt}.`, '',
     `Privacy notice: ${report.notice.published ? `configured at ${report.notice.configuredUrl}` : 'not published (UNIVERSITY_LINKS privacy notice URL is empty)'}; `
-      + `notice file: ${report.notice.file ?? 'none'}; declared vendors: ${report.notice.declared.join(', ') || 'none'}.`, ''];
+      + `notice file: ${report.notice.file ?? 'none'}; declared vendors: ${report.notice.declared.join(', ') || 'none'}.`, '',
+    `Coverage: ${PUBLIC_ROUTES.length} public routes without a session. Vendors the Content-Security-Policy permits that no page loaded, `
+      + `so this run says nothing about them: ${report.permitted ? report.permittedUnobserved.join(', ') || 'none' : 'not computed'}.`, ''];
   if (report.release) lines.push(`Release headers of /: Last-Modified ${report.release.lastModified ?? 'none'}, ETag ${report.release.etag ?? 'none'}.`, '');
   if (report.setupError) lines.push(`Setup: ${report.setupError}`, '');
   lines.push('| Route | Status | Final path | Error |', '|---|---|---|---|');
@@ -192,6 +203,9 @@ function markdown() {
     lines.push('', `Permitted vendors the notice does not declare: ${report.permittedUndeclared.join(', ') || 'none'}.`);
   }
   lines.push('', `Cookies after the run: ${report.cookies.length ? report.cookies.map(cookie => `${cookie.domain} ${cookie.name}`).join(', ') : 'none'}.`);
+  if (report.storage) {
+    lines.push('', `Browser storage after the run (names only): ${storageKinds.map(kind => `${kind} ${report.storage[kind].join(', ') || 'none'}`).join('; ')}.`);
+  }
   return lines.join('\n') + '\n';
 }
 
@@ -205,6 +219,7 @@ try {
   report.permitted = permittedVendors(report.csp?.value);
   report.permittedUndeclared = [...new Set((report.permitted ?? []).map(item => item.vendor)
     .filter(vendor => vendor && !report.notice.declared.includes(vendor)))].sort();
+  report.permittedUnobserved = unobservedVendors(report.permitted, report.evaluation.vendors.map(vendor => vendor.id));
   report.verdict = report.evaluation.verdict;
   if (report.permitted?.some(item => !item.vendor) && report.verdict === 'DISCLOSED') report.verdict = 'UNMAPPED_HOSTS';
 } catch (error) {

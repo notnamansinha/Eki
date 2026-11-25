@@ -12,11 +12,11 @@ import {
   assertEmulatorPortsFree, isPortFree, killProcessTree, reapOrphanedEmulators, resolveJavaHome, resolveWindowsNpxCli, withJdkFirstOnPath,
 } from './emulator-process.mjs';
 import { writeEmulatorRuleset } from '../rules-for-emulator.mjs';
+import { FINDINGS, PASSENGER_STORES, deletionVerdict, entryForPath, evaluateAccount, unexpectedSweepHits } from './privacy-inventory.mjs';
+import { markersFor, redactText, scanLog, scanText } from './privacy-markers.mjs';
 import {
-  FINDINGS, PASSENGER_STORES, STAGING_PROJECT_ID, STAGING_RTDB_URL, STAGING_SERVICE, assertPrivacyStagingRun, deletionVerdict,
-  entryForPath, evaluateAccount, executeReadPlan, markersFor, redactText, scanLog, scanText, servingRevision, stagingReadPlan,
-  unexpectedSweepHits,
-} from './privacy-inventory.mjs';
+  STAGING_PROJECT_ID, STAGING_RTDB_URL, STAGING_SERVICE, assertPrivacyStagingRun, executeReadPlan, servingRevision, stagingReadPlan,
+} from './privacy-staging.mjs';
 
 /**
  * Passenger account deletion verifier (qa/PRIVACY_VERIFICATION.md).

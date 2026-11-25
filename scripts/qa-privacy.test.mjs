@@ -4,13 +4,15 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { repositoryRoot } from './qa/acceptance-catalog.mjs';
 import {
-  DELETION_DOC, DELETION_WORKER, FINDINGS, PASSENGER_STORES, READ_OPERATIONS, STAGING_PROJECT_ID,
-  assertPrivacyStagingRun, deletionVerdict, discoverStores, entryForPath, evaluateAccount, executeReadPlan, markersFor,
-  pathMatches, redactText, scanLog, scanText, servingRevision, stagingReadPlan, unclassifiedStores, unexpectedSweepHits,
-  workerDeletedCollections,
+  DELETION_DOC, DELETION_WORKER, FINDINGS, PASSENGER_STORES, deletionVerdict, discoverStores, entryForPath, evaluateAccount,
+  pathMatches, unclassifiedStores, unexpectedSweepHits, workerDeletedCollections,
 } from './qa/privacy-inventory.mjs';
+import { markersFor, redactText, scanLog, scanText } from './qa/privacy-markers.mjs';
 import {
-  VENDORS, configuredNoticeUrl, cspHostSources, declaredVendors, evaluateDisclosure, vendorForCspHost, vendorForHost,
+  READ_OPERATIONS, STAGING_PROJECT_ID, assertPrivacyStagingRun, executeReadPlan, servingRevision, stagingReadPlan,
+} from './qa/privacy-staging.mjs';
+import {
+  VENDORS, configuredNoticeUrl, cspHostSources, declaredVendors, evaluateDisclosure, unobservedVendors, vendorForCspHost, vendorForHost,
 } from './qa/privacy-vendors.mjs';
 
 const read = path => readFileSync(resolve(repositoryRoot, path), 'utf8');
@@ -203,6 +205,12 @@ test('request hosts map to vendors, and every host the committed CSP permits has
   assert(hosts.has('maps.googleapis.com') && hosts.has('*.firebaseio.com'));
   assert.deepEqual([...hosts].filter(host => !vendorForCspHost(host)), [], 'a new CSP host needs a VENDORS entry');
   assert.equal(new Set(VENDORS.map(vendor => vendor.id)).size, VENDORS.length);
+  // A run that saw only the Hosting origin must name every other permitted vendor as not observed.
+  const permitted = [...hosts].map(host => ({ host, vendor: vendorForCspHost(host)?.id ?? null }));
+  const unobserved = unobservedVendors([...permitted, { host: 'x.example', vendor: null }], ['firebase-hosting']);
+  assert(unobserved.includes('google-maps') && unobserved.includes('firebase-rtdb') && !unobserved.includes('firebase-hosting'), unobserved.join());
+  assert.deepEqual(unobserved, [...new Set(unobserved)].sort());
+  assert.deepEqual(unobservedVendors(null, []), []);
 });
 
 test('declared vendors come from notice text, and disclosure fails on undeclared, unmapped or missing notices', () => {
