@@ -45,6 +45,15 @@ describe("admin live data read failures", () => {
     expect(screen.getByText("Offline / reconnecting to live data...")).toBeTruthy();
   });
 
+  it("keeps the empty fleet list neutral for a non-permission failure once data has arrived", () => {
+    state.resuming = false;
+    render(<DashboardPanel />);
+    act(() => state.options?.onReadError?.(new Error("network error")));
+    const empty = screen.getByText("No buses active").parentElement!;
+    expect(empty.className).toContain("text-ui-quiet");
+    expect(empty.className).not.toContain("text-ui-warning");
+  });
+
   it("still shows reconnecting while the socket is down, even after a denial", () => {
     state.connected = false;
     render(<DashboardPanel />);

@@ -49,6 +49,18 @@ describe("fleet live read failures and drafts", () => {
     expect(hasUnsavedChanges()).toBe(false);
   });
 
+  it("treats unticking and reticking an assigned route as no change", async () => {
+    live.buses = [{ id: "qa-bus", name: "QA Bus", assignedRoutes: ["qa-route", "qa-route-2"] }];
+    render(<FleetManagementPanel />); const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Edit vehicle QA Bus" }));
+    const editor = within(screen.getByText("Editing Vehicle").parentElement!);
+    await user.click(editor.getByRole("checkbox", { name: "QA route" }));
+    expect(hasUnsavedChanges()).toBe(true);
+    // Reticking appends the route after qa-route-2: a new order, the same assignment.
+    await user.click(editor.getByRole("checkbox", { name: "QA route" }));
+    expect(hasUnsavedChanges()).toBe(false);
+  });
+
   it("keeps an operator edit unsaved when the saved operator list becomes unavailable mid-edit", async () => {
     const view = render(<FleetManagementPanel />); const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "Edit operator QA Driver" }));

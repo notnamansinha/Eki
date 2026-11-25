@@ -1,12 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type ComponentType } from "react";
+import { useEffect, useRef, useState, type ComponentType } from "react";
 import { useBuses, BusData } from "@/hooks/useBuses";
 import { useDrivers, DriverData } from "@/hooks/useDrivers";
 import { useRoutes } from "@/hooks/useRoutes";
 import { useActiveBuses } from "@/hooks/useActiveBuses";
 import { useUnsavedChanges } from "@/lib/unsavedChanges";
-import { adminLiveReadFailureMessage, classifyLiveReadFailure, type LiveReadFailure } from "@/lib/liveDataErrors";
+import { adminLiveReadFailureMessage } from "@/lib/liveDataErrors";
+import { useLiveReadFailure } from "@/hooks/useLiveReadFailure";
 import { auth } from "@/lib/firebaseAuth";
 import {
   Bus, User, Trash2, Plus, ArrowRight,
@@ -70,6 +71,12 @@ function savedBusRoutes(bus: BusData): string[] {
     : bus.assignedRouteId ? [bus.assignedRouteId] : [];
 }
 
+/** Route assignments are a set: unticking and reticking a route is no change. */
+function sameRouteSet(left: readonly string[], right: readonly string[]): boolean {
+  const saved = new Set(right);
+  return left.length === right.length && left.every((routeId) => saved.has(routeId));
+}
+
 export default function FleetManagementPanel({ mode = "combined" }: Props) {
   const {
     buses,
@@ -79,10 +86,8 @@ export default function FleetManagementPanel({ mode = "combined" }: Props) {
   } = useBuses();
   const { drivers, loading: driversLoading, error: driversError, retry: retryDrivers } = useDrivers();
   const { routes, error: routesError, retry: retryRoutes } = useRoutes();
-  const [liveReadFailure, setLiveReadFailure] = useState<LiveReadFailure | null>(null);
-  const onLiveReadError = useCallback((error: Error) => setLiveReadFailure(classifyLiveReadFailure(error)), []);
-  const onLiveReadRecovered = useCallback(() => setLiveReadFailure(null), []);
-  const activeEntries = useActiveBuses({ onReadError: onLiveReadError, onReadRecovered: onLiveReadRecovered });
+  const { failure: liveReadFailure, onReadError, onReadRecovered } = useLiveReadFailure();
+  const activeEntries = useActiveBuses({ onReadError, onReadRecovered });
   const [, setFreshnessNow] = useState(() => serverNow());
 
   useEffect(() => {
@@ -135,12 +140,13 @@ export default function FleetManagementPanel({ mode = "combined" }: Props) {
   const [busListOpen, setBusListOpen] = useState(true);
 
   // ── Bus inline edit ──────────────────────────────────────────────────────
-  const [editingBusId, setEditingBusId] = useState<string | null>(null);
+  // The vehicle being edited, with its saved values captured when editing
+  // started: drafts are compared against these, so a failed or emptied
+  // collection read cannot hide an unsaved edit.
+  const [busEdit, setBusEdit] = useState<{ id: string; saved: { name: string; routes: string[] } } | null>(null);
+  const editingBusId = busEdit?.id ?? null;
   const [editBusName, setEditBusName] = useState("");
   const [editBusRoutes, setEditBusRoutes] = useState<string[]>([]);
-  // Saved values captured when editing starts: the draft is compared against
-  // these, so a failed or emptied collection read cannot hide an unsaved edit.
-  const [editBusBaseline, setEditBusBaseline] = useState<{ name: string; routes: string[] } | null>(null);
 
   // ── Driver add form ──────────────────────────────────────────────────────
   const [newDriverId, setNewDriverId] = useState("");
@@ -150,11 +156,11 @@ export default function FleetManagementPanel({ mode = "combined" }: Props) {
   const [driverListOpen, setDriverListOpen] = useState(true);
 
   // ── Driver inline edit ───────────────────────────────────────────────────
-  const [editingDriverId, setEditingDriverId] = useState<string | null>(null);
+  const [driverEdit, setDriverEdit] = useState<{ id: string; saved: { name: string; authUid: string; busId: string } } | null>(null);
+  const editingDriverId = driverEdit?.id ?? null;
   const [editDriverName, setEditDriverName] = useState("");
   const [editDriverAuthUid, setEditDriverAuthUid] = useState("");
   const [editDriverBusId, setEditDriverBusId] = useState("");
-  const [editDriverBaseline, setEditDriverBaseline] = useState<{ name: string; authUid: string; busId: string } | null>(null);
 
   // ── Route togglers ───────────────────────────────────────────────────────
   const toggleRoute = (id: string) =>
@@ -215,12 +221,11 @@ export default function FleetManagementPanel({ mode = "combined" }: Props) {
   };
 
   const startEditBus = (bus: BusData) => {
-    setEditingBusId(bus.id);
+    setBusEdit({ id: bus.id, saved: { name: bus.name, routes: savedBusRoutes(bus) } });
     setEditBusName(bus.name);
     // Saving always replaces the legacy single-route field, so carry it into the draft.
     setEditBusRoutes(savedBusRoutes(bus));
-    setEditBusBaseline({ name: bus.name, routes: savedBusRoutes(bus) });
-    setEditingDriverId(null);
+    setDriverEdit(null);
   };
 
   const handleSaveBus = async (id: string) => {
@@ -234,7 +239,7 @@ export default function FleetManagementPanel({ mode = "combined" }: Props) {
         await fleetRequest(`/buses/${encodeURIComponent(id)}`, "PUT", {
           name: editBusName.trim(), assignedRoutes: editBusRoutes,
         });
-        setEditingBusId(null);
+        setBusEdit(null);
       });
     } catch (error: unknown) { setErrorMsg("Failed to update Vehicle: " + errorMessage(error)); }
   };
@@ -290,12 +295,11 @@ export default function FleetManagementPanel({ mode = "combined" }: Props) {
   };
 
   const startEditDriver = (driver: DriverData) => {
-    setEditingDriverId(driver.id);
+    setDriverEdit({ id: driver.id, saved: { name: driver.name, authUid: driver.authUid ?? "", busId: driver.assignedBusId ?? "" } });
     setEditDriverName(driver.name);
     setEditDriverAuthUid(driver.authUid ?? "");
     setEditDriverBusId(driver.assignedBusId ?? "");
-    setEditDriverBaseline({ name: driver.name, authUid: driver.authUid ?? "", busId: driver.assignedBusId ?? "" });
-    setEditingBusId(null);
+    setBusEdit(null);
   };
 
   const handleSaveDriver = async (id: string) => {
@@ -310,7 +314,7 @@ export default function FleetManagementPanel({ mode = "combined" }: Props) {
         await fleetRequest(`/drivers/${encodeURIComponent(id)}`, "PUT", {
           name: editDriverName.trim(), authUid, assignedBusId: editDriverBusId || null,
         });
-        setEditingDriverId(null);
+        setDriverEdit(null);
       });
     } catch (error: unknown) { setErrorMsg("Failed to update Operator: " + errorMessage(error)); }
   };
@@ -320,11 +324,10 @@ export default function FleetManagementPanel({ mode = "combined" }: Props) {
   const fleetDraftDirty =
     [newBusId, newBusName, newDriverId, newDriverName, newDriverAuthUid, newDriverBusId].some((value) => value.trim() !== "")
     || newBusRoutes.length > 0
-    || Boolean(editingBusId && editBusBaseline && (editBusName !== editBusBaseline.name
-      || JSON.stringify(editBusRoutes) !== JSON.stringify(editBusBaseline.routes)))
-    || Boolean(editingDriverId && editDriverBaseline && (editDriverName !== editDriverBaseline.name
-      || editDriverAuthUid !== editDriverBaseline.authUid
-      || editDriverBusId !== editDriverBaseline.busId));
+    || Boolean(busEdit && (editBusName !== busEdit.saved.name || !sameRouteSet(editBusRoutes, busEdit.saved.routes)))
+    || Boolean(driverEdit && (editDriverName !== driverEdit.saved.name
+      || editDriverAuthUid !== driverEdit.saved.authUid
+      || editDriverBusId !== driverEdit.saved.busId));
   useUnsavedChanges(fleetDraftDirty);
 
   const liveDriverIds = new Set(
@@ -360,7 +363,7 @@ export default function FleetManagementPanel({ mode = "combined" }: Props) {
   return (
     <div className="w-full max-w-7xl mx-auto flex flex-col gap-5 p-3 md:p-6 animate-slide-up">
 
-      {liveReadFailure && <ErrorBanner message={adminLiveReadFailureMessage(liveReadFailure)} onDismiss={() => setLiveReadFailure(null)} />}
+      {liveReadFailure && <ErrorBanner message={adminLiveReadFailureMessage(liveReadFailure)} onDismiss={onReadRecovered} />}
 
       {/* â”€â”€ Global error banner â”€â”€ */}
       {errorMsg && (
@@ -512,7 +515,7 @@ export default function FleetManagementPanel({ mode = "combined" }: Props) {
                           </div>
                           <div className="flex items-center gap-1 shrink-0">
                             <button
-                              onClick={() => isEditing ? setEditingBusId(null) : startEditBus(bus)}
+                              onClick={() => isEditing ? setBusEdit(null) : startEditBus(bus)}
                               aria-label={isEditing ? "Cancel editing vehicle" : `Edit vehicle ${bus.name}`}
                               className="p-3 rounded-lg text-ui-quiet hover:text-brand-accent hover:bg-brand-accent/10 transition-all"
                             >
@@ -713,7 +716,7 @@ export default function FleetManagementPanel({ mode = "combined" }: Props) {
                           </div>
                           <div className="flex items-center gap-1 shrink-0">
                             <button
-                              onClick={() => isEditing ? setEditingDriverId(null) : startEditDriver(driver)}
+                              onClick={() => isEditing ? setDriverEdit(null) : startEditDriver(driver)}
                               aria-label={isEditing ? "Cancel editing operator" : `Edit operator ${driver.name}`}
                               className="p-3 rounded-lg text-ui-quiet hover:text-brand-accent hover:bg-brand-accent/10 transition-all"
                             >

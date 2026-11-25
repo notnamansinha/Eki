@@ -10,7 +10,8 @@ import { useDrivers } from "@/hooks/useDrivers";
 import { useRoutes } from "@/hooks/useRoutes";
 import { useRTDBResume } from "@/hooks/useRTDBResume";
 import { useActiveBuses, type ActiveBusEntry } from "@/hooks/useActiveBuses";
-import { adminLiveReadFailureMessage, classifyLiveReadFailure, liveDataStatus, type LiveReadFailure } from "@/lib/liveDataErrors";
+import { adminLiveReadFailureMessage, liveDataStatus } from "@/lib/liveDataErrors";
+import { useLiveReadFailure } from "@/hooks/useLiveReadFailure";
 import { useBusLocations } from "@/hooks/useBusLocations";
 import { useAuth } from "@/hooks/useAuth";
 import {
@@ -602,10 +603,8 @@ function FleetCard({
 /* â”€â”€ Main Dashboard â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 export default function DashboardPanel() {
   const { user } = useAuth();
-  const [liveReadFailure, setLiveReadFailure] = useState<LiveReadFailure | null>(null);
+  const { failure: liveReadFailure, onReadError: onLiveReadError, onReadRecovered: onLiveReadRecovered } = useLiveReadFailure();
   const liveReadFailed = liveReadFailure !== null;
-  const onLiveReadError = useCallback((error: Error) => setLiveReadFailure(classifyLiveReadFailure(error)), []);
-  const onLiveReadRecovered = useCallback(() => setLiveReadFailure(null), []);
   const {
     isConnected,
     isResuming,
@@ -783,6 +782,9 @@ export default function DashboardPanel() {
   // reconnect forever; say which problem it is.
   const liveStatus = liveDataStatus({ isConnected, isResuming, readFailure: liveReadFailure });
   const liveReconnecting = liveStatus === "connecting";
+  const liveAccessDenied = liveStatus === "access_denied";
+  // One label for the status pill and the empty fleet list while live data is out.
+  const liveUnavailableLabel = liveAccessDenied ? "Live data access denied" : isResuming ? "Live data unavailable" : null;
   const chatReceiver = liveChatEntry ?? (liveDataUnavailable ? chatEntry ?? undefined : undefined);
   // A chat whose receiver went offline, or whose ride was replaced, ends instead
   // of reopening later over whatever the admin is doing.
@@ -855,13 +857,9 @@ export default function DashboardPanel() {
             </div>
           )}
           <div className="flex items-center gap-2 bg-ui-paper backdrop-blur-sm border border-ui-line rounded-xl px-3 py-2">
-            <span className={`w-2 h-2 rounded-full ${liveStatus !== "access_denied" && !isResuming && devicesOnline > 0 ? "bg-ui-success animate-pulse" : "bg-ui-hover"}`} />
+            <span className={`w-2 h-2 rounded-full ${!isResuming && devicesOnline > 0 ? "bg-ui-success animate-pulse" : "bg-ui-hover"}`} />
             <span className="text-xs font-bold uppercase tracking-widest text-ui-muted">
-              {liveStatus === "access_denied"
-                ? "Live data access denied"
-                : isResuming
-                ? "Live data unavailable"
-                : `${devicesOnline} device${devicesOnline === 1 ? "" : "s"} online · ${activeServices} service${activeServices === 1 ? "" : "s"}`}
+              {liveUnavailableLabel ?? `${devicesOnline} device${devicesOnline === 1 ? "" : "s"} online · ${activeServices} service${activeServices === 1 ? "" : "s"}`}
             </span>
           </div>
         </div>
@@ -900,10 +898,10 @@ export default function DashboardPanel() {
         <div className="flex shrink-0 flex-col gap-2 p-3 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:overscroll-contain">
           <p className="text-xs font-bold uppercase tracking-[0.25em] text-ui-quiet px-1">Live Fleet</p>
           {activeEntries.length === 0 ? (
-            <div className={`flex flex-col items-center justify-center py-16 text-center gap-2 ${isResuming || liveReadFailed ? "text-ui-warning" : "text-ui-quiet"}`}>
-              {liveStatus === "access_denied" ? <AlertTriangle className="w-8 h-8" aria-hidden="true" /> : isResuming ? <WifiOff className="w-8 h-8" /> : <Wifi className="w-8 h-8" />}
+            <div className={`flex flex-col items-center justify-center py-16 text-center gap-2 ${liveUnavailableLabel ? "text-ui-warning" : "text-ui-quiet"}`}>
+              {liveAccessDenied ? <AlertTriangle className="w-8 h-8" aria-hidden="true" /> : isResuming ? <WifiOff className="w-8 h-8" /> : <Wifi className="w-8 h-8" />}
               <p className="text-xs font-semibold uppercase tracking-widest">
-                {liveStatus === "access_denied" ? "Live data access denied" : isResuming ? "Live data unavailable" : "No buses active"}
+                {liveUnavailableLabel ?? "No buses active"}
               </p>
             </div>
           ) : (

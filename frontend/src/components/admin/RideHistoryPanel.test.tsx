@@ -34,6 +34,21 @@ describe("ride-history controls", () => {
       expect(within(row).getByText("Started").parentElement!.textContent).not.toContain(serviceDate(start));
     } finally { Object.assign(session, original); }
   });
+  it.each([
+    // 23:59 IST to 00:01 IST the next day: two minutes, two service days.
+    ["crosses midnight in the service time zone", Date.UTC(2025, 5, 15, 18, 29), Date.UTC(2025, 5, 15, 18, 31), true],
+    // 00:01 to 23:59 IST on one day, which spans two UTC dates.
+    ["stays within one service day across a UTC date change", Date.UTC(2025, 5, 14, 18, 31), Date.UTC(2025, 5, 15, 18, 29), false],
+  ])("dates the end only when the ride %s", (_label, start, end, dated) => {
+    const session = state.sessions[0] as Record<string, unknown>;
+    const original = { startTime: session.startTime, endTime: session.endTime };
+    Object.assign(session, { startTime: start, endTime: end });
+    try {
+      render(<RideHistoryPanel />);
+      const ended = within(screen.getByRole("button", { expanded: false })).getByText("Ended").parentElement!;
+      expect(ended.textContent!.includes(serviceDate(end))).toBe(dated);
+    } finally { Object.assign(session, original); }
+  });
   it("keeps a same-day ride end as a time only", () => {
     render(<RideHistoryPanel />);
     const row = screen.getByRole("button", { expanded: false });
