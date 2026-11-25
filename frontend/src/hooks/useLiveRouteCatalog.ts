@@ -65,10 +65,11 @@ export function useLiveRouteCatalog(recoveryKey = "") {
     };
     const fail = (expected: number, channel: "marker" | "catalog", error?: unknown) => {
       if (!current(expected)) return;
-      // A permission denial is not a connection problem: say so.
+      // A permission denial is not a connection problem: say so. Retries keep
+      // failing after a denial; only a delivery on that channel clears it.
       const denied = isPermissionDeniedError(error);
-      if (channel === "marker") { projectionReady = false; markerDenied = denied; markerError = "Live bus data could not be loaded. Check deployment permissions and retry."; }
-      else { catalogReady = false; catalogDenied = denied; catalogError = denied ? "Live route availability could not be loaded: access to live data was denied." : "Live route availability could not be loaded. Check your connection and retry."; }
+      if (channel === "marker") { projectionReady = false; markerDenied ||= denied; markerError = "Live bus data could not be loaded. Check deployment permissions and retry."; }
+      else { catalogReady = false; catalogDenied ||= denied; catalogError = catalogDenied ? "Live route availability could not be loaded: access to live data was denied." : "Live route availability could not be loaded. Check your connection and retry."; }
       publish(); detach();
       if (!timer) timer = setTimeout(() => { timer = undefined; void attach(); }, liveBusRetryDelayMs(attempt++));
     };

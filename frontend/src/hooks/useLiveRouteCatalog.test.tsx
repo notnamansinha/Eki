@@ -69,12 +69,19 @@ describe("route catalog freshness and access", () => {
     expect(result.current.accessDenied).toBe(true);
     expect(result.current.error).not.toMatch(/connection/);
     await act(async () => { await vi.runOnlyPendingTimersAsync(); }); await act(flush);
+    // A retry's network error is not evidence that access returned.
     act(() => state.listeners.get(catalogPath)!.fail(new Error("disconnected")));
-    expect(result.current.accessDenied).toBe(false);
-    expect(result.current.error).toMatch(/Check your connection/);
+    expect(result.current.accessDenied).toBe(true);
+    expect(result.current.error).not.toMatch(/connection/);
     await act(async () => { await vi.runOnlyPendingTimersAsync(); }); await act(flush);
     act(() => { ready(); emit(catalogPath, null); });
     expect(result.current.error).toBeNull(); expect(result.current.accessDenied).toBe(false);
+  });
+  it("gives connection advice for a failure that was never a denial", async () => {
+    const { result } = renderHook(() => useLiveRouteCatalog()); await act(flush);
+    act(() => state.listeners.get(catalogPath)!.fail(new Error("disconnected")));
+    expect(result.current.accessDenied).toBe(false);
+    expect(result.current.error).toMatch(/Check your connection/);
   });
   it("fails closed for legacy durable counts and malformed active leases", async () => {
     const { result } = renderHook(() => useLiveRouteCatalog()); await act(flush);
