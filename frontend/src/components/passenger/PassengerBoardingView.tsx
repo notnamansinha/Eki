@@ -28,6 +28,8 @@ interface Props {
   boardingBlockedReason?: string;
   /** The demo ride boards without a location check or a join request. */
   demo?: boolean;
+  /** The app tour chooses both stops, as a passenger would; each new object is applied once. */
+  presetTrip?: { boardingStopId: string; alightingStopId: string };
   onDestinationStopChange?: (stopId: string) => void;
   /** Lets the map label the chosen boarding stop. */
   onBoardingStopChange?: (stopId: string) => void;
@@ -118,6 +120,7 @@ export default function PassengerBoardingView({
   liveHealth,
   boardingBlockedReason,
   demo = false,
+  presetTrip,
   onDestinationStopChange,
   onBoardingStopChange,
   onJoined,
@@ -464,6 +467,32 @@ export default function PassengerBoardingView({
     }
   };
   const choose = (field: PickerField, value: string) => (field === "boarding" ? chooseBoarding : chooseDestination)(value);
+
+  // The app tour picks a trip the way a passenger would: both stops set, the
+  // whole trip shown for a moment, then the bar slides into the drawer.
+  const presetLatest = useRef<(trip: NonNullable<Props["presetTrip"]>) => void>(() => {});
+  useEffect(() => {
+    presetLatest.current = trip => {
+      const from = stops.findIndex(stop => stop.id === trip.boardingStopId);
+      const to = stops.findIndex(stop => stop.id === trip.alightingStopId);
+      if (from < 0 || to <= from) return;
+      setBoardingStopId(trip.boardingStopId);
+      boardingChange.current?.(trip.boardingStopId);
+      setAlightingStopId(trip.alightingStopId);
+      onDestinationStopChange?.(trip.alightingStopId);
+      selectionChanged();
+      setPicker(null);
+      setShowPassed(false);
+      setActiveIndex(undefined);
+      settle();
+    };
+  });
+  useEffect(() => {
+    if (!presetTrip) return;
+    let current = true;
+    queueMicrotask(() => { if (current && mountedRef.current) presetLatest.current(presetTrip); });
+    return () => { current = false; };
+  }, [presetTrip]);
 
   const reopen = () => {
     cancelDock();

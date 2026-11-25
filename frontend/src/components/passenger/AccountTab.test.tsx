@@ -40,6 +40,14 @@ describe("account confirmations", () => {
     view.rerender(<AccountTab />);
     expect(screen.queryByRole("link", { name: "Admin panel" })).toBeNull();
   });
+  it("offers to replay the app tour when the workspace provides it", async () => {
+    const onReplayTour = vi.fn();
+    const view = render(<AccountTab />);
+    expect(screen.queryByRole("button", { name: "Replay app tour" })).toBeNull();
+    view.rerender(<AccountTab onReplayTour={onReplayTour} />);
+    await userEvent.click(screen.getByRole("button", { name: "Replay app tour" }));
+    expect(onReplayTour).toHaveBeenCalledOnce();
+  });
   it("falls back after a photo failure and retries for a changed URL or account", () => {
     const account = { uid: "qa-passenger", displayName: "QA Passenger", role: "passenger", photoURL: "https://example.test/photo.png" };
     mocks.user = account;

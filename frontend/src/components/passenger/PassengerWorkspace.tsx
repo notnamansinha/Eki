@@ -6,7 +6,9 @@ import { useAuth } from "@/hooks/useAuth";
 import { useRoutes } from "@/hooks/useRoutes";
 import { MapPinned, UserRound, Loader2, MessageCircle, ArrowLeft, Flag, WifiOff, AlertCircle, Info, Megaphone, ChevronUp } from "lucide-react";
 import { subscribeRouteBusChanges } from "@/lib/passengerLiveSource";
-import { DEMO_ROUTE_ID, demoRoute, isDemoRideEnabled, isDemoRouteId, restartDemoRide } from "@/lib/demoRide";
+import { DEMO_FIRST_NEXT_STOP, DEMO_ROUTE_ID, demoRoute, isDemoRideEnabled, isDemoRouteId, restartDemoRide } from "@/lib/demoRide";
+import { markTourSeen, shouldAutoStartTour } from "@/lib/firstRunTour";
+import type { TourStepId } from "@/components/passenger/AppTour";
 import { useLiveRouteCatalog } from "@/hooks/useLiveRouteCatalog";
 import { getJoinedRideStatus } from "@/lib/joinedRideStatus";
 import { clearJoinedRidePointer, readJoinedRidePointer, saveJoinedRidePointer } from "@/lib/joinedRidePointer";
@@ -67,6 +69,7 @@ const RoutesTab = dynamic(() => import("@/components/passenger/RoutesTab"), { ss
 const MessagingPanel = dynamic(() => import("@/components/shared/MessagingPanel"), { ssr: false });
 const FeedbackModal = dynamic(() => import("@/components/shared/FeedbackModal"), { ssr: false });
 const PassengerBoardingView = dynamic(() => import("@/components/passenger/PassengerBoardingView"), { ssr: false });
+const AppTour = dynamic(() => import("@/components/passenger/AppTour"), { ssr: false });
 
 type ViewState = "home" | "tracking" | "routes" | "profile";
 type PassengerSection = Exclude<ViewState, "tracking">;
@@ -191,6 +194,8 @@ export default function PassengerWorkspace() {
     const { pathname, search } = window.location;
     if (window.location.hash !== hash) window.history.pushState(null, "", pathname + search + hash);
     showSection(section);
+    // The tour asked for this tab.
+    if (section === "routes" || section === "profile") advanceTour(section);
   }
 
   const { routes: configuredRoutes, error: routesError, retry: retryRoutes } = useRoutes();
@@ -202,6 +207,11 @@ export default function PassengerWorkspace() {
   const [selectedRouteId, setSelectedRouteId] = useState("");
   const [selectedDestinationStopId, setSelectedDestinationStopId] = useState("");
   const [selectedBoardingStopId, setSelectedBoardingStopId] = useState("");
+  // The app tour: its steps and position, the demo trip it chose, and the
+  // account already checked for a first sign-in.
+  const [tour, setTour] = useState<{ steps: TourStepId[]; index: number } | null>(null);
+  const [tourTrip, setTourTrip] = useState<{ boardingStopId: string; alightingStopId: string }>();
+  const tourCheckedUid = useRef<string | null>(null);
   const [mapEstimates, setMapEstimates] = useState<PassengerStopEstimates>();
   const updateStopEstimates = useCallback((next: PassengerStopEstimates) => {
     setMapEstimates(current => current?.context === next.context && current.nextStopIndex === next.nextStopIndex &&
@@ -626,6 +636,11 @@ export default function PassengerWorkspace() {
         ? routeId : null;
     // A fresh demo ride, so the bus is approaching when the map opens.
     if (isDemoRouteId(routeId) && trackedRideRef.current?.routeId !== DEMO_ROUTE_ID) restartDemoRide();
+    openRoute(routeId);
+    if (isDemoRouteId(routeId)) advanceTour("welcome");
+  };
+
+  function openRoute(routeId: string) {
     setSelectedRouteId(routeId);
     setHomeSheetChoice(true);
     setSelectedDestinationStopId("");
@@ -634,8 +649,117 @@ export default function PassengerWorkspace() {
     setSelectedBusId("");
     setIsMessagingOpen(false);
     setUnreadCount(0);
+    setTourTrip(undefined);
     setCurrentView("tracking");
+  }
+
+  // ── App tour: after the first sign-in, and from Profile ────────────────────
+  // Hands-on: on a try-it step the passenger does the real thing (opens the
+  // demo ride, picks stops, taps Routes and Profile) and the tour moves on as
+  // they do. Next does the step for them. Sections change with replaceState so
+  // the tour adds nothing to Back.
+  const tourSection = (section: PassengerSection) => {
+    const hash = section === "home" ? "" : "#" + section;
+    const { pathname, search } = window.location;
+    if (window.location.hash !== hash) window.history.replaceState(window.history.state, "", pathname + search + hash);
+    showSection(section);
   };
+  const tourStep = tour ? tour.steps[tour.index] : null;
+  /** Next on a try-it step: do what the passenger was asked to do. */
+  const performTourStep = (step: TourStepId) => {
+    if (step === "welcome") {
+      // A fresh demo ride, so the bus is approaching its next stop.
+      if (trackedRideRef.current?.routeId !== DEMO_ROUTE_ID) restartDemoRide();
+      openRoute(DEMO_ROUTE_ID);
+    } else if (step === "stops") {
+      // Board at the stop the bus is at or heading to, ride to the terminus.
+      const stops = directedRoute?.stops ?? [];
+      const reached = stopEstimates?.atStopIndex ?? stopEstimates?.nextStopIndex ?? DEMO_FIRST_NEXT_STOP;
+      const from = Math.min(Math.max(reached, 0), stops.length - 2);
+      if (from >= 0 && isDemoRouteId(effectiveRouteId)) {
+        setTourTrip({ boardingStopId: stops[from].id, alightingStopId: stops[stops.length - 1].id });
+      }
+    } else if (step === "routes" || step === "profile") {
+      setIsMessagingOpen(false);
+      tourSection(step);
+    }
+  };
+  /** Move past `step` once it is done, by the passenger or by Next. */
+  const advanceTour = (step: TourStepId) => {
+    if (!tour || tour.steps[tour.index] !== step) return;
+    // The last step opens Profile, where Replay app tour lives; stay there.
+    if (tour.index >= tour.steps.length - 1) { endTour(step === "profile" ? "profile" : "home"); return; }
+    setTour({ ...tour, index: tour.index + 1 });
+  };
+  const nextTourStep = () => {
+    if (!tourStep) return;
+    performTourStep(tourStep);
+    advanceTour(tourStep);
+  };
+  /** Both stops chosen, in ride order, while the tour asks for them. */
+  const tourTripChosen = (boardingStopId: string, destinationStopId: string) => {
+    const stops = directedRoute?.stops ?? [];
+    const from = stops.findIndex(stop => stop.id === boardingStopId);
+    const to = stops.findIndex(stop => stop.id === destinationStopId);
+    if (from >= 0 && to > from) advanceTour("stops");
+  };
+  const startTour = () => {
+    // The ride steps need the demo ride and live data; otherwise the tour
+    // still introduces Live routes, Routes and Profile.
+    const steps: TourStepId[] = showDemoRide
+      ? ["welcome", "stops", "drawer", "routes", "profile"]
+      : ["welcome-no-ride", "routes", "profile"];
+    setIsMessagingOpen(false);
+    tourSection("home");
+    setHomeSheetChoice(true);
+    setTour({ steps, index: 0 });
+  };
+  function endTour(section: PassengerSection = "home") {
+    // A keyboard user lands on Live routes (the control that started the tour
+    // may now be hidden); after a tap, no focus ring appears there.
+    const active = document.activeElement;
+    let keyboard = false;
+    try { keyboard = Boolean(active?.closest(".pp-tour") && active.matches(":focus-visible")); } catch { /* No :focus-visible support. */ }
+    if (user) markTourSeen(user.uid);
+    setTour(null);
+    setTourTrip(undefined);
+    setIsMessagingOpen(false);
+    tourSection(section);
+    if (keyboard && section === "home") window.requestAnimationFrame(() => liveRoutesHeading.current?.focus({ preventScroll: true }));
+    else if (active instanceof HTMLElement) active.blur();
+  }
+  const startTourLatest = useRef(startTour);
+  useEffect(() => { startTourLatest.current = startTour; });
+  // Back moves to another section under the tour; treat it as Skip, but
+  // leave the section Back chose.
+  const tourOpen = tour !== null;
+  useEffect(() => {
+    if (!tourOpen || !user) return;
+    const uid = user.uid;
+    const closeOnBack = () => {
+      markTourSeen(uid);
+      setTour(null);
+      setTourTrip(undefined);
+    };
+    window.addEventListener("popstate", closeOnBack);
+    return () => window.removeEventListener("popstate", closeOnBack);
+  }, [tourOpen, user]);
+  // A first sign-in starts the tour once Live routes has loaded (or failed to),
+  // unless the passenger is returning to a joined ride or opened another section.
+  const tourDataSettled = (projectionReady && catalogReady) || Boolean(liveDataError || routesError);
+  useEffect(() => {
+    if (!user || tour || !tourDataSettled || currentView !== "home" || tourCheckedUid.current === user.uid) return;
+    let current = true;
+    // Sign-in times live on the Firebase user, which useAuth has already loaded.
+    import("@/lib/firebaseAuth").then(({ auth }) => {
+      if (!current) return;
+      tourCheckedUid.current = user.uid;
+      const firebaseUser = auth.currentUser;
+      if (firebaseUser?.uid !== user.uid || readJoinedRidePointer(user.uid)) return;
+      if (shouldAutoStartTour(user.uid, firebaseUser.metadata)) startTourLatest.current();
+    }).catch(() => { /* Without the sign-in record, the tour waits for Profile. */ });
+    return () => { current = false; };
+  }, [user, tour, tourDataSettled, currentView]);
 
   const announcement = settings.announcementActive && settings.announcementText ? (
     <div className="pp-announcement" role="note">
@@ -695,7 +819,9 @@ export default function PassengerWorkspace() {
     : "Check your connection, then try again.";
 
   return (
-    <div data-passenger-workspace data-passenger-section={visibleView} className="pp-workspace relative flex flex-col overflow-hidden" style={{ height: "100dvh" }}>
+    <>
+    {/* While the tour runs, only the part it spotlights can be used (see AppTour). */}
+    <div data-passenger-workspace data-passenger-section={visibleView} data-tour-open={tour !== null || undefined} className="pp-workspace relative flex flex-col overflow-hidden" style={{ height: "100dvh" }}>
       {(!isConnected || rideRecoveryNotice || routesError || liveDataError) && <div className="pp-alerts relative z-50 shrink-0 space-y-2 px-4 pb-2 pt-safe">
       {!isConnected && (
         <div className="pp-banner" data-tone="warning" role="status" aria-live="polite">
@@ -929,10 +1055,17 @@ export default function PassengerWorkspace() {
                     liveHealth={activeBusHealth}
                     boardingBlockedReason={busSelectable ? undefined : "Boarding resumes when live tracking returns."}
                     demo={trackingDemo}
+                    presetTrip={trackingDemo ? tourTrip : undefined}
                     destinationStopId={effectiveDestinationStopId}
                     restoredBoarding={restoredBoarding && restoredBoarding.uid === user?.uid && restoredBoarding.sessionId === activeBusOnRoute.sessionId ? restoredBoarding : undefined}
-                    onDestinationStopChange={setSelectedDestinationStopId}
-                    onBoardingStopChange={setSelectedBoardingStopId}
+                    onDestinationStopChange={stopId => {
+                      setSelectedDestinationStopId(stopId);
+                      if (tourStep === "stops") tourTripChosen(selectedBoardingStopId, stopId);
+                    }}
+                    onBoardingStopChange={stopId => {
+                      setSelectedBoardingStopId(stopId);
+                      if (tourStep === "stops") tourTripChosen(stopId, selectedDestinationStopId);
+                    }}
                     onJoined={() => {
                       boardingRevisionRef.current++;
                       // A demo ride has no server session to restore after a reload.
@@ -1025,7 +1158,7 @@ export default function PassengerWorkspace() {
 
         {/* ── PROFILE VIEW ── */}
         <div inert={visibleView !== "profile"} aria-hidden={visibleView !== "profile"} className={`absolute inset-0 z-30 flex flex-col transition-[opacity,transform] duration-200 ${visibleView === "profile" ? "opacity-100 translate-y-0 pointer-events-auto" : "opacity-0 translate-y-2 pointer-events-none"}`}>
-          {profileMounted && <AccountTab />}
+          {profileMounted && <AccountTab onReplayTour={startTour} />}
         </div>
       </main>
 
@@ -1050,6 +1183,7 @@ export default function PassengerWorkspace() {
 
           <button type="button" className="passenger-section-button"
             aria-current={visibleView === "routes" ? "page" : undefined}
+            data-tour="routes-tab"
             onClick={() => navigateSection("routes")}>
             <svg viewBox="0 0 24 24" width={24} height={24} fill="none" stroke="currentColor" strokeWidth={2} aria-hidden="true">
               <path d="M6 12h12" />
@@ -1062,6 +1196,7 @@ export default function PassengerWorkspace() {
 
           <button type="button" className="passenger-section-button"
             aria-current={visibleView === "profile" ? "page" : undefined}
+            data-tour="profile-tab"
             onClick={() => navigateSection("profile")}>
             <UserRound size={24} strokeWidth={2} aria-hidden="true" />
             <span>Profile</span>
@@ -1069,5 +1204,7 @@ export default function PassengerWorkspace() {
         </nav>
       </div>
     </div>
+    {tour && <AppTour steps={tour.steps} index={tour.index} onNext={nextTourStep} onSkip={() => endTour()} />}
+    </>
   );
 }

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import WorkspaceLink from "@/components/shared/WorkspaceLink";
-import { CircleUserRound, LogOut, ChevronRight, LogIn, MessageSquareText, UserRoundX, ShieldUser } from "lucide-react";
+import { CircleUserRound, LogOut, ChevronRight, LogIn, MessageSquareText, UserRoundX, ShieldUser, Compass } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import FeedbackModal from "@/components/shared/FeedbackModal";
 import ConfirmModal from "@/components/ui/ConfirmModal";
@@ -21,7 +21,7 @@ function ProfilePhoto({ photoURL }: { photoURL?: string | null }) {
 
 const roleLabel = (role?: string | null) => role ? role.charAt(0).toUpperCase() + role.slice(1) : "Passenger";
 
-export default function AccountTab() {
+export default function AccountTab({ onReplayTour }: { onReplayTour?: () => void } = {}) {
   const {
     user,
     loginReady,
@@ -116,6 +116,15 @@ export default function AccountTab() {
               <span className="pp-list-label">Send feedback</span>
               <ChevronRight className="pp-list-chevron w-4 h-4" aria-hidden="true" />
             </button>
+            {onReplayTour && (
+              <button type="button" className="pp-list-row" onClick={onReplayTour}>
+                <span className="pp-list-icon">
+                  <Compass className="w-[18px] h-[18px]" aria-hidden="true" />
+                </span>
+                <span className="pp-list-label">Replay app tour</span>
+                <ChevronRight className="pp-list-chevron w-4 h-4" aria-hidden="true" />
+              </button>
+            )}
           </div>
         )}
 
