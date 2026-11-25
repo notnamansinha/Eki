@@ -2,9 +2,9 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-EVD-064 | 1.0 | Historical | 2026-11-24 |
+| EKI-EVD-064 | 1.0 | Historical | 2026-11-25 |
 
-First runs of the [observability drill](../../qa/OBSERVABILITY_DRILL.md) ([issue #519](https://github.com/notnamansinha/Eki/issues/519)) against the compiled backend and disposable emulators, and a replay of the exported telemetry through the repository's Collector configuration. No telemetry left the machine: the backend exported only to the loopback receiver, and the fixture recorded no non-loopback connection and no provider call. The relay to a deployed collector, the Cloud Run revision checks and alert delivery were not run; Section 6 holds their checklist.
+First runs of the [observability drill](../../qa/OBSERVABILITY_DRILL.md) ([issue #519](https://github.com/notnamansinha/Eki/issues/519)) against the compiled backend and disposable emulators, and a replay of the exported telemetry through the repository's Collector configuration. No telemetry left the machine: the backend exported only to the loopback receiver, and the fixture recorded no non-loopback connection and no provider call. The relay to a deployed collector, the Cloud Run revision checks and alert delivery were not run (Section 6).
 
 ## 1. Setup
 
@@ -67,15 +67,15 @@ The relay path was run once from the same clean tree with `EKI_OBS_OTLP_ENDPOINT
 
 ## 4. Findings
 
-| ID | Finding | Evidence | Proposed change |
-|---|---|---|---|
-| F1 | Error traces are not retained. With the default sampler (`parentbased_traceidratio`, 0.1) the backend decides when a request starts, before its status is known, and nothing downstream keeps errors: the Collector configuration has no tail sampling, and the pinned core Collector image has no `tail_sampling` processor | Root 5xx traces exported: 3 of 18 (run A) and 1 of 18 (run B). Metrics counted 18 of 18 and the Places handler logged 18 of 18 in both runs; 15 and 17 of those log records carry a trace ID whose trace was never exported | Alert on metrics, which count every request, and treat the trace as a sample. If every error trace is needed, export spans at `parentbased_always_on` to a Collector built with the contrib `tail_sampling` processor that keeps every trace with an `ERROR` span and 10 % of the rest. That sends every span to the Collector, about ten times today's span export |
-| F2 | A 5xx answered by a handler carries no exception event. The server span has status `ERROR` and the status code, but only the last-resort request error handler calls `recordActiveSpanException()`; the Places handler, `apiReadFailure()` and the other handlers that answer 5xx themselves do not | 0 exception events in the 4 sampled 5xx traces of each run | Record a bounded exception (type and code, not the message, which can hold document paths with UIDs) on the active span where handlers answer 5xx |
-| F3 | The p95 latency panel is wrong. The `eki-backend` meter's `http.server.request.duration` is in seconds but has no bucket advice, so it uses the SDK default bounds 0, 5, 10, ... 10,000, which suit milliseconds; every request under 5 s falls in one bucket. `@opentelemetry/instrumentation-http` 0.300.0 emits a histogram with the same name and second-scale bounds, so both become `http_server_request_duration_seconds` and the panel sums them | Exported bounds: `eki-backend` 0, 5, 10, 25 ... 10,000; instrumentation 0.005, 0.01, 0.025 ... 10. From run B's replayed buckets the panel query gives a p95 of 4.757 s, the `eki-backend` histogram alone 4.760 s and the instrumentation histogram alone 0.200 s (mean 0.039 s) | Remove the custom histogram and use the instrumentation's, or give it second-scale `explicitBucketBoundaries` and a distinct name; then point panel 3 at one of them |
-| F4 | Two dashboard panels did not match the exported names. Panel 6 read `eki_device_telemetry_latency`, but the gauge's unit `ms` makes it `eki_device_telemetry_latency_milliseconds`. Panel 7 summed `eki.background.failures` and `eki.background.failures.total`, which both become `eki_background_failures_total` | The hermetic check on the `origin/main` dashboard reports panel 6; the Collector replay exposes both names | Fixed in this change: panel 6 uses the `_milliseconds` name and panel 7 selects `source!=""`. Renaming the observable counter would remove the collision itself |
-| F5 | The Collector configuration uses a deprecated exporter name. Collector 0.161.0 logs `"otlp" alias is deprecated; use "otlp_grpc" instead` for `otlp/jaeger`; a later version may refuse the configuration | Collector replay log | Rename the exporter to `otlp_grpc/jaeger` in `observability/otel-collector.yaml` |
-| F6 | The dashboard depends on a label the OTLP translation does not create. Every panel filters on `service_name`; the Prometheus compatibility rules put `service.name` in `job` and other resource attributes in `target_info` | The replay needed `resource_to_telemetry_conversion` for any panel to resolve | Promote `service.name` to a label in the metrics backend, or filter on `job` |
-| F7 | One stdout line is plain text. `startTelemetry()` prints `[OpenTelemetry] Traces, metrics, and logs enabled.` before `bootstrap.ts` installs the console bridge, so the line reaches the log sink without severity | `structured-stdout` in each run | Log the line after the bridge is installed, or accept it |
+| ID | Finding | Evidence |
+|---|---|---|
+| F1 | Error traces are not retained. With the default sampler (`parentbased_traceidratio`, 0.1) the backend decides when a request starts, before its status is known, and nothing downstream keeps errors: the Collector configuration has no tail sampling, and the pinned core Collector image has no `tail_sampling` processor | Root 5xx traces exported: 3 of 18 (run A) and 1 of 18 (run B). Metrics counted 18 of 18 and the Places handler logged 18 of 18 in both runs; 15 and 17 of those log records carry a trace ID whose trace was never exported |
+| F2 | A 5xx answered by a handler carries no exception event. The server span has status `ERROR` and the status code, but only the last-resort request error handler calls `recordActiveSpanException()`; the Places handler, `apiReadFailure()` and the other handlers that answer 5xx themselves do not | 0 exception events in the 4 sampled 5xx traces of each run |
+| F3 | The p95 latency panel is wrong. The `eki-backend` meter's `http.server.request.duration` is in seconds but has no bucket advice, so it uses the SDK default bounds 0, 5, 10, ... 10,000, which suit milliseconds; every request under 5 s falls in one bucket. `@opentelemetry/instrumentation-http` 0.300.0 emits a histogram with the same name and second-scale bounds, so both become `http_server_request_duration_seconds` and the panel sums them | Exported bounds: `eki-backend` 0, 5, 10, 25 ... 10,000; instrumentation 0.005, 0.01, 0.025 ... 10. From run B's replayed buckets the panel query gives a p95 of 4.757 s, the `eki-backend` histogram alone 4.760 s and the instrumentation histogram alone 0.200 s (mean 0.039 s) |
+| F4 | Two dashboard panels did not match the exported names. Panel 6 read `eki_device_telemetry_latency`, but the gauge's unit `ms` makes it `eki_device_telemetry_latency_milliseconds`. Panel 7 summed `eki.background.failures` and `eki.background.failures.total`, which both become `eki_background_failures_total` | The hermetic check on the `origin/main` dashboard reports panel 6; the Collector replay exposes both names |
+| F5 | The Collector configuration uses a deprecated exporter name. Collector 0.161.0 logs `"otlp" alias is deprecated; use "otlp_grpc" instead` for `otlp/jaeger`; a later version may refuse the configuration | Collector replay log |
+| F6 | The dashboard depends on a label the OTLP translation does not create. Every panel filters on `service_name`; the Prometheus compatibility rules put `service.name` in `job` and other resource attributes in `target_info` | The replay needed `resource_to_telemetry_conversion` for any panel to resolve |
+| F7 | One stdout line is plain text. `startTelemetry()` prints `[OpenTelemetry] Traces, metrics, and logs enabled.` before `bootstrap.ts` installs the console bridge, so the line reaches the log sink without severity | `structured-stdout` in each run |
 
 The SDK's default resource detectors export `host.name`, `host.id`, `process.owner`, `process.command_args` and `process.executable.path`. On Cloud Run these describe the container, not a person; the relay mode sends only `service.name`, `deployment.environment` and `service.version`.
 
@@ -98,21 +98,7 @@ The Collector logged two warnings and no errors: the deprecated `otlp` alias (F5
 
 Issue #519 asks for a named deployed revision with a trace, a metric series, a log line and a delivered alert. None could be produced here: the staging manifest sets `OTEL_SDK_DISABLED=true` and no endpoint, no collector or metrics backend exists for the project, no alert rules or contact points exist, and this run sent no traffic to any deployed service. The relay dry run was checked with a placeholder endpoint and sent nothing. The issue also lists a Sentry-compatible error tracker; the repository has no error-tracker client, so exceptions reach only spans and log records.
 
-Steps, once a throwaway collector exists: [relay](../../qa/OBSERVABILITY_DRILL.md#43-relay-to-a-deployed-collector), then the [Cloud Run revision](../../qa/OBSERVABILITY_DRILL.md#44-deployed-cloud-run-revision) and [alert delivery](../../qa/OBSERVABILITY_DRILL.md#45-alert-delivery). Record the results in a new evidence record with this checklist:
-
-| Item | Record |
-|---|---|
-| Collector | Vendor, region, stack name; created and deleted (UTC) |
-| Relay run | Harness commit, `dirty: false`, report verdict, payloads forwarded and accepted |
-| Revision | Cloud Run service and revision, image digest, `release.sourceSha` from the admin `/api/health` |
-| Configuration | `OTEL_SDK_DISABLED`, the endpoint host, the secret name and version holding the headers, and the sampler |
-| Trace | Link or screenshot of one request trace with `service.name=eki-backend`, its trace ID and timestamp; the `traceparent` flags Cloud Run passed in |
-| Error trace | Link to one 5xx trace with its status, or the reason none was sampled (F1) |
-| Metric series | Query and screenshot of `http_server_request_count_total` for the revision, with the count expected from the requests sent |
-| Log line | Link to one structured log line carrying `trace_id`, and to its trace |
-| Redaction | The canary values searched in the log, trace and metric stores, and the result |
-| Alert | Rule name, threshold and window; time fired; channel; time delivered; time acknowledged by on-call |
-| Rollback | Whether the alert gate stopped or rolled back the release, and the run link |
+Sections 4.3 to 4.6 of the [runbook](../../qa/OBSERVABILITY_DRILL.md) describe the deployed procedure and what its evidence record must contain.
 
 ## 7. Limits
 

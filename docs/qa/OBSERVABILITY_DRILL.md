@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-TST-016 | 1.0 | Current | 2026-11-24 |
+| EKI-TST-016 | 1.0 | Current | 2026-11-25 |
 
 ## 1. Purpose
 
@@ -104,7 +104,17 @@ The report also lists findings that describe the product, not a harness failure:
 | `SECONDS_HISTOGRAM_DEFAULT_BUCKETS` | A histogram in seconds uses the SDK's default bounds (0 to 10,000), which suit milliseconds |
 | `PROMETHEUS_FAMILY_COLLISION` | Two exported instruments translate to one Prometheus metric family |
 
-The [evidence record](../testing/OBSERVABILITY_DRILL_LOCAL_2026_11_24.md) states the findings of the first runs and the proposed fixes.
+The [evidence record](../testing/OBSERVABILITY_DRILL_LOCAL_2026_11_24.md) states what the first runs found, as F1 to F7. The drill does not change the product; these are the proposed changes:
+
+| Finding | Proposed change |
+|---|---|
+| F1: error traces are not retained | Alert on metrics, which count every request, and treat the trace as a sample. If every error trace is needed, export spans at `parentbased_always_on` to a Collector built with the contrib `tail_sampling` processor that keeps every trace with an `ERROR` span and 10 % of the rest. That sends every span to the Collector, about ten times today's span export |
+| F2: a handled 5xx carries no exception event | Record a bounded exception (type and code, not the message, which can hold document paths with UIDs) on the active span where handlers answer 5xx |
+| F3: the p95 latency panel is wrong | Remove the custom histogram and use the instrumentation's, or give it second-scale `explicitBucketBoundaries` and a distinct name; then point panel 3 at one of them |
+| F4: two dashboard panels did not match the exported names | Done: panel 6 reads the `_milliseconds` name and panel 7 selects `source!=""` (Section 3.6). Renaming the observable counter would remove the collision itself |
+| F5: the Collector configuration uses a deprecated exporter name | Rename the exporter to `otlp_grpc/jaeger` in `observability/otel-collector.yaml` |
+| F6: the dashboard depends on a label the OTLP translation does not create | Promote `service.name` to a label in the metrics backend, or filter on `job` |
+| F7: one stdout line is plain text | Log the line after the bridge is installed, or accept it |
 
 ### 3.6 Dashboard and alert-rule check
 
@@ -150,16 +160,34 @@ Use a throwaway collector, for example a Grafana Cloud OTLP gateway stack create
 2. Run `$env:EKI_OBS_OTLP_ENDPOINT = "https://<collector-host>/<path>"` and `$env:EKI_OBS_CONFIRM_ENDPOINT = $env:EKI_OBS_OTLP_ENDPOINT`. The runner appends `/v1/traces`, `/v1/metrics` and `/v1/logs`.
 3. Run `npm run qa:observability:relay -- --dry-run`. Expected: `artifacts/qa/observability-relay-plan.md` reports `verdict: DRY_RUN`, the collector origin and the header names, and nothing is sent. The runner refuses HTTP, credentials, a query or fragment in the URL, loopback and private hosts, Eki, Firebase and Google hosts, a confirmation that differs by any character, and any set `OTEL_EXPORTER_OTLP_*ENDPOINT` or `*HEADERS` variable.
 4. Run `npm run qa:observability:relay`. It runs only the `always` phase. Expected: `artifacts/qa/observability-relay-report.md` reports `verdict: PASS` and the `relay` check lists every payload as accepted. This mode has not been run against a real collector yet.
-5. In the collector's UI, search for the trace IDs in `artifacts/qa/observability-relay-report.json` (`phases[0].requests[].traceId`) and fill in the deployed checklist of the evidence record.
+5. In the collector's UI, search for the trace IDs in `artifacts/qa/observability-relay-report.json` (`phases[0].requests[].traceId`) and record the items of [Section 4.6](#46-deployed-run-record).
 6. Run `Remove-Item Env:EKI_OBS_*`, then delete the throwaway stack or rotate its token.
 
 ### 4.4 Deployed Cloud Run revision
 
-The staging manifest sets `OTEL_SDK_DISABLED=true` and no endpoint ([staging runtime configuration](../operations/STAGING_RUNTIME_CONFIG.md)), so the deployed service exports nothing. Enabling it is a deployment change outside this drill: an `OTEL_EXPORTER_OTLP_ENDPOINT`, the `otlp-exporter-headers` secret with a version, and `OTEL_SDK_DISABLED=false`. After that change, record the items of the Cloud Run checklist in the evidence record for the named revision. On Cloud Run, requests reach the container through Google's front end, which can add a `traceparent` header; with the parent-based sampler the backend follows that decision instead of its own 10 % ratio, so record the `traceparent` flags that the backend receives.
+The staging manifest sets `OTEL_SDK_DISABLED=true` and no endpoint ([staging runtime configuration](../operations/STAGING_RUNTIME_CONFIG.md)), so the deployed service exports nothing. Enabling it is a deployment change outside this drill: an `OTEL_EXPORTER_OTLP_ENDPOINT`, the `otlp-exporter-headers` secret with a version, and `OTEL_SDK_DISABLED=false`. After that change, record the items of [Section 4.6](#46-deployed-run-record) for the named revision. On Cloud Run, requests reach the container through Google's front end, which can add a `traceparent` header; with the parent-based sampler the backend follows that decision instead of its own 10 % ratio, so record the `traceparent` flags that the backend receives.
 
 ### 4.5 Alert delivery
 
 No alert rules or contact points exist in the repository; risk OPS-01 in the [architecture risk register](../operations/ARCHITECTURE_RISK_REGISTER.md) records the gap. When rules are added as Prometheus rule files under `observability/`, the hermetic check covers their metric names. To verify delivery, fire each rule against the throwaway stack (for the 5xx rule, repeat step 4 of Section 4.3 until the rule's window holds enough 503 responses), and record the notification's arrival time and channel against the rule's target time.
+
+### 4.6 Deployed-run record
+
+Record a deployed run in a new evidence record with these items:
+
+| Item | Record |
+|---|---|
+| Collector | Vendor, region, stack name; created and deleted (UTC) |
+| Relay run | Harness commit, `dirty: false`, report verdict, payloads forwarded and accepted |
+| Revision | Cloud Run service and revision, image digest, `release.sourceSha` from the admin `/api/health` |
+| Configuration | `OTEL_SDK_DISABLED`, the endpoint host, the secret name and version holding the headers, and the sampler |
+| Trace | Link or screenshot of one request trace with `service.name=eki-backend`, its trace ID and timestamp; the `traceparent` flags Cloud Run passed in |
+| Error trace | Link to one 5xx trace with its status, or the reason none was sampled (F1 in Section 3.5) |
+| Metric series | Query and screenshot of `http_server_request_count_total` for the revision, with the count expected from the requests sent |
+| Log line | Link to one structured log line carrying `trace_id`, and to its trace |
+| Redaction | The canary values searched in the log, trace and metric stores, and the result |
+| Alert | Rule name, threshold and window; time fired; channel; time delivered; time acknowledged by on-call |
+| Rollback | Whether the alert gate stopped or rolled back the release, and the run link |
 
 ## 5. Evidence
 

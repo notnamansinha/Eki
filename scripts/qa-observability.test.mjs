@@ -6,8 +6,8 @@ import { join, relative, resolve } from 'node:path';
 import { gzipSync } from 'node:zlib';
 import { repositoryRoot } from './qa/acceptance-catalog.mjs';
 import {
-  BACKEND_SCOPE, HEX_DIGITS, HTTP_SCOPE, SDK_DEFAULT_BOUNDS,
-  assertRelayRun, canonicalCount, canonicalStatus, canonicalText, canonicalTraceId, checkSelectors, createOtlpReceiver, dashboardSelectors, familyCollisions, flattenLogs, flattenMetrics, flattenSpans,
+  BACKEND_SCOPE, HTTP_SCOPE, SDK_DEFAULT_BOUNDS,
+  assertRelayRun, backendSources, canonicalTraceId, checkSelectors, createOtlpReceiver, dashboardSelectors, familyCollisions, flattenLogs, flattenMetrics, flattenSpans,
   histogramBuckets, latestSeries, metricCatalogFromSource, parseOtlpHeaders, prometheusName, redact, relayPayload, requestTraces,
   printableText, ruleSelectors, samplingBand, scanCanaries, selectorsOf, structuredLines, totalsBy,
 } from './qa/observability-drill.mjs';
@@ -170,15 +170,6 @@ test('alerting and recording rules are read like dashboard targets', () => {
 // The hermetic CI check: every metric a committed dashboard or rule file
 // queries must be produced by an instrument declared in backend/src.
 // Directory entries carry their type, so no file is checked and then read.
-function backendSources(directory = resolve(repositoryRoot, 'backend/src')) {
-  return readdirSync(directory, { withFileTypes: true }).flatMap(entry => {
-    const path = join(directory, entry.name);
-    if (entry.isDirectory()) return backendSources(path);
-    return entry.isFile() && /\.ts$/.test(entry.name) && !/\.test\.ts$/.test(entry.name)
-      ? [{ path: relative(repositoryRoot, path).replaceAll('\\', '/'), text: readFileSync(path, 'utf8') }] : [];
-  });
-}
-
 function observabilitySelectors(directory = resolve(repositoryRoot, 'observability')) {
   return readdirSync(directory, { withFileTypes: true }).flatMap(entry => {
     const path = join(directory, entry.name);
@@ -198,7 +189,7 @@ function observabilitySelectors(directory = resolve(repositoryRoot, 'observabili
 }
 
 test('every metric the committed dashboards and alert rules query is produced by a backend instrument', () => {
-  const { instruments, declarations } = metricCatalogFromSource(backendSources());
+  const { instruments, declarations } = metricCatalogFromSource(backendSources(repositoryRoot));
   assert(instruments.length > 0);
   assert.equal(instruments.length, declarations, 'every create<Instrument>( call is read');
   const selectors = observabilitySelectors();
@@ -207,6 +198,7 @@ test('every metric the committed dashboards and alert rules query is produced by
   assert.equal(new Set(selectors.filter(item => item.file.endsWith('eki-backend-dashboard.json')).map(item => item.expr)).size, targets.length,
     'every dashboard target yields at least one selector');
   assert.deepEqual(checkSelectors(selectors, instruments), []);
+  assert(instruments.every(item => !item.source.includes('\\') && item.source.startsWith('backend/src/')), 'sources are repository-relative');
   // Two backend instruments share one Prometheus family. The dashboard reads
   // the per-source counter with source!=""; a new collision fails here.
   assert.deepEqual(familyCollisions(instruments).map(item => item.family), ['eki_background_failures_total']);
@@ -260,15 +252,8 @@ test('the relay never forwards a payload holding a canary and posts clean ones o
   assert.deepEqual(odd, { signal: 'logs', forwarded: true, status: null, accepted: false }, 'a status outside the fixed list is not kept or accepted');
 });
 
-test('server and file values are rebuilt from fixed sets before they reach the evidence or a request URL', () => {
-  assert.equal(canonicalStatus(200), 200);
-  assert.equal(canonicalStatus(599), 599);
-  for (const value of [99, 600, '200', 200.5, null, undefined]) assert.equal(canonicalStatus(value), null, String(value));
-  assert.equal(canonicalText('abc123', HEX_DIGITS, 8), 'abc123');
-  for (const value of ['ABC', 'abc1234567', '', 'ab\nc', 42, null]) assert.equal(canonicalText(value, HEX_DIGITS, 8), null, JSON.stringify(value));
-  assert.equal(canonicalCount(0), 0);
-  assert.equal(canonicalCount(156), 156);
-  for (const value of [-1, 1.5, '3', Number.MAX_SAFE_INTEGER + 2, null, undefined]) assert.equal(canonicalCount(value), null, String(value));
+// canonicalStatus, canonicalText and canonicalCount come from dast-plan.mjs and are tested in qa-dast.test.mjs.
+test('trace IDs and scraped text are rebuilt from fixed sets before they reach a request URL or a file', () => {
   assert.equal(canonicalTraceId(traceA), traceA);
   for (const value of ['0'.repeat(32), traceA.toUpperCase(), traceA.slice(1), `${traceA}0`, `../${traceA.slice(3)}`, null]) {
     assert.equal(canonicalTraceId(value), null, String(value));

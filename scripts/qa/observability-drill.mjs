@@ -1,5 +1,8 @@
+import { readdirSync, readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
+import { join, relative, resolve } from 'node:path';
 import { gunzipSync } from 'node:zlib';
+import { HEX_DIGITS, canonicalStatus, canonicalText } from './dast-plan.mjs';
 
 /**
  * Pure logic and the loopback OTLP/HTTP JSON receiver for the observability
@@ -268,31 +271,11 @@ export function redact(text, values) {
 }
 
 // Values that a server or an earlier run's file supplies reach the evidence,
-// or a request URL, only after they are rebuilt from these fixed sets. That
-// validates them and keeps unchecked bytes out (CodeQL js/http-to-file-access
-// and js/file-access-to-http).
-const HTTP_STATUS_CODES = Object.freeze(Array.from({ length: 500 }, (_, index) => index + 100));
-export const HEX_DIGITS = '0123456789abcdef';
+// or a request URL, only after they are rebuilt from fixed sets, with the
+// DAST harness's canonicalStatus, canonicalText and canonicalCount or the two
+// helpers below. That validates them and keeps unchecked bytes out (CodeQL
+// js/http-to-file-access and js/file-access-to-http).
 const PRINTABLE = Object.freeze(['\t', '\n', ...Array.from({ length: 95 }, (_, index) => String.fromCharCode(32 + index))]);
-
-/** The HTTP status code from the fixed list of 100 to 599, or null. */
-export function canonicalStatus(value) {
-  return HTTP_STATUS_CODES.find(code => code === value) ?? null;
-}
-
-/** `value` rebuilt from the characters of `alphabet`, or null when it has another character or is empty or too long. */
-export function canonicalText(value, alphabet, maxLength) {
-  if (typeof value !== 'string' || value.length === 0 || value.length > maxLength) return null;
-  const allowed = [...alphabet];
-  const rebuilt = [...value].map(character => allowed.find(candidate => candidate === character));
-  return rebuilt.every(character => character !== undefined) ? rebuilt.join('') : null;
-}
-
-/** A non-negative safe integer rebuilt from its digits, or null. */
-export function canonicalCount(value) {
-  if (!Number.isSafeInteger(value) || value < 0) return null;
-  return Number(canonicalText(String(value), '0123456789', 16));
-}
 
 /** A valid W3C trace ID rebuilt from lowercase hex digits, or null. */
 export function canonicalTraceId(value) {
@@ -381,6 +364,20 @@ export function seriesNames(family, type) {
 }
 
 const INSTRUMENT = /\.create(Counter|UpDownCounter|Histogram|Gauge|ObservableGauge|ObservableCounter|ObservableUpDownCounter)\(\s*"([^"]+)"\s*(?:,\s*\{([^}]*)\})?/g;
+
+/**
+ * Every non-test TypeScript file under `backend/src` of `root`, with its path
+ * relative to `root`. Directory entries carry their type, so no file is
+ * checked and then read.
+ */
+export function backendSources(root, directory = resolve(root, 'backend/src')) {
+  return readdirSync(directory, { withFileTypes: true }).flatMap(entry => {
+    const path = join(directory, entry.name);
+    if (entry.isDirectory()) return backendSources(root, path);
+    return entry.isFile() && /\.ts$/.test(entry.name) && !/\.test\.ts$/.test(entry.name)
+      ? [{ path: relative(root, path).replaceAll('\\', '/'), text: readFileSync(path, 'utf8') }] : [];
+  });
+}
 
 /**
  * Instruments declared in backend sources. `declarations` counts every

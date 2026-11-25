@@ -1,14 +1,15 @@
 import { execFileSync, spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { repositoryRoot } from './acceptance-catalog.mjs';
 import { safetyPreflight } from './safety-preflight.mjs';
 import { removeGeneratedDemoConfig } from './emulator-environment.mjs';
 import { describeDirty, workingTreeState } from './working-tree.mjs';
+import { canonicalCount, canonicalStatus } from './dast-plan.mjs';
 import {
   BACKEND_SCOPE, DEFAULT_RECEIVER_PORT, HTTP_SCOPE, SERVICE_NAME, STATUS_ERROR,
-  assertRelayRun, canonicalCount, canonicalStatus, checkSelectors, createOtlpReceiver, dashboardSelectors, familyCollisions, flattenLogs, flattenMetrics,
+  assertRelayRun, backendSources, checkSelectors, createOtlpReceiver, dashboardSelectors, familyCollisions, flattenLogs, flattenMetrics,
   flattenSpans, histogramBuckets, latestSeries, metricCatalogFromExport, metricCatalogFromSource, redact, relayPayload, requestTraces, samplingBand,
   sameCounts, scanCanaries, serverSpans, statusCounts, structuredLines, totalsBy, traceparent,
 } from './observability-drill.mjs';
@@ -462,19 +463,11 @@ function dashboardCheck(exportedInstruments) {
   const file = 'observability/grafana/eki-backend-dashboard.json';
   const dashboard = JSON.parse(readFileSync(resolve(repositoryRoot, file), 'utf8'));
   const selectors = dashboardSelectors(dashboard, file);
-  const declared = metricCatalogFromSource(backendSources()).instruments;
+  const declared = metricCatalogFromSource(backendSources(repositoryRoot)).instruments;
   const exported = new Set(exportedInstruments.map(item => `${item.scope}|${item.name}`));
   const notExported = declared.filter(item => !exported.has(`${item.scope}|${item.name}`));
   return { selectors: selectors.length, exportedInstruments: exported.size, declaredButNotExported: notExported.map(item => item.name),
     problems: checkSelectors(selectors, [...exportedInstruments, ...notExported]) };
-}
-
-function backendSources(directory = resolve(repositoryRoot, 'backend/src')) {
-  return readdirSync(directory, { withFileTypes: true }).flatMap(entry => {
-    const path = resolve(directory, entry.name);
-    if (entry.isDirectory()) return backendSources(path);
-    return /\.ts$/.test(entry.name) && !/\.test\.ts$/.test(entry.name) ? [{ path, text: readFileSync(path, 'utf8') }] : [];
-  });
 }
 
 // ---- report ------------------------------------------------------------------
