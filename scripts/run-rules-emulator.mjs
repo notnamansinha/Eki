@@ -24,13 +24,26 @@ import { workingTreeState } from "./qa/working-tree.mjs";
  */
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
-if (args.length > 1 || (args.length && !['--browser', '--browser-providers', '--browser-service', '--api', '--dast', '--observability', '--observability-relay'].includes(args[0]))) throw new Error('Only named browser, API, DAST or observability scopes are supported');
-const api = args[0] === '--api';
-const dast = args[0] === '--dast';
-const observability = args[0]?.startsWith('--observability') ?? false;
-const browser = args.length === 1 && !api && !dast && !observability;
+// Each scope names its evidence prefix, the script run inside the emulators and
+// the runner deadline. No argument runs the rules and emulator suites.
+const BROWSER_SCOPE = { prefix: 'browser', runner: 'scripts/qa/run-browser-tests.mjs', minutes: 8, browser: true };
+const SCOPES = {
+  '': { prefix: 'emulator', runner: 'scripts/qa/run-emulator-tests.mjs', minutes: 6 },
+  '--browser': BROWSER_SCOPE, '--browser-providers': BROWSER_SCOPE, '--browser-service': BROWSER_SCOPE,
+  '--api': { prefix: 'api', runner: 'scripts/qa/run-api.mjs', minutes: 6 },
+  '--dast': { prefix: 'dast-local', runner: 'scripts/qa/run-dast.mjs', minutes: 60 },
+  '--load': { prefix: 'load-local', runner: 'scripts/qa/run-load.mjs', minutes: 45 },
+  '--observability': { prefix: 'observability', runner: 'scripts/qa/run-observability-drill.mjs', minutes: 6 },
+  '--observability-relay': { prefix: 'observability-relay', runner: 'scripts/qa/run-observability-drill.mjs', runnerArgs: '--relay-in-emulators', minutes: 6 },
+};
+const scopeName = args[0] ?? '';
+if (args.length > 1 || !Object.hasOwn(SCOPES, scopeName)) {
+  throw new Error(`Only one of these scopes is supported: ${Object.keys(SCOPES).filter(Boolean).join(', ')}`);
+}
+const scope = SCOPES[scopeName];
+const browser = scope.browser === true;
 const evidenceDirectory = path.join(ROOT, 'artifacts/qa'); mkdirSync(evidenceDirectory, { recursive: true });
-const prefix = api ? 'api' : dast ? 'dast-local' : observability ? args[0].slice(2) : browser ? 'browser' : 'emulator';
+const prefix = scope.prefix;
 for (const name of [`${prefix}-${browser ? 'playwright' : 'vitest'}.json`, `${prefix}-junit.xml`, `${prefix}-report.md`, `${prefix}-run.log`, ...(browser ? ['browser-results', 'browser-progress.json'] : [])]) rmSync(path.join(evidenceDirectory, name), { force: true, recursive: true });
 writeFileSync(path.join(evidenceDirectory, `${prefix}-report.json`), JSON.stringify({
   sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: ROOT, encoding: 'utf8' }).trim(),
@@ -60,7 +73,7 @@ const emulatorArgs = [
   "firestore,database,auth",
   "--project",
   "demo-eki-qa",
-  `node "${path.join(ROOT, api ? 'scripts/qa/run-api.mjs' : dast ? 'scripts/qa/run-dast.mjs' : observability ? 'scripts/qa/run-observability-drill.mjs' : browser ? 'scripts/qa/run-browser-tests.mjs' : 'scripts/qa/run-emulator-tests.mjs')}"${args[0] === '--observability-relay' ? ' --relay-in-emulators' : ''}`,
+  `node "${path.join(ROOT, scope.runner)}"${scope.runnerArgs ? ` ${scope.runnerArgs}` : ''}`,
 ];
 
 function spawnNpx() {
@@ -104,7 +117,7 @@ function spawnNpx() {
 
 const child = spawnNpx();
 // Deadline: kill the whole tree (Windows: taskkill /T), not just the npx process.
-const deadline = setTimeout(() => { console.error('Emulator runner deadline exceeded; dependent tests BLOCKED.'); killProcessTree(child); }, (dast ? 60 : browser ? 8 : 6) * 60_000);
+const deadline = setTimeout(() => { console.error('Emulator runner deadline exceeded; dependent tests BLOCKED.'); killProcessTree(child); }, scope.minutes * 60_000);
 
 function finish(code) {
   clearTimeout(deadline);

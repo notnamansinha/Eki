@@ -170,6 +170,8 @@ The [QA programme](../../qa/README.md) describes the evidence model. Every runne
 | `npm run qa:api` | L2 | HTTP authorization sweep of every published operation | [HTTP authorization](../../qa/HTTP_AUTHORIZATION.md) |
 | `npm run qa:dast` | L2 | OWASP ZAP active scan of every published operation, per role, against the disposable backend (needs Docker) | [DAST and OpenAPI scans](../../qa/DAST.md) |
 | `npm run qa:dast:staging` | L4 | Bounded GET-only ZAP scan of the staging service with dedicated test accounts; `-- --dry-run` writes the plans only | [DAST and OpenAPI scans](../../qa/DAST.md) |
+| `npm run qa:load` | L2 | Bounded k6 smoke, load, headroom (1.2 times the expected peak), stress, spike and soak profiles and Toxiproxy drills against one backend process and the emulators (needs Docker) | [Load and fault drills](../../qa/LOAD_DRILLS.md) |
+| `npm run qa:load:staging` | L4 | The same profiles and the client-side drills against a confirmed deployed revision; `-- --dry-run` writes the plan only | [Load and fault drills](../../qa/LOAD_DRILLS.md) |
 | `npm run qa:browser` | L3 | Disposable browser acceptance; `qa:browser:providers` and `qa:browser:service` run narrow subsets | [Browser acceptance](../../qa/BROWSER_ACCEPTANCE.md) |
 | `npm run qa:privacy:deletion`, `qa:privacy:deletion:staging` | L2 local, L4 staging | Passenger account deletion checked store by store, a database sweep and a backend log scan; read-only on staging with a dedicated test account | [Privacy verification](../../qa/PRIVACY_VERIFICATION.md) |
 | `npm run qa:privacy:hosts`, `qa:privacy:hosts:live` | L3 local, L4 live | Request hosts of every public route, mapped to vendors and compared with the privacy notice | [Privacy verification](../../qa/PRIVACY_VERIFICATION.md) |
