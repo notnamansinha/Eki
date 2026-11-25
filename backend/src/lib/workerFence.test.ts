@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Firestore } from "firebase-admin/firestore";
 import type { Reference } from "firebase-admin/database";
-import { assertWorkerLeadership, bindWorkerCallback, bindWorkerContext, WorkerFence, WorkerLeadershipExpired, workerTransaction, workerRtdbTransaction, workerWrite } from "./workerFence";
+import { assertWorkerLeadership, bindWorkerCallback, bindWorkerContext, isRtdbPermissionDenied, WorkerFence, WorkerLeadershipExpired, workerRtdbFencedUpdate, workerTransaction, workerRtdbTransaction, workerWrite } from "./workerFence";
 
 function store(lease: () => any) {
   const writes = vi.fn();
@@ -69,6 +69,27 @@ describe("worker destination fencing", () => {
     } } as unknown as Reference;
     await leader.run(() => workerRtdbTransaction(ref, mutation));
     expect(mutation).toHaveBeenCalledTimes(1);
+  });
+
+  it("stamps every fenced update with the caller's generation and refuses to write without live leadership", async () => {
+    const update = vi.fn(async () => undefined);
+    const ref = { update } as unknown as Reference;
+    const leader = fence();
+    // A caller cannot omit or forge the generation the rules compare.
+    await leader.run(() => workerRtdbFencedUpdate(ref, { revision: 8, "buses/node:b_r/lat": 23, _workerGeneration: 99 }));
+    expect(update).toHaveBeenCalledExactlyOnceWith({ revision: 8, "buses/node:b_r/lat": 23, _workerGeneration: 1 });
+    leader.revoke();
+    expect(() => leader.run(() => workerRtdbFencedUpdate(ref, { revision: 9 }))).toThrow(WorkerLeadershipExpired);
+    expect(() => workerRtdbFencedUpdate(ref, { revision: 9 })).toThrow("requires worker leadership");
+    expect(update).toHaveBeenCalledTimes(1);
+  });
+
+  it("recognises a rules denial from the SDK and nothing else", () => {
+    expect(isRtdbPermissionDenied(Object.assign(new Error("PERMISSION_DENIED: Permission denied"), { code: "PERMISSION_DENIED" }))).toBe(true);
+    expect(isRtdbPermissionDenied(new Error("permission_denied"))).toBe(true);
+    for (const other of [new Error("disconnected"), Object.assign(new Error("Write canceled"), { code: "UNAVAILABLE" }), null, undefined, "PERMISSION_DENIED"]) {
+      expect(isRtdbPermissionDenied(other)).toBe(false);
+    }
   });
 
   it("enforces destination generations and leaves HTTP callers unchanged", async () => {

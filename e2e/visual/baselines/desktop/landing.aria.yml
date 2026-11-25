@@ -1,0 +1,11 @@
+- main:
+  - heading "Track your campus bus" [level=1]
+  - paragraph: View University bus routes and available bus locations Arrival estimates depend on live service data
+  - button "Continue with Google"
+  - text: For campus travel information, contact
+  - link "Campus Operations":
+    - /url: https://ahduni.edu.in/academics/schools-centres/office-of-the-dean-of-students/getting-around/
+  - text: /© \d+ Eki Transit/
+  - link "Install the app":
+    - /url: /install
+  - text: Ahmedabad, India

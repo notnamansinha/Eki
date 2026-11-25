@@ -25,6 +25,7 @@ function refresh() { fixture.revision++; fixture.observers.forEach(next => next(
 vi.mock("@/hooks/useAuth", () => ({ useAuth: () => { useFixtureRevision(); return { user: fixture.user, loading: false }; } }));
 vi.mock("@/hooks/useRoutes", () => ({ useRoutes: () => ({ routes: [fixture.route, { ...fixture.route, id: "B", name: "B route" }], error: null, retry: vi.fn() }) }));
 vi.mock("@/hooks/useSettings", () => ({ useSettings: () => ({ settings: {} }) }));
+vi.mock("@/hooks/useRideChatUnread", () => ({ useRideChatUnread: () => 0 }));
 vi.mock("@/lib/authState", () => ({ getAuthVerificationGeneration: () => fixture.generation, waitForAuth: () => Promise.resolve() }));
 vi.mock("@/lib/joinedRideStatus", () => ({ getJoinedRideStatus: (sessionId: string, signal?: AbortSignal) => fixture.status(sessionId, signal) }));
 vi.mock("@/hooks/useRTDBResume", () => ({ useRTDBResume: () => {

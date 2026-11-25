@@ -12,7 +12,10 @@ vi.mock("@/lib/firebaseAuth", () => ({ auth: mocks.auth }));
 vi.mock("@/lib/firebaseFirestore", () => ({ db: {} }));
 vi.mock("@/lib/authState", () => ({ waitForAuth: async () => {} }));
 vi.mock("firebase/firestore", () => ({
-  collection: vi.fn(), query: vi.fn(), orderBy: vi.fn(), limitToLast: vi.fn(),
+  collection: (_db: unknown, ...path: string[]) => ({ path }),
+  query: (source: { path: string[] }, ...constraints: unknown[]) => ({ ...source, constraints }),
+  orderBy: (field: string, direction: string) => ({ orderBy: [field, direction] }),
+  limitToLast: (count: number) => ({ limitToLast: count }),
   onSnapshot: mocks.listen, Timestamp: class {},
 }));
 vi.mock("@/lib/telemetryTrace", () => ({
@@ -49,37 +52,12 @@ describe("ride chat user workflows", () => {
     expect(screen.getByText("Administrator").parentElement?.textContent).toContain("Campus Team");
     expect(screen.getByText("Operator").parentElement?.textContent).toContain("Campus Driver");
   });
-  it("treats history loaded on open as seen and counts only later messages from others as unread", async () => {
-    const onUnreadCountChange = vi.fn();
-    panel({ onUnreadCountChange });
+  it("reads the session's latest 200 messages through the query the passenger unread badge also listens to", async () => {
+    // The same query lets Firestore serve the open panel from the badge's watch target.
+    panel();
     await waitFor(() => expect(mocks.listen).toHaveBeenCalledOnce());
-    const message = (id: string, senderId: string) => ({ id, data: () => ({ from: "driver", senderId, text: id }) });
-    const history = [message("d1", "driver"), message("d2", "driver"), message("p1", "qa-passenger"), message("d3", "driver")];
-    act(() => mocks.listen.mock.calls[0][2]({ docs: history.slice(2), metadata: { fromCache: true } }));
-    act(() => mocks.listen.mock.calls[0][2]({ docs: history, metadata: { fromCache: false } }));
-    expect(onUnreadCountChange).not.toHaveBeenCalledWith(expect.any(Number));
-    act(() => mocks.listen.mock.calls[0][2]({ docs: [...history, message("d4", "driver")], metadata: { fromCache: false } }));
-    expect(onUnreadCountChange).toHaveBeenCalledExactlyOnceWith(1);
-  });
-  it("counts a message that arrives between a cached snapshot and the server baseline as unread", async () => {
-    const onUnreadCountChange = vi.fn();
-    panel({ onUnreadCountChange });
-    await waitFor(() => expect(mocks.listen).toHaveBeenCalledOnce());
-    const message = (id: string, at: number) => ({ id, data: () => ({ from: "driver", senderId: "driver", text: id, timestamp: { toMillis: () => at } }) });
-    const history = [message("d1", 1_000), message("d2", 2_000), message("d3", 3_000)];
-    act(() => mocks.listen.mock.calls[0][2]({ docs: history.slice(1), metadata: { fromCache: true } }));
-    act(() => mocks.listen.mock.calls[0][2]({ docs: [...history, message("d4", 4_000)], metadata: { fromCache: false } }));
-    expect(onUnreadCountChange).toHaveBeenCalledExactlyOnceWith(1);
-  });
-  it("counts a new message from others as unread once the chat window is full at 200 messages", async () => {
-    const onUnreadCountChange = vi.fn();
-    panel({ onUnreadCountChange });
-    await waitFor(() => expect(mocks.listen).toHaveBeenCalledOnce());
-    const message = (id: string) => ({ id, data: () => ({ from: "driver", senderId: "driver", text: id }) });
-    const history = Array.from({ length: 200 }, (_, index) => message(`d${index}`));
-    act(() => mocks.listen.mock.calls[0][2]({ docs: history, metadata: { fromCache: false } }));
-    act(() => mocks.listen.mock.calls[0][2]({ docs: [...history.slice(1), message("d200")], metadata: { fromCache: false } }));
-    expect(onUnreadCountChange).toHaveBeenCalledExactlyOnceWith(1);
+    expect(mocks.listen.mock.calls[0][0]).toEqual({ path: ["ride_sessions", "qa-session", "messages"],
+      constraints: [{ orderBy: ["timestamp", "asc"] }, { limitToLast: 200 }] });
   });
   it.each(["<html>proxy warning</html>", "null", "{}"])("preserves the draft on an invalid success acknowledgement: %s", async body => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response(body)));

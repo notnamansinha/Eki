@@ -1,0 +1,70 @@
+- main:
+  - tablist "Administration sections":
+    - tab "Live Ops"
+    - tab "Routes"
+    - tab "Fleet & People"
+    - tab "History"
+    - tab "Feedback"
+    - tab "Settings" [selected]
+  - link "Passenger Panel":
+    - /url: /passenger
+  - tabpanel "Settings":
+    - heading "Settings" [level=2]
+    - paragraph: Changes apply live to the Passenger app
+    - button "No changes" [disabled]
+    - status: Settings unchanged
+    - heading "Service Hours & No-Bus Message" [level=3]
+    - paragraph: What passengers see when no buses are running
+    - text: Service Start Time
+    - textbox "Service Start Time":
+      - /placeholder: e.g. 6:30 am
+      - text: /8:\d+ am/
+    - paragraph: /e\.g\. "6:\d+ am"/
+    - text: No Buses — Headline
+    - textbox "No Buses — Headline":
+      - /placeholder: No buses running
+      - text: No buses running
+    - paragraph: The bold line. e.g. "No buses running"
+    - text: No Buses — Subtext
+    - textbox "No Buses — Subtext":
+      - /placeholder: "Service starts at {time}"
+      - text: "Service starts at {time}"
+    - paragraph: "The first {time} is replaced with the service start time above. e.g. \"Service starts at {time}\""
+    - group "Passenger preview":
+      - paragraph: Passengers see
+      - paragraph: No buses running
+      - paragraph: /Service starts at 8:\d+ am/
+    - heading "Live Announcement Banner" [level=3]
+    - paragraph: When active, a banner appears at the top of the Passenger app home screen
+    - text: Announcement Text
+    - textbox "Announcement Text":
+      - /placeholder: e.g. Heavy traffic near Central Park — expect delays on Route 1A
+    - paragraph: Keep it brief — shown in a slim banner strip
+    - switch "Toggle announcement"
+    - text: Hidden
+    - heading "Passenger Routes" [level=3]
+    - paragraph: Choose which routes passengers can browse and set the time at each stop
+    - note: 1 previously published route was deleted and will be removed when you save.
+    - group "Routes shown to passengers":
+      - text: ""
+      - paragraph: Only selected routes appear in the passenger Routes tab. 1 selected.
+      - list:
+        - listitem:
+          - checkbox "Ahmedabad University Extended Campus and Science Research Shuttle 2 stops" [checked]
+          - text: Ahmedabad University Extended Campus and Science Research Shuttle 2 stops
+    - region "Ahmedabad University Extended Campus and Science Research Shuttle":
+      - heading "Ahmedabad University Extended Campus and Science Research Shuttle" [level=3]
+      - text: Stop times
+      - list:
+        - listitem:
+          - text: Shilp Revanta Residential Campus Main Entrance
+          - textbox "Time for Shilp Revanta Residential Campus Main Entrance on Ahmedabad University Extended Campus and Science Research Shuttle":
+            - /placeholder: HH:MM
+            - text: /\d+:\d+/
+        - listitem:
+          - text: /Gate \d+ Ahmedabad University Science and Engineering Campus/
+          - textbox /Time for Gate \d+ Ahmedabad University Science and Engineering Campus on Ahmedabad University Extended Campus and Science Research Shuttle/:
+            - /placeholder: HH:MM
+            - text: /\d+:\d+/
+    - button "Save routes"
+    - status: Unsaved passenger route changes

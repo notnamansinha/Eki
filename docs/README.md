@@ -105,7 +105,7 @@ The register lists every controlled document by its source path. A mirror carrie
 
 | ID | Document | Version | Status | Last updated |
 |---|---|---|---|---|
-| EKI-DAT-001 | [Firebase Data Model](data/FIREBASE_DATA_MODEL.md) | 2.2 | Current | 2026-11-08 |
+| EKI-DAT-001 | [Firebase Data Model](data/FIREBASE_DATA_MODEL.md) | 3.0 | Current | 2026-11-25 |
 | EKI-DAT-002 | [Eki Storage Architecture](data/STORAGE_ARCHITECTURE.md) | 2.2 | Current | 2026-11-08 |
 
 ### 4.8 Security (SEC)
@@ -113,7 +113,7 @@ The register lists every controlled document by its source path. A mirror carrie
 | ID | Document | Version | Status | Last updated |
 |---|---|---|---|---|
 | EKI-SEC-001 | [Security Policy](../SECURITY.md) | 1.3 | Current | 2026-11-07 |
-| EKI-SEC-002 | [Security Architecture](security/SECURITY_ARCHITECTURE.md) | 4.0 | Current | 2026-11-07 |
+| EKI-SEC-002 | [Security Architecture](security/SECURITY_ARCHITECTURE.md) | 5.0 | Current | 2026-11-23 |
 | EKI-SEC-003 | [Browser API Security](security/BROWSER_API_SECURITY.md) | 3.1 | Current | 2026-11-07 |
 | EKI-SEC-004 | [Privileged Database Authorization](security/PRIVILEGED_DATABASE_AUTHORIZATION.md) | 1.1 | Current | 2026-11-07 |
 | EKI-SEC-005 | [Hardware Security Provisioning](security/HARDWARE_SECURITY_PROVISIONING.md) | 1.1 | Current | 2026-11-07 |
@@ -122,7 +122,7 @@ The register lists every controlled document by its source path. A mirror carrie
 
 | ID | Document | Version | Status | Last updated |
 |---|---|---|---|---|
-| EKI-CST-001 | [Eki Cost Model](cost/COST_MODEL.md) | 2.4 | Current | 2026-11-07 |
+| EKI-CST-001 | [Eki Cost Model](cost/COST_MODEL.md) | 3.0 | Current | 2026-11-25 |
 
 ### 4.10 Operations (OPS)
 
@@ -142,7 +142,7 @@ The register lists every controlled document by its source path. A mirror carrie
 | EKI-OPS-012 | [API Read Caching and Compatibility Retirement](operations/API_READS_AND_RETIREMENT.md) | 1.3 | Current | 2026-11-07 |
 | EKI-OPS-013 | [Browser Telemetry Trace](operations/BROWSER_TELEMETRY_TRACE.md) | 1.1 | Current | 2026-11-07 |
 | EKI-OPS-014 | [Matching and Stale Presence Scans](operations/MATCHING_AND_LIFECYCLE_SCANS.md) | 1.1 | Current | 2026-11-07 |
-| EKI-OPS-015 | [Passenger Account Deletion](operations/PRIVACY_DELETION.md) | 1.1 | Current | 2026-11-07 |
+| EKI-OPS-015 | [Passenger Account Deletion](operations/PRIVACY_DELETION.md) | 1.2 | Current | 2026-11-24 |
 | EKI-OPS-016 | [Realtime Transport Measurements](operations/REALTIME_TRANSPORT_MEASUREMENTS.md) | 1.1 | Current | 2026-11-07 |
 | EKI-OPS-017 | [Bounded Reconciliation](operations/RECONCILIATION.md) | 1.1 | Current | 2026-11-07 |
 | EKI-OPS-018 | [Live Reroute Retry Policy](operations/REROUTE_RETRY_POLICY.md) | 1.0 | Current | 2026-10-30 |
@@ -153,8 +153,8 @@ The register lists every controlled document by its source path. A mirror carrie
 | EKI-OPS-023 | [Telemetry Execution Deadlines](operations/TELEMETRY_DEADLINES.md) | 1.1 | Current | 2026-11-07 |
 | EKI-OPS-024 | [Telemetry Ingestion Load Test](operations/TELEMETRY_INGESTION_LOAD_TEST.md) | 1.1 | Current | 2026-11-07 |
 | EKI-OPS-025 | [Telemetry Latency Baseline](operations/TELEMETRY_LATENCY_BASELINE.md) | 1.0 | Current | 2026-10-30 |
-| EKI-OPS-026 | [Worker Leadership and Fencing](operations/WORKER_LEADERSHIP.md) | 1.2 | Current | 2026-11-08 |
-| EKI-OPS-027 | [Bounded Work Admission](operations/WORK_ADMISSION.md) | 1.1 | Current | 2026-11-07 |
+| EKI-OPS-026 | [Worker Leadership and Fencing](operations/WORKER_LEADERSHIP.md) | 2.0 | Current | 2026-11-21 |
+| EKI-OPS-027 | [Bounded Work Admission](operations/WORK_ADMISSION.md) | 1.2 | Current | 2026-11-25 |
 | EKI-OPS-028 | [ngrok Removal and Managed Firebase Backend Migration](operations/NGROK_REMOVAL_AND_FIREBASE_BACKEND_MIGRATION.md) | 1.4 | Proposed | 2026-11-07 |
 | EKI-OPS-029 | [Staging Runtime Configuration](operations/STAGING_RUNTIME_CONFIG.md) | 1.5 | Current | 2026-11-08 |
 | EKI-OPS-030 | [Running the Backend on a VPS (Backup Path)](../deploy/vps/README.md) | 1.1 | Current | 2026-11-07 |
@@ -190,7 +190,7 @@ The register lists every controlled document by its source path. A mirror carrie
 
 | ID | Document | Version | Status | Last updated |
 |---|---|---|---|---|
-| EKI-TST-001 | [Eki Testing and Evidence Index](testing/README.md) | 1.2 | Current | 2026-11-07 |
+| EKI-TST-001 | [Eki Testing and Evidence Index](testing/README.md) | 1.3 | Current | 2026-11-25 |
 | EKI-TST-002 | [Eki Test Strategy](testing/TEST_STRATEGY.md) | 4.0 | Current | 2026-11-25 |
 | EKI-TST-003 | [Eki QA Programme](../qa/README.md) | 1.1 | Current | 2026-11-07 |
 | EKI-TST-004 | [Disposable Browser Acceptance](../qa/BROWSER_ACCEPTANCE.md) | 1.1 | Current | 2026-11-07 |
@@ -204,6 +204,12 @@ The register lists every controlled document by its source path. A mirror carrie
 | EKI-TST-012 | [Reviewed Unit Sub-Oracles](../qa/REVIEWED_UNIT_EVIDENCE.md) | 1.1 | Current | 2026-11-07 |
 | EKI-TST-013 | [Scheduled Reliability Workflows](../qa/SCHEDULED_RELIABILITY.md) | 2.1 | Current | 2026-11-07 |
 | EKI-TST-014 | [Bounded DAST and OpenAPI Scans](../qa/DAST.md) | 1.0 | Current | 2026-11-23 |
+| EKI-TST-015 | [Load and Fault Drills](../qa/LOAD_DRILLS.md) | 1.0 | Current | 2026-11-25 |
+| EKI-TST-016 | [Observability Drill](../qa/OBSERVABILITY_DRILL.md) | 1.0 | Current | 2026-11-25 |
+| EKI-TST-017 | [Hosting Cache and CDN Matrix](../qa/CACHE_MATRIX.md) | 1.0 | Current | 2026-11-25 |
+| EKI-TST-018 | [Privacy, Deletion and Sub-Processor Verification](../qa/PRIVACY_VERIFICATION.md) | 1.0 | Current | 2026-11-24 |
+| EKI-TST-019 | [Visual and Accessibility-Tree Baselines](../qa/VISUAL_BASELINES.md) | 1.2 | Current | 2026-11-26 |
+| EKI-TST-020 | [Device and Screen-Reader Acceptance](../qa/DEVICE_AND_SCREEN_READER_ACCEPTANCE.md) | 1.1 | Current | 2026-11-24 |
 
 ### 4.14 Evidence records (EVD)
 
@@ -271,6 +277,12 @@ The register lists every controlled document by its source path. A mirror carrie
 | EKI-EVD-060 | [Deterministic QA baseline and first implementation slice](../qa/BASELINE_2026_10_11.md) | 1.0 | Historical | 2026-10-11 |
 | EKI-EVD-061 | [Cloud Run staging latency: 2 November 2026](testing/CLOUD_RUN_LATENCY_2026_11_02.md) | 1.0 | Historical | 2026-11-03 |
 | EKI-EVD-062 | [DAST local scan: 23 November 2026](testing/DAST_LOCAL_2026_11_23.md) | 1.0 | Historical | 2026-11-23 |
+| EKI-EVD-063 | [Load and fault drills, local: 24 November 2026](testing/LOAD_DRILLS_LOCAL_2026_11_24.md) | 1.1 | Historical | 2026-11-25 |
+| EKI-EVD-064 | [Observability drill, local: 24 November 2026](testing/OBSERVABILITY_DRILL_LOCAL_2026_11_24.md) | 1.0 | Historical | 2026-11-25 |
+| EKI-EVD-065 | [Hosting cache matrix: 24 November 2026](testing/CACHE_MATRIX_2026_11_24.md) | 1.0 | Historical | 2026-11-24 |
+| EKI-EVD-066 | [Privacy verification: 24 November 2026](testing/PRIVACY_VERIFICATION_2026_11_24.md) | 1.0 | Historical | 2026-11-24 |
+| EKI-EVD-067 | [Visual baseline review: 24 November 2026](testing/VISUAL_BASELINE_REVIEW_2026_11_24.md) | 1.0 | Historical | 2026-11-24 |
+| EKI-EVD-068 | [Live projection leaf writes: 21 November 2026](testing/LIVE_PROJECTION_LEAF_WRITES_2026_11_21.md) | 1.0 | Historical | 2026-11-25 |
 
 <!-- register:end -->
 

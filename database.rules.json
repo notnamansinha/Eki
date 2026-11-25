@@ -18,7 +18,12 @@
       ".read": "auth != null && auth.token.admin == true && auth.token.role == 'admin' && auth.token.authorizationVersion != null && root.child('_userAuthorization').child(auth.uid).child('version').val() == auth.token.authorizationVersion && root.child('_userAuthorization').child(auth.uid).child('role').val() == 'admin'",
       ".write": false,
       "$routeId": {
-        "buses": { ".read": "auth != null", ".write": false }
+        ".write": "auth != null && auth.uid === 'eki:live-projection-writer' && data.child('_workerGeneration').isNumber() && newData.child('_workerGeneration').val() === data.child('_workerGeneration').val() && newData.child('revision').val() === data.child('revision').val() + 1",
+        "buses": {
+          ".read": "auth != null",
+          ".write": false,
+          "$busKey": { ".validate": "newData.hasChildren(['busId', 'routeId']) && newData.child('busId').isString() && newData.child('routeId').isString() && $routeId === 'route:' + newData.child('routeId').val() && $busKey === 'node:' + newData.child('busId').val() + '_' + newData.child('routeId').val()" }
+        }
       }
     },
     "liveRouteCatalog": {

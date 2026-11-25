@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { relative, resolve, sep } from "node:path";
 import { describe, expect, it } from "vitest";
+import { RTDB_FENCED_WRITER_AUTH, RTDB_FENCED_WRITER_UID } from "./lib/workerFence";
 
 const workspaceFile = (path: string) =>
   readFileSync(resolve(__dirname, "../..", path), "utf8");
@@ -54,6 +55,27 @@ describe("production security configuration", () => {
     expect(database.rules.driverRouteAssignments).toBeUndefined();
     expect(database.rules.messages).toBeUndefined();
     expect(database.rules.users).toBeUndefined();
+    // Exactly one conditional write exists: the leader's rules-bound projection
+    // writer, fenced by the stored generation and the next revision. Every
+    // other ".write" in the file stays a literal false.
+    const writes: unknown[] = [];
+    (function collect(value: unknown) {
+      if (!value || typeof value !== "object") return;
+      for (const [key, child] of Object.entries(value)) { if (key === ".write") writes.push(child); else collect(child); }
+    })(database.rules);
+    const fenced = database.rules.publicRouteBuses.$routeId[".write"];
+    expect(writes.filter(rule => rule !== false)).toEqual([fenced]);
+    expect(database.rules.publicRouteBuses[".write"]).toBe(false);
+    expect(database.rules.publicRouteBuses.$routeId.buses[".write"]).toBe(false);
+    expect(fenced).toContain(`auth.uid === '${RTDB_FENCED_WRITER_UID}'`);
+    expect(RTDB_FENCED_WRITER_AUTH).toEqual({ uid: RTDB_FENCED_WRITER_UID });
+    expect(fenced).toContain("data.child('_workerGeneration').isNumber()");
+    expect(fenced).toContain("newData.child('_workerGeneration').val() === data.child('_workerGeneration').val()");
+    expect(fenced).toContain("newData.child('revision').val() === data.child('revision').val() + 1");
+    expect(fenced).not.toContain("||");
+    // Every bus written keeps its identity, and that identity matches the keys it is stored under.
+    expect(database.rules.publicRouteBuses.$routeId.buses.$busKey[".validate"]).toBe("newData.hasChildren(['busId', 'routeId']) && newData.child('busId').isString() && newData.child('routeId').isString() && $routeId === 'route:' + newData.child('routeId').val() && $busKey === 'node:' + newData.child('busId').val() + '_' + newData.child('routeId').val()");
+    expect(workspaceFile("backend/src/lib/firebaseAdmin.ts")).toContain("databaseAuthVariableOverride: { ...RTDB_FENCED_WRITER_AUTH }");
     const syncRoles = workspaceFile("backend/src/syncRoleClaims.ts");
     expect(syncRoles).toContain("driverRouteAssignments/");
     expect(syncRoles).toContain("previousDriverId");
@@ -264,7 +286,10 @@ describe("production security configuration", () => {
     expect(feedbackService).toContain("isSessionPassenger");
     const messagingPanel = workspaceFile("frontend/src/components/shared/MessagingPanel.tsx");
     const feedbackPage = workspaceFile("frontend/src/components/admin/FeedbackPanel.tsx");
-    expect(messagingPanel).toContain("limitToLast(200)");
+    // The chat panel and the passenger unread badge read the same bounded window.
+    expect(workspaceFile("frontend/src/lib/rideChatMessages.ts")).toContain("limitToLast(200)");
+    expect(messagingPanel).toContain("rideChatMessagesQuery(sessionId)");
+    expect(workspaceFile("frontend/src/hooks/useRideChatUnread.ts")).toContain("rideChatMessagesQuery(sessionId)");
     expect(messagingPanel).toContain("requestId: pending.requestId");
     expect(messagingPanel).not.toContain("currentUserName");
     expect(feedbackPage).toContain("loadFeedback()");

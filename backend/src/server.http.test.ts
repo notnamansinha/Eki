@@ -37,6 +37,13 @@ vi.mock("./services/authTokenVerifier", () => ({
     throw Object.assign(new Error("Firebase ID token has expired."), { code: "auth/id-token-expired" });
   },
 }));
+// The projection never starts here (workers are replaced); report a known status.
+const projectionStatus = vi.hoisted(() => ({ scheduled: 3, processed: 3, coalesced: 0, failed: 0, rejected: 0, routeClaims: 1,
+  leafWriteAttempts: 2, leafWrites: 2, leafWriteDenials: 0, leafWriteFallbacks: 0, leafWriteDrifts: 0, publicBytes: 180, writeMode: "leaf" }));
+vi.mock("./services/liveBusProjection", async importOriginal => ({
+  ...(await importOriginal<typeof import("./services/liveBusProjection")>()),
+  getLiveBusProjectionStatus: () => projectionStatus,
+}));
 vi.mock("./services/userAuthorization", async importOriginal => ({
   ...(await importOriginal<typeof import("./services/userAuthorization")>()),
   authorizationIsCurrent: async () => true,
@@ -177,6 +184,11 @@ describe("HTTP edge as wired by server.ts", () => {
     expect(await admin.json()).toMatchObject({ status: "degraded", telemetry: { transport: "https" } });
     const publicHealth = await request("GET", "/health");
     expect(await publicHealth.json()).toEqual({ status: "degraded" });
+  });
+
+  it("reports the public projection write mode and leaf-write counters on the admin health", async () => {
+    const admin = await request("GET", "/api/health", { Authorization: "Bearer admin" });
+    expect((await admin.json()).telemetry.workQueues.publicProjection).toEqual(projectionStatus);
   });
 
   it("names the serving build and revision on the admin health only", async () => {
