@@ -5,7 +5,8 @@ import dynamic from "next/dynamic";
 import { useAuth } from "@/hooks/useAuth";
 import { useRoutes } from "@/hooks/useRoutes";
 import { MapPinned, UserRound, Loader2, MessageCircle, ArrowLeft, Flag, WifiOff, AlertCircle, Info, Megaphone, ChevronUp } from "lucide-react";
-import { subscribeLiveBusChangesByRoute } from "@/lib/liveBusStore";
+import { subscribeRouteBusChanges } from "@/lib/passengerLiveSource";
+import { DEMO_ROUTE_ID, demoRoute, isDemoRideEnabled, isDemoRouteId, restartDemoRide } from "@/lib/demoRide";
 import { useLiveRouteCatalog } from "@/hooks/useLiveRouteCatalog";
 import { getJoinedRideStatus } from "@/lib/joinedRideStatus";
 import { clearJoinedRidePointer, readJoinedRidePointer, saveJoinedRidePointer } from "@/lib/joinedRidePointer";
@@ -22,6 +23,7 @@ import {
 } from "@/lib/passengerLiveBus";
 import { serverNow } from "@/lib/serverClock";
 import { useRTDBResume } from "@/hooks/useRTDBResume";
+import { useRideChatUnread } from "@/hooks/useRideChatUnread";
 import { isPassengerBusSelectable } from "@/lib/passengerAvailability";
 import { describeLiveBusHealth, liveBusHealth } from "@/lib/liveBusHealth";
 import {
@@ -192,10 +194,15 @@ export default function PassengerWorkspace() {
     showSection(section);
   }
 
-  const { routes, error: routesError, retry: retryRoutes } = useRoutes();
+  const { routes: configuredRoutes, error: routesError, retry: retryRoutes } = useRoutes();
+  // The demo ride is simulated in this browser; it is listed after the live
+  // routes and is never part of the live catalog or the route count.
+  const demoRideEnabled = isDemoRideEnabled();
+  const routes = useMemo(() => demoRideEnabled ? [...configuredRoutes, demoRoute] : configuredRoutes, [configuredRoutes, demoRideEnabled]);
   const { catalog: routeCatalog, projectionReady, catalogReady, error: catalogError, retry: retryCatalog } = useLiveRouteCatalog(`${connectionGeneration}:${resumeGeneration}`);
   const [selectedRouteId, setSelectedRouteId] = useState("");
   const [selectedDestinationStopId, setSelectedDestinationStopId] = useState("");
+  const [selectedBoardingStopId, setSelectedBoardingStopId] = useState("");
   const [mapEstimates, setMapEstimates] = useState<PassengerStopEstimates>();
   const updateStopEstimates = useCallback((next: PassengerStopEstimates) => {
     setMapEstimates(current => current?.context === next.context && current.nextStopIndex === next.nextStopIndex &&
@@ -209,7 +216,6 @@ export default function PassengerWorkspace() {
   const [activeBuses, setActiveBuses] = useState<ActiveBusData[]>([]);
   const [availableBuses, setAvailableBuses] = useState<PassengerBusAvailability[]>([]);
   const [availabilityNow, setAvailabilityNow] = useState(() => serverNow());
-  const [unreadCount, setUnreadCount] = useState(0);
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [feedbackBusId, setFeedbackBusId] = useState("");
   const [feedbackDriverId, setFeedbackDriverId] = useState("");
@@ -271,6 +277,8 @@ export default function PassengerWorkspace() {
       ((route.stops?.length ?? 0) > 0 || (route.waypoints?.length ?? 0) > 0);
   });
   const displayRoutes = isConnected && !liveDataError ? catalogRoutes : [];
+  // Shown with the live routes, once live data has loaded.
+  const showDemoRide = demoRideEnabled && isConnected && !liveDataError && projectionReady && catalogReady;
   // Keep observing the chosen route through temporary catalog/data gaps.
   // Hiding choices after a detail error must not detach the listener needed
   // to recover them. Catalog scope and user-selectable availability differ.
@@ -290,7 +298,7 @@ export default function PassengerWorkspace() {
     // Keep an explicitly joined ride observable while browsing another route.
     const subscribedRoutes = [...new Set([effectiveRouteId, joinedRouteId].filter((id): id is string => Boolean(id)))];
     const authoritative = new Set<string>();
-    const disposals = subscribedRoutes.map(routeId => subscribeLiveBusChangesByRoute(routeId, (change) => {
+    const disposals = subscribedRoutes.map(routeId => subscribeRouteBusChanges(routeId, (change) => {
         if (!current()) return;
         const trackedRideSessionId =
           trackedRideRef.current?.sessionId ?? pendingCompletionSessionIdRef.current;
@@ -374,6 +382,8 @@ export default function PassengerWorkspace() {
   useEffect(() => {
     const ride = trackedRideRef.current;
     if (!user || !projectionReady || !catalogReady || !ride?.hasJoined || !trackedSessionId || joinedProjectionPresent || latestTripStatesRef.current.get(trackedSessionId) === "completed") return;
+    // The demo ride has no server session to recover.
+    if (isDemoRouteId(ride.routeId)) return;
     const controller = new AbortController();
     const authGeneration = getAuthVerificationGeneration();
     const current = () => !controller.signal.aborted && authGeneration === getAuthVerificationGeneration();
@@ -414,6 +424,9 @@ export default function PassengerWorkspace() {
   }, []);
 
   const activeRoute = routes.find(route => route.id === effectiveRouteId);
+  // The tracked route is the browser-simulated demo ride: no chat, backend,
+  // location prompt or joined-ride pointer.
+  const trackingDemo = isDemoRouteId(effectiveRouteId);
   const busesOnRoute: VisibleBusData[] = [...activeBuses, ...availableBuses].filter(
     (bus) => bus.routeId === effectiveRouteId,
   );
@@ -451,6 +464,7 @@ export default function PassengerWorkspace() {
   // Chat is between passenger and driver; it needs the connection and a
   // reporting bus, not a GPS fix. A GNSS blip must not close or reset it.
   const chatAvailable = isConnected && !isResuming && !liveDataError && activeBusOnRoute?.automaticServicePaused !== true &&
+    !trackingDemo &&
     (activeBusHealth?.state === "live" || activeBusHealth?.state === "delayed" || activeBusHealth?.state === "gnss_lost");
   const chatShown = (view: ViewState) => view === "tracking" && isMessagingOpen && chatAvailable && Boolean(activeSessionId) &&
     isLiveChatDeviceOnline(activeBusOnRoute);
@@ -482,8 +496,19 @@ export default function PassengerWorkspace() {
         shortName: "TERMINUS"
       } : null));
   const endedMessage = completedRide !== null;
+  const demoEnded = completedRide !== null && isDemoRouteId(completedRide.routeId);
+  // Several buses (or a paused one with alternatives) need the bus choice first.
+  const showBusSelector = Boolean(activeBusOnRoute) &&
+    (selectableBusesOnRoute.length > 1 || (!busSelectable && selectableBusesOnRoute.length > 0)) &&
+    !busesOnRoute.some(bus => bus.sessionId === trackedSessionId);
+  // Stops can be chosen once the ride has a session and a resolved direction.
+  const boardingAvailable = !preview && Boolean(directedRoute) && Boolean(activeBusOnRoute) && hasSessionId(activeBusOnRoute!);
 
   const visibleView: ViewState = currentView;
+  // Unread chat follows the joined ride only: a passenger can read the chat of
+  // a session whose manifest lists them. Messages shown in the open chat are read.
+  const joinedChat = Boolean(trackedSessionId) && activeSessionId === trackedSessionId;
+  const chatUnread = useRideChatUnread(trackedSessionId, user?.uid ?? "", joinedChat && chatShown(visibleView));
   const keyboardRouteId = useRef<string | null>(null);
   const trackingBackButton = useRef<HTMLButtonElement>(null);
   const liveRoutesHeading = useRef<HTMLHeadingElement>(null);
@@ -576,7 +601,7 @@ export default function PassengerWorkspace() {
 
     const feedbackTimer = setTimeout(() => {
       const currentTripState = latestTripStatesRef.current.get(completedRide.sessionId);
-      if (isPostRideFeedbackEligible(completedRide, currentTripState)) {
+      if (!isDemoRouteId(completedRide.routeId) && isPostRideFeedbackEligible(completedRide, currentTripState)) {
         setFeedbackSessionId(completedRide.sessionId);
         setFeedbackBusId(completedRide.busId);
         setFeedbackDriverId(completedRide.driverId);
@@ -594,7 +619,6 @@ export default function PassengerWorkspace() {
 
   const handleOpenMessaging = () => {
     setIsMessagingOpen(true);
-    setUnreadCount(0);
   };
 
   const handleRouteSelect = (routeId: string) => {
@@ -603,13 +627,15 @@ export default function PassengerWorkspace() {
     keyboardRouteId.current =
       focused instanceof HTMLButtonElement && focused.dataset.passengerRoute === routeId && focused.matches(":focus-visible")
         ? routeId : null;
+    // A fresh demo ride, so the bus is approaching when the map opens.
+    if (isDemoRouteId(routeId) && trackedRideRef.current?.routeId !== DEMO_ROUTE_ID) restartDemoRide();
     setSelectedRouteId(routeId);
     setHomeSheetChoice(true);
     setSelectedDestinationStopId("");
+    setSelectedBoardingStopId("");
     setSelectedLiveBusKey("");
     setSelectedBusId("");
     setIsMessagingOpen(false);
-    setUnreadCount(0);
     setCurrentView("tracking");
   };
 
@@ -635,6 +661,36 @@ export default function PassengerWorkspace() {
   };
   // Swipe the peek up to raise the list and down to lower it; tapping still toggles.
   const homeSheetSwipe = useSheetSwipe({ isOpen: homeSheetOpen, onToggle: toggleHomeSheet });
+  // A status card joins the top line only when there is something to say.
+  const headerCardShown = !activeBusOnRoute || showBusSelector || !busSelectable || !boardingAvailable;
+  const chatButton = chatAvailable && activeSessionId && isLiveChatDeviceOnline(activeBusOnRoute) && !chatShown(visibleView) ? (
+    <button
+      onClick={handleOpenMessaging}
+      className="pp-map-button relative ml-auto pointer-events-auto animate-scale-in"
+      aria-label={activeSessionId ? "Open live chat" : "Open live chat status"}
+      title={activeSessionId ? "Open live chat" : "Device online; chat will unlock when the ride is armed"}
+    >
+      <MessageCircle className="w-5 h-5" aria-hidden="true" style={{ color: "var(--accent)" }} />
+      {joinedChat && chatUnread > 0 && (
+        <span className="pp-unread">
+          {chatUnread > 9 ? "9+" : chatUnread}
+        </span>
+      )}
+    </button>
+  ) : null;
+  // The demo ride always has its one bus, travelling forward.
+  const routeCarouselProps = {
+    selectedRouteId,
+    onClick: handleRouteSelect,
+    getActiveBusesCount: (routeId: string) => isDemoRouteId(routeId) ? 1 : routeCatalog[routeId]?.active ?? 0,
+    getAvailableBusesCount: (routeId: string) => isDemoRouteId(routeId) ? 0 : routeCatalog[routeId]?.available ?? 0,
+    getDirectionState: (routeId: string) => {
+      if (isDemoRouteId(routeId)) return "forward" as const;
+      const bus = activeBuses.find((entry) => entry.routeId === routeId && isPassengerBusSelectable(entry, availabilityNow));
+      if (!bus) return "unknown" as const;
+      return bus?.directionState === "pending" ? "pending" as const : normalizeRideDirection(bus?.direction);
+    },
+  };
   // Only ride-recovery messages are written for riders; the others name internals.
   const plainDataError = !routesError && !catalogError && !detailDataError && rideRecoveryError
     ? rideRecoveryError
@@ -728,33 +784,25 @@ export default function PassengerWorkspace() {
                 {displayRoutes.length > 0 ? (
                   <>
                     {announcement}
-                    <RouteCarousel
-                      routes={displayRoutes}
-                      selectedRouteId={selectedRouteId}
-                       onClick={handleRouteSelect}
-                       getActiveBusesCount={(routeId) => routeCatalog[routeId]?.active ?? 0}
-                       getAvailableBusesCount={(routeId) => routeCatalog[routeId]?.available ?? 0}
-                       getDirectionState={(routeId) => {
-                         const bus = activeBuses.find((entry) => entry.routeId === routeId && isPassengerBusSelectable(entry, availabilityNow));
-                         if (!bus) return "unknown";
-                         return bus?.directionState === "pending" ? "pending" : normalizeRideDirection(bus?.direction);
-                       }}
-                     />
+                    <RouteCarousel routes={showDemoRide ? [...displayRoutes, demoRoute] : displayRoutes} {...routeCarouselProps} />
                   </>
                 ) : (
-                  <div className="pp-empty">
-                    {announcement}
-                    <p className="pp-empty-title">
-                      {settings.noBusesMessage || "No buses running"}
-                    </p>
-                    <p className="pp-empty-detail">
-                      {!isConnected
-                        ? "Unable to reach live data. Check your connection."
-                        : isResuming || liveDataError
-                          ? "Live bus data is not available right now."
-                          : formatNoBusesSubMessage(settings.noBusesSubMessage || "Service starts at {time}", settings.serviceStartTime || PASSENGER_BUS_START_TIME)}
-                    </p>
-                  </div>
+                  <>
+                    <div className="pp-empty">
+                      {announcement}
+                      <p className="pp-empty-title">
+                        {settings.noBusesMessage || "No buses running"}
+                      </p>
+                      <p className="pp-empty-detail">
+                        {!isConnected
+                          ? "Unable to reach live data. Check your connection."
+                          : isResuming || liveDataError
+                            ? "Live bus data is not available right now."
+                            : formatNoBusesSubMessage(settings.noBusesSubMessage || "Service starts at {time}", settings.serviceStartTime || PASSENGER_BUS_START_TIME)}
+                      </p>
+                    </div>
+                    {showDemoRide && <RouteCarousel routes={[demoRoute]} {...routeCarouselProps} />}
+                  </>
                 )}
               </div>
             </div>
@@ -770,10 +818,11 @@ export default function PassengerWorkspace() {
         <div data-passenger-tracking inert={visibleView !== "tracking"} aria-hidden={visibleView !== "tracking"} className={`absolute inset-0 z-20 flex flex-col pointer-events-none transition-opacity duration-200 ${visibleView === "tracking" ? "opacity-100 bg-[var(--pp-page)]" : "opacity-0"}`}>
           {!endedMessage && mapRoute && targetStop ? (
             <>
-              {/* Top bar: back + route info */}
+              {/* Top line: Back, chat and, only when there is something to say, a status card. The
+                  stop choice lives in the thumb zone below, so the top of the map stays clear. */}
               <div data-tracking-controls className="pp-tracking-scrim absolute inset-x-0 top-0 w-full z-40 pt-safe px-4 pb-4 pointer-events-none">
                 <h1 className="sr-only">{mapRoute.name}</h1>
-                <div className="flex items-center gap-4 max-w-lg mx-auto pt-4 pointer-events-auto">
+                <div className="flex items-start gap-4 max-w-lg mx-auto pt-4 pointer-events-none">
                   <button
                     ref={trackingBackButton}
                     type="button"
@@ -791,11 +840,9 @@ export default function PassengerWorkspace() {
                     <ArrowLeft className="w-5 h-5" aria-hidden="true" />
                   </button>
                   {activeBusOnRoute ? (
+                    headerCardShown && (
                     <div className="pp-float-card relative z-10 flex-1 min-w-0 flex flex-col gap-2 p-3 pointer-events-auto">
-                      {(selectableBusesOnRoute.length > 1 || (!busSelectable && selectableBusesOnRoute.length > 0)) &&
-                        !busesOnRoute.some(
-                          (bus) => bus.sessionId === trackedSessionId,
-                        ) && (
+                      {showBusSelector && (
                         <InAppSelect
                           name="live-bus"
                           value={passengerLiveBusSelectionKey(activeBusOnRoute)}
@@ -820,38 +867,7 @@ export default function PassengerWorkspace() {
                           </p>
                         </div>
                       )}
-                      {/* The boarding card stays mounted through a tracking blip so a
-                          chosen stop, an in-flight join and "On board" survive it. */}
-                      {!preview && directedRoute && hasSessionId(activeBusOnRoute) ? (
-                        <PassengerBoardingView
-                          key={activeBusOnRoute.sessionId}
-                          sessionId={activeBusOnRoute.sessionId}
-                          route={directedRoute}
-                          stopEstimates={stopEstimates}
-                          tripState={activeBusOnRoute.tripState === "in_service" ? "in_service" : "pre_departure"}
-                          liveHealth={activeBusHealth}
-                          boardingBlockedReason={busSelectable ? undefined : "Boarding resumes when live tracking returns."}
-                          destinationStopId={effectiveDestinationStopId}
-                          restoredBoarding={restoredBoarding && restoredBoarding.uid === user?.uid && restoredBoarding.sessionId === activeBusOnRoute.sessionId ? restoredBoarding : undefined}
-                          onDestinationStopChange={setSelectedDestinationStopId}
-                          onJoined={() => {
-                            boardingRevisionRef.current++;
-                            if (user?.role === "passenger") saveJoinedRidePointer(user.uid, activeBusOnRoute.sessionId);
-                            trackedRideRef.current = recordSuccessfulJoin(
-                              trackedRideRef.current,
-                              {
-                                sessionId: activeBusOnRoute.sessionId,
-                                busId: activeBusOnRoute.busId,
-                                routeId: activeBusOnRoute.routeId,
-                                driverId: activeBusOnRoute.driverId || "",
-                              },
-                            );
-                            setTrackedSessionId(activeBusOnRoute.sessionId);
-                            setJoinedRouteId(activeBusOnRoute.routeId);
-                            setRideRecoveryError(null); setRideRecoveryNotice(null);
-                          }}
-                        />
-                      ) : busSelectable ? (
+                      {!boardingAvailable && busSelectable && (
                         <div className="flex flex-col gap-2">
                           <div>
                           <p className="pp-status-title">
@@ -879,8 +895,9 @@ export default function PassengerWorkspace() {
                           ]}
                         />
                         </div>
-                      ) : null}
+                      )}
                     </div>
+                    )
                   ) : (
                     <div className="pp-float-card min-w-0 flex-1 flex flex-col justify-center gap-1 p-3 pointer-events-auto">
                       <p className="pp-status-title">
@@ -891,26 +908,53 @@ export default function PassengerWorkspace() {
                       </p>
                     </div>
                   )}
+                  {/* With no status card, chat ends the top line and the map buttons continue its column. */}
+                  {!headerCardShown && chatButton}
                 </div>
-                {/* Keep chat in header flow, below the variable-height boarding card. */}
-                {chatAvailable && activeSessionId && isLiveChatDeviceOnline(activeBusOnRoute) && !chatShown(visibleView) && (
-                  <div className="mt-2 flex justify-end max-w-lg mx-auto animate-scale-in pointer-events-none">
-                    <button
-                      onClick={handleOpenMessaging}
-                      className="pp-map-button relative pointer-events-auto"
-                      aria-label={activeSessionId ? "Open live chat" : "Open live chat status"}
-                      title={activeSessionId ? "Open live chat" : "Device online; chat will unlock when the ride is armed"}
-                    >
-                      <MessageCircle className="w-5 h-5" aria-hidden="true" style={{ color: "var(--accent)" }} />
-                      {unreadCount > 0 && (
-                        <span className="pp-unread">
-                          {unreadCount > 9 ? "9+" : unreadCount}
-                        </span>
-                      )}
-                    </button>
-                  </div>
+                {/* Beside a status card chat would narrow it, so it sits below, as the map buttons do. */}
+                {headerCardShown && chatButton && (
+                  <div className="mt-2 flex justify-end max-w-lg mx-auto pointer-events-none">{chatButton}</div>
                 )}
               </div>
+
+              {/* The thumb zone: the From → To bar above the timeline peek, sliding into a drawer on
+                  the right edge once both stops are set. It stays mounted through a tracking blip so
+                  a chosen stop, an in-flight join and "On board" survive it. */}
+              {boardingAvailable && activeBusOnRoute && hasSessionId(activeBusOnRoute) && directedRoute && (
+                <div data-tracking-dock className="pp-trip-layer">
+                  <PassengerBoardingView
+                    key={activeBusOnRoute.sessionId}
+                    sessionId={activeBusOnRoute.sessionId}
+                    route={directedRoute}
+                    stopEstimates={stopEstimates}
+                    tripState={activeBusOnRoute.tripState === "in_service" ? "in_service" : "pre_departure"}
+                    liveHealth={activeBusHealth}
+                    boardingBlockedReason={busSelectable ? undefined : "Boarding resumes when live tracking returns."}
+                    demo={trackingDemo}
+                    destinationStopId={effectiveDestinationStopId}
+                    restoredBoarding={restoredBoarding && restoredBoarding.uid === user?.uid && restoredBoarding.sessionId === activeBusOnRoute.sessionId ? restoredBoarding : undefined}
+                    onDestinationStopChange={setSelectedDestinationStopId}
+                    onBoardingStopChange={setSelectedBoardingStopId}
+                    onJoined={() => {
+                      boardingRevisionRef.current++;
+                      // A demo ride has no server session to restore after a reload.
+                      if (user?.role === "passenger" && !trackingDemo) saveJoinedRidePointer(user.uid, activeBusOnRoute.sessionId);
+                      trackedRideRef.current = recordSuccessfulJoin(
+                        trackedRideRef.current,
+                        {
+                          sessionId: activeBusOnRoute.sessionId,
+                          busId: activeBusOnRoute.busId,
+                          routeId: activeBusOnRoute.routeId,
+                          driverId: activeBusOnRoute.driverId || "",
+                        },
+                      );
+                      setTrackedSessionId(activeBusOnRoute.sessionId);
+                      setJoinedRouteId(activeBusOnRoute.routeId);
+                      setRideRecoveryError(null); setRideRecoveryNotice(null);
+                    }}
+                  />
+                </div>
+              )}
 
               {/* Full-bleed map; camera padding and notices measure the overlay. */}
               <div className="absolute inset-0 z-0 pointer-events-auto">
@@ -918,6 +962,8 @@ export default function PassengerWorkspace() {
                   <PassengerTrackingMap
                     targetStop={targetStop}
                     selectedDestinationStopId={effectiveDestinationStopId}
+                    selectedBoardingStopId={boardingAvailable && mapRoute.stops?.some(stop => stop.id === selectedBoardingStopId) ? selectedBoardingStopId : undefined}
+                    offerLocation={!trackingDemo}
                     onStopEstimatesChange={updateStopEstimates}
                     route={mapRoute}
                     resumeGeneration={resumeGeneration}
@@ -938,7 +984,6 @@ export default function PassengerWorkspace() {
                     currentUserId={user?.uid || "anonymous"}
                     isOverlay={true}
                     onClose={() => setIsMessagingOpen(false)}
-                    onUnreadCountChange={setUnreadCount}
                     unavailableMessage={activeSessionId ? undefined : "The bus device is online. Chat will unlock when the administrator arms the ride."}
                   />
                 </div>
@@ -950,15 +995,17 @@ export default function PassengerWorkspace() {
                 <Flag className="w-8 h-8" aria-hidden="true" />
               </div>
               <h1 className="pp-ended-title">
-                Route ended
+                {demoEnded ? "Demo ride complete" : "Route ended"}
               </h1>
               <p className="pp-subtitle max-w-xs">
-                The bus has reached the terminus.
+                {demoEnded ? "The demo bus has reached the terminus. A real ride works the same way." : "The bus has reached the terminus."}
               </p>
-              <p className="pp-ended-wait" role="status">
-                <Loader2 className="w-4 h-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />
-                Waiting for the next bus
-              </p>
+              {!demoEnded && (
+                <p className="pp-ended-wait" role="status">
+                  <Loader2 className="w-4 h-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+                  Waiting for the next bus
+                </p>
+              )}
               <button
                 type="button"
                 onClick={() => {

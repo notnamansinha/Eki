@@ -54,16 +54,16 @@ The register lists every controlled document by its source path. A mirror carrie
 | EKI-GEN-002 | [Eki Documentation Index](README.md) | 1.7 | Current | 2026-11-25 |
 | EKI-GEN-003 | [Eki Documentation Standard](DOCUMENTATION_STANDARD.md) | 1.3 | Current | 2026-11-09 |
 | EKI-GEN-004 | [Getting Started with Eki](GETTING_STARTED.md) | 2.3 | Current | 2026-11-08 |
-| EKI-GEN-005 | [Eki Configuration Reference](CONFIGURATION.md) | 2.0 | Current | 2026-11-21 |
+| EKI-GEN-005 | [Eki Configuration Reference](CONFIGURATION.md) | 2.0 | Current | 2026-11-25 |
 | EKI-GEN-006 | [Eki Glossary](GLOSSARY.md) | 2.3 | Current | 2026-11-07 |
-| EKI-GEN-007 | [Contributing to Eki](../CONTRIBUTING.md) | 1.1 | Current | 2026-11-07 |
+| EKI-GEN-007 | [Contributing to Eki](../CONTRIBUTING.md) | 2.0 | Current | 2026-11-25 |
 | EKI-GEN-008 | [Contributor Covenant Code of Conduct](../CODE_OF_CONDUCT.md) | 1.0 | Current | 2026-10-30 |
 
 ### 4.2 Requirements (REQ)
 
 | ID | Document | Version | Status | Last updated |
 |---|---|---|---|---|
-| EKI-REQ-001 | [Software Requirements Specification](requirements/SOFTWARE_REQUIREMENTS_SPECIFICATION.md) | 4.1 | Current | 2026-11-08 |
+| EKI-REQ-001 | [Software Requirements Specification](requirements/SOFTWARE_REQUIREMENTS_SPECIFICATION.md) | 5.0 | Current | 2026-11-25 |
 
 ### 4.3 Architecture and design (ARC)
 
@@ -71,7 +71,7 @@ The register lists every controlled document by its source path. A mirror carrie
 |---|---|---|---|---|
 | EKI-ARC-001 | [Eki Architecture](design/ARCHITECTURE.md) | 2.5 | Current | 2026-11-11 |
 | EKI-ARC-002 | [Eki High-Level Design](design/HIGH_LEVEL_DESIGN.md) | 3.1 | Current | 2026-11-07 |
-| EKI-ARC-003 | [Low-Level Design](design/LOW_LEVEL_DESIGN.md) | 3.5 | Current | 2026-11-25 |
+| EKI-ARC-003 | [Low-Level Design](design/LOW_LEVEL_DESIGN.md) | 4.0 | Current | 2026-11-25 |
 | EKI-ARC-004 | [Tracking Algorithms](design/TRACKING_ALGORITHMS.md) | 1.4 | Current | 2026-11-07 |
 
 ### 4.4 Architecture decision records (ADR)
@@ -88,7 +88,7 @@ The register lists every controlled document by its source path. A mirror carrie
 
 | ID | Document | Version | Status | Last updated |
 |---|---|---|---|---|
-| EKI-UIX-001 | [Eki UI Design System](design/UI_DESIGN_SYSTEM.md) | 3.2 | Current | 2026-11-11 |
+| EKI-UIX-001 | [Eki UI Design System](design/UI_DESIGN_SYSTEM.md) | 4.0 | Current | 2026-11-25 |
 | EKI-UIX-002 | [Transit Artwork Delivery](context-docs/TRANSIT_ARTWORK.md) | 2.1 | Current | 2026-11-08 |
 
 ### 4.6 Interfaces (API)
@@ -142,7 +142,7 @@ The register lists every controlled document by its source path. A mirror carrie
 | EKI-OPS-012 | [API Read Caching and Compatibility Retirement](operations/API_READS_AND_RETIREMENT.md) | 1.3 | Current | 2026-11-07 |
 | EKI-OPS-013 | [Browser Telemetry Trace](operations/BROWSER_TELEMETRY_TRACE.md) | 1.1 | Current | 2026-11-07 |
 | EKI-OPS-014 | [Matching and Stale Presence Scans](operations/MATCHING_AND_LIFECYCLE_SCANS.md) | 1.1 | Current | 2026-11-07 |
-| EKI-OPS-015 | [Passenger Account Deletion](operations/PRIVACY_DELETION.md) | 1.1 | Current | 2026-11-07 |
+| EKI-OPS-015 | [Passenger Account Deletion](operations/PRIVACY_DELETION.md) | 1.2 | Current | 2026-11-24 |
 | EKI-OPS-016 | [Realtime Transport Measurements](operations/REALTIME_TRANSPORT_MEASUREMENTS.md) | 1.1 | Current | 2026-11-07 |
 | EKI-OPS-017 | [Bounded Reconciliation](operations/RECONCILIATION.md) | 1.1 | Current | 2026-11-07 |
 | EKI-OPS-018 | [Live Reroute Retry Policy](operations/REROUTE_RETRY_POLICY.md) | 1.0 | Current | 2026-10-30 |
@@ -173,7 +173,7 @@ The register lists every controlled document by its source path. A mirror carrie
 | ID | Document | Version | Status | Last updated |
 |---|---|---|---|---|
 | EKI-PKG-001 | [Eki Backend](../backend/README.md) | 1.4 | Current | 2026-11-07 |
-| EKI-PKG-002 | [Eki Frontend](../frontend/README.md) | 3.0 | Current | 2026-11-07 |
+| EKI-PKG-002 | [Eki Frontend](../frontend/README.md) | 5.0 | Current | 2026-11-25 |
 | EKI-PKG-003 | [ESP32 GNSS Tracker](../hardware/README.md) | 1.1 | Current | 2026-11-07 |
 | EKI-PKG-004 | [Firmware Headers](../hardware/include/README.md) | 1.1 | Current | 2026-11-07 |
 | EKI-PKG-005 | [Firmware Tests](../hardware/test/README.md) | 1.1 | Current | 2026-11-07 |
@@ -184,13 +184,14 @@ The register lists every controlled document by its source path. A mirror carrie
 | EKI-PKG-010 | [Production Audit Browser Fixture](../e2e/production-audit/README.md) | 1.1 | Current | 2026-11-07 |
 | EKI-PKG-011 | [Live Google Maps Check](../e2e/routing/live-maps/README.md) | 1.2 | Current | 2026-11-03 |
 | EKI-PKG-012 | [Next Lint Directory Matching Adapter](../tools/next-lint-glob/README.md) | 1.0 | Current | 2026-10-30 |
+| EKI-PKG-013 | [Demo Ride Browser Fixture](../e2e/demo-ride/README.md) | 1.0 | Current | 2026-11-25 |
 
 ### 4.13 Testing and QA programme (TST)
 
 | ID | Document | Version | Status | Last updated |
 |---|---|---|---|---|
 | EKI-TST-001 | [Eki Testing and Evidence Index](testing/README.md) | 1.3 | Current | 2026-11-25 |
-| EKI-TST-002 | [Eki Test Strategy](testing/TEST_STRATEGY.md) | 3.4 | Current | 2026-11-25 |
+| EKI-TST-002 | [Eki Test Strategy](testing/TEST_STRATEGY.md) | 4.0 | Current | 2026-11-25 |
 | EKI-TST-003 | [Eki QA Programme](../qa/README.md) | 1.1 | Current | 2026-11-07 |
 | EKI-TST-004 | [Disposable Browser Acceptance](../qa/BROWSER_ACCEPTANCE.md) | 1.1 | Current | 2026-11-07 |
 | EKI-TST-005 | [Disposable Emulator Acceptance](../qa/EMULATOR_ACCEPTANCE.md) | 1.1 | Current | 2026-11-07 |
@@ -203,6 +204,12 @@ The register lists every controlled document by its source path. A mirror carrie
 | EKI-TST-012 | [Reviewed Unit Sub-Oracles](../qa/REVIEWED_UNIT_EVIDENCE.md) | 1.1 | Current | 2026-11-07 |
 | EKI-TST-013 | [Scheduled Reliability Workflows](../qa/SCHEDULED_RELIABILITY.md) | 2.1 | Current | 2026-11-07 |
 | EKI-TST-014 | [Bounded DAST and OpenAPI Scans](../qa/DAST.md) | 1.0 | Current | 2026-11-23 |
+| EKI-TST-015 | [Load and Fault Drills](../qa/LOAD_DRILLS.md) | 1.0 | Current | 2026-11-25 |
+| EKI-TST-016 | [Observability Drill](../qa/OBSERVABILITY_DRILL.md) | 1.0 | Current | 2026-11-25 |
+| EKI-TST-017 | [Hosting Cache and CDN Matrix](../qa/CACHE_MATRIX.md) | 1.0 | Current | 2026-11-25 |
+| EKI-TST-018 | [Privacy, Deletion and Sub-Processor Verification](../qa/PRIVACY_VERIFICATION.md) | 1.0 | Current | 2026-11-24 |
+| EKI-TST-019 | [Visual and Accessibility-Tree Baselines](../qa/VISUAL_BASELINES.md) | 1.1 | Current | 2026-11-25 |
+| EKI-TST-020 | [Device and Screen-Reader Acceptance](../qa/DEVICE_AND_SCREEN_READER_ACCEPTANCE.md) | 1.1 | Current | 2026-11-24 |
 
 ### 4.14 Evidence records (EVD)
 
@@ -270,7 +277,12 @@ The register lists every controlled document by its source path. A mirror carrie
 | EKI-EVD-060 | [Deterministic QA baseline and first implementation slice](../qa/BASELINE_2026_10_11.md) | 1.0 | Historical | 2026-10-11 |
 | EKI-EVD-061 | [Cloud Run staging latency: 2 November 2026](testing/CLOUD_RUN_LATENCY_2026_11_02.md) | 1.0 | Historical | 2026-11-03 |
 | EKI-EVD-062 | [DAST local scan: 23 November 2026](testing/DAST_LOCAL_2026_11_23.md) | 1.0 | Historical | 2026-11-23 |
-| EKI-EVD-063 | [Live projection leaf writes: 21 November 2026](testing/LIVE_PROJECTION_LEAF_WRITES_2026_11_21.md) | 1.0 | Historical | 2026-11-25 |
+| EKI-EVD-063 | [Load and fault drills, local: 24 November 2026](testing/LOAD_DRILLS_LOCAL_2026_11_24.md) | 1.1 | Historical | 2026-11-25 |
+| EKI-EVD-064 | [Observability drill, local: 24 November 2026](testing/OBSERVABILITY_DRILL_LOCAL_2026_11_24.md) | 1.0 | Historical | 2026-11-25 |
+| EKI-EVD-065 | [Hosting cache matrix: 24 November 2026](testing/CACHE_MATRIX_2026_11_24.md) | 1.0 | Historical | 2026-11-24 |
+| EKI-EVD-066 | [Privacy verification: 24 November 2026](testing/PRIVACY_VERIFICATION_2026_11_24.md) | 1.0 | Historical | 2026-11-24 |
+| EKI-EVD-067 | [Visual baseline review: 24 November 2026](testing/VISUAL_BASELINE_REVIEW_2026_11_24.md) | 1.0 | Historical | 2026-11-24 |
+| EKI-EVD-068 | [Live projection leaf writes: 21 November 2026](testing/LIVE_PROJECTION_LEAF_WRITES_2026_11_21.md) | 1.0 | Historical | 2026-11-25 |
 
 <!-- register:end -->
 

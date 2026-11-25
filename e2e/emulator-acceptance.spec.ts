@@ -14,20 +14,27 @@ const select = async (page: Page, name: string, option: string) => {
   await picker.click();
   await page.getByRole('option', { name: option, exact: true }).click();
 };
+// The From → To bar opens the route timeline as the picker; passed stops fold behind "N passed stops".
+const choose = async (page: Page, option: string) => {
+  const target = page.getByRole('option', { name: option, exact: true });
+  if (!(await target.isVisible())) await page.getByRole('button', { name: /^\d+ passed stops?$/ }).click();
+  await target.click();
+};
 const prepareBoarding = async (page: Page) => {
   await page.getByRole('button', { name: 'Track Synthetic route', exact: true }).click();
-  await select(page, 'Boarding stop', 'Synthetic origin');
-  await select(page, 'Destination station', 'Synthetic end');
+  await page.getByRole('combobox', { name: 'Boarding stop', exact: true }).click();
+  await choose(page, 'Synthetic origin');
+  // The list moves straight on to the destination, then the bar slides into the drawer.
+  await choose(page, 'Synthetic end');
+  await expect(page.getByRole('group', { name: 'Your trip', exact: true })).toBeVisible();
 };
+const onBoard = (page: Page) => page.getByRole('group', { name: 'Your trip', exact: true }).getByText('On board', { exact: true });
+// There is no Board button. The synthetic bus has already reached the origin,
+// so choosing it sends the join with one location fix, as on arrival.
 const board = async (page: Page) => {
   await prepareBoarding(page);
-  const boardButton = page.getByRole('button', { name: 'Board', exact: true });
-  expect(await boardButton.evaluate(element => {
-    const bounds = element.getBoundingClientRect();
-    return element.contains(document.elementFromPoint(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2));
-  })).toBe(true);
-  await page.getByRole('button', { name: 'Board', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'On board', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Board', exact: true })).toHaveCount(0);
+  await expect(onBoard(page)).toBeVisible();
 };
 
 test.beforeEach(async ({ context, request, browser }, testInfo) => {
@@ -204,18 +211,18 @@ test('boards through real auth API and persistence then restores one membership 
   expect(before.passengers.qa_passenger).toMatchObject({ userId: 'qa_passenger', boardingStopId: 'origin', alightingStopId: 'end' });
   await page.reload();
   await expect(page.getByLabel('Verified fixture account')).toHaveText('qa_passenger');
-  await expect(page.getByRole('button', { name: 'On board', exact: true })).toBeVisible();
+  await expect(onBoard(page)).toBeVisible();
   expect((await evidence(request)).passengers.qa_passenger.joinedAt).toEqual(before.passengers.qa_passenger.joinedAt);
 });
 
 test('boards without requesting a code and records one authenticated passenger', async ({ page, request }, info) => {
-  await page.goto('/'); await login(page); await prepareBoarding(page);
+  await page.goto('/'); await login(page);
+  const submitted = page.waitForRequest(req => req.url().endsWith('/api/sessions/qa_session/join') && req.method() === 'POST');
+  await prepareBoarding(page);
   await expect(page.getByRole('textbox', { name: 'Boarding code' })).toHaveCount(0);
   await expect(page.getByText(/8-character|8-CHAR CODE/)).toHaveCount(0);
-  const submitted = page.waitForRequest(req => req.url().endsWith('/api/sessions/qa_session/join') && req.method() === 'POST');
-  await page.getByRole('button', { name: 'Board', exact: true }).click();
   expect((await submitted).postDataJSON()).not.toHaveProperty('boardingCode');
-  await expect(page.getByRole('button', { name: 'On board', exact: true })).toBeVisible();
+  await expect(onBoard(page)).toBeVisible();
   expect((await evidence(request)).passengerIds).toEqual(['qa_passenger']);
   await page.screenshot({ path: info.outputPath('passenger-board-without-code.png'), fullPage: true });
 });
@@ -223,10 +230,10 @@ test('boards without requesting a code and records one authenticated passenger',
 test('rejects distant geolocation without a manifest or optimistic success', async ({ page, context, request }) => {
   await context.setGeolocation({ latitude: 23.02, longitude: 72, accuracy: 5 });
   await page.goto('/'); await login(page); await prepareBoarding(page);
-  await page.getByRole('button', { name: 'Board', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('near the bus');
+  await expect(page.getByRole('button', { name: 'Try again', exact: true })).toBeVisible();
   expect((await evidence(request)).passengerIds).toEqual([]);
-  await expect(page.getByRole('button', { name: 'On board', exact: true })).toHaveCount(0);
+  await expect(onBoard(page)).toHaveCount(0);
 });
 
 test('chat reconciles a lost acknowledgement into one durable message and listener delivery', async ({ page, request }) => {
@@ -249,6 +256,28 @@ test('chat reconciles a lost acknowledgement into one durable message and listen
   expect((await evidence(request)).messages).toHaveLength(1);
   await page.getByRole('button', { name: 'Close chat' }).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
+});
+
+test('chat badge counts an operator message sent while chat is closed, never one read in the open chat', async ({ page, request }) => {
+  await page.goto('/'); await login(page); await board(page);
+  const operatorMessage = async () => (await (await request.post(`${control}/chat/operator-message`)).json()).text as string;
+  const chat = page.getByRole('button', { name: 'Open live chat', exact: true });
+  const badge = chat.locator('.pp-unread');
+  const earlier = await operatorMessage();
+  await chat.click();
+  await expect(page.getByText(earlier, { exact: true })).toBeVisible();
+  // The operator replies while the passenger is reading the open chat.
+  const reply = await operatorMessage();
+  await expect(page.getByText(reply, { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Close chat' }).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(badge).toHaveCount(0);
+  const later = await operatorMessage();
+  await expect(badge).toHaveText('1');
+  await chat.click();
+  await expect(page.getByText(later, { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Close chat' }).click();
+  await expect(badge).toHaveCount(0);
 });
 
 test('feedback confirms persistence and enforces cooldown after reopening the real modal', async ({ page, request }) => {
@@ -399,7 +428,7 @@ test('admin vehicle create edit cancel and delete persist through real authoriza
   await page.getByRole('textbox', { name: 'New vehicle display name', exact: true }).fill('Synthetic new vehicle');
   const assignment = page.getByRole('checkbox', { name: 'Synthetic route', exact: true });
   await assignment.focus(); await assignment.press('Space'); await expect(assignment).toBeChecked();
-  await page.getByRole('button', { name: 'Add new vehicle', exact: true }).click();
+  await page.getByRole('button', { name: 'Add Vehicle', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Edit vehicle Synthetic new vehicle', exact: true })).toBeVisible();
   expect((await evidence(request)).buses.find((bus: { id: string }) => bus.id === 'qa_new')).toMatchObject({ name: 'Synthetic new vehicle', assignedRoutes: ['qa_route'] });
   await page.getByRole('button', { name: 'Edit vehicle Synthetic new vehicle', exact: true }).click();
@@ -592,7 +621,7 @@ test('admin operator creation edit cancellation and deletion update real claims 
   await page.goto('/?panel=fleet'); await login(page, 'qa_admin');
   await page.getByRole('textbox', { name: 'New vehicle Bus ID', exact: true }).fill('qa_spare');
   await page.getByRole('textbox', { name: 'New vehicle display name', exact: true }).fill('Synthetic spare');
-  await page.getByRole('button', { name: 'Add new vehicle', exact: true }).click();
+  await page.getByRole('button', { name: 'Add Vehicle', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Edit vehicle Synthetic spare', exact: true })).toBeVisible();
   await page.getByRole('textbox', { name: 'New operator ID', exact: true }).fill('qa_operator');
   await page.getByRole('textbox', { name: 'New operator display name', exact: true }).fill('Synthetic new operator');
@@ -600,7 +629,7 @@ test('admin operator creation edit cancellation and deletion update real claims 
   await select(page, 'Assign vehicle to new operator', 'Synthetic spare (qa_spare)');
   const rejectedAcknowledgement = page.waitForResponse(response => response.url() === 'http://127.0.0.1:3116/api/fleet/drivers/qa_operator'
     && response.request().method() === 'PUT');
-  await page.getByRole('button', { name: 'Add new operator', exact: true }).click();
+  await page.getByRole('button', { name: 'Add Operator', exact: true }).click();
   expect((await rejectedAcknowledgement).status()).toBe(400);
   await expect(page.getByText('Failed to add Operator: Assigned bus must have at least one valid route.', { exact: true })).toBeVisible();
   expect((await evidence(request)).drivers.map((driver: { id: string }) => driver.id)).toEqual(['qa_driver']);
@@ -613,7 +642,7 @@ test('admin operator creation edit cancellation and deletion update real claims 
   await expect(page.getByRole('button', { name: 'Cancel editing vehicle', exact: true })).toHaveCount(0);
   const acknowledgement = page.waitForResponse(response => response.url() === 'http://127.0.0.1:3116/api/fleet/drivers/qa_operator'
     && response.request().method() === 'PUT');
-  await page.getByRole('button', { name: 'Add new operator', exact: true }).click();
+  await page.getByRole('button', { name: 'Add Operator', exact: true }).click();
   const saved = await acknowledgement; expect(saved.status()).toBe(200); expect(await saved.json()).toEqual({ saved: true });
   await expect(page.getByRole('button', { name: 'Edit operator Synthetic new operator', exact: true })).toBeVisible();
   const created = await evidence(request);

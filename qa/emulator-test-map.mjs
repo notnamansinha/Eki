@@ -50,7 +50,7 @@ emulatorTestMap.push({
   }],
 });
 
-// Public projection leaf writes (EKI-EVD-063): the stale-leader fence enforced by the committed rules, and measured bytes per fix.
+// Public projection leaf writes (EKI-EVD-068): the stale-leader fence enforced by the committed rules, and measured bytes per fix.
 const projectionSuite = 'R14 actual SDK publisher fences, recovery and listener isolation';
 const projectionSources = ['backend/src/lib/workerFence.ts', 'backend/src/services/liveBusProjection.ts', 'backend/src/services/liveBusProjectionWriter.ts', 'database.rules.json'];
 emulatorTestMap.push({

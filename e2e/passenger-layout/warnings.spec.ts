@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { trackRoute } from "./liveRoutes";
+import { backToHome, trackRoute } from "./liveRoutes";
 
 async function scenario(page: import("@playwright/test").Page, value: string) {
   await page.getByText("QA controls (synthetic)", { exact: true }).click();
@@ -21,7 +21,7 @@ test("reconnecting retains a full map and paused tracking without new ride contr
   await expect(page.getByText("Live tracking paused", { exact: true })).toBeVisible();
   await expect(page.getByRole("combobox", { name: "Destination station" })).toHaveCount(0);
   await fullMap(page);
-  await page.getByRole("button", { name: "Back to home", exact: true }).click();
+  await backToHome(page);
   await expect(page.getByRole("button", { name: "Track QA route", exact: true })).toHaveCount(0);
   await page.screenshot({path:info.outputPath("reconnecting-header.png")});
 });
@@ -90,7 +90,7 @@ test("an offline ride disappears like an offline device and returns on fresh tel
   await expect(page.getByText("Waiting for live bus data…", { exact: true })).toBeVisible();
   await expect(page.getByText("Live tracking paused", { exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Open live chat", exact: true })).toHaveCount(0);
-  await page.getByRole("button", { name: "Back to home", exact: true }).click();
+  await backToHome(page);
   await expect(page.getByRole("button", { name: "Track QA route", exact: true })).toHaveCount(0);
   await scenario(page, "pending");
   await trackRoute(page);
@@ -107,7 +107,7 @@ test("one stale bus neither hides another fresh bus nor becomes a picker option"
   await expect(page.getByRole("listbox", { name: "Live bus", exact: true }).getByRole("option")).toHaveCount(1);
   await page.getByRole("option", { name: "Bus qa-bus-2 · B → A", exact: true }).click();
   await expect(page.getByText("Live tracking lost", { exact: true })).toHaveCount(0);
-  await page.getByRole("button", { name: "Back to home", exact: true }).click();
+  await backToHome(page);
   await expect(page.getByRole("button", { name: "Track QA route", exact: true })).toBeVisible();
 });
 
@@ -117,7 +117,7 @@ test("navigation cannot scroll the tracking frame under the viewport", async ({ 
     await trackRoute(page);
     await page.getByLabel("Synthetic map", { exact: true }).waitFor();
     await fullMap(page);
-    await page.getByRole("button", { name: "Back to home", exact: true }).click();
+    await backToHome(page);
     await page.getByRole("button", { name: "Profile", exact: true }).click();
     await page.getByRole("button", { name: "Live", exact: true }).click();
   }

@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-PKG-002 | 4.2 | Current | 2026-11-21 |
+| EKI-PKG-002 | 5.0 | Current | 2026-11-25 |
 
 ## 1. Purpose
 
@@ -63,7 +63,7 @@ Root scripts that build or check the frontend:
 
 | Script | Effect on the frontend |
 |---|---|
-| `npm run build` | Backend build, `next build`, `scripts/generate-sw.mjs`, `scripts/update-csp.mjs`, `scripts/verify-web-backend-contract.mjs`. |
+| `npm run build` | Backend build, `next build`, `scripts/compile-hints.mjs`, `scripts/generate-sw.mjs`, `scripts/update-csp.mjs`, `scripts/verify-web-backend-contract.mjs`. |
 | `npm run build:production` | `npm run build` with `EKI_STRICT_PRODUCTION_BUILD=true`. See [Section 11](#11-static-export-and-hosting). |
 | `npm run verify:ui-contracts` | Source checks in `scripts/verify-ui-contracts.mjs`, for example that the passenger map uses the shared stop-label helper. |
 | `npm run test:e2e:admin` | Playwright admin, auth, landing-page layout and feedback suite with synthetic Firebase dependencies. |
@@ -95,13 +95,13 @@ After sign-in, `/` opens the workspace saved in `localStorage` key `eki:last-wor
 | `src/app/brand-theme.css` | The Ahmedabad University palette, font and gradient tokens shared by the passenger and administrator workspaces, scoped with `:root:has(.passenger-layout, .admin-layout)` so that dialogs portalled outside a layout inherit them. |
 | `src/app/passenger/theme.css`, `src/app/admin/theme.css` | The surface rules of each workspace, imported by its `layout.tsx`. The passenger file holds the `pp-*` classes, the phone Live routes sheet and the bottom navigation. The admin file holds the dark Live Ops scope and the continuous corners. |
 | `src/components/admin/` | Live Ops dashboard, route editor, fleet and personnel, ride history, feedback console, settings with the passenger route schedule editor (`PassengerRoutesSettings`), and `AdminPanelErrorBoundary`. |
-| `src/components/passenger/` | `PassengerWorkspace`, boarding card, account tab, route schedule tab (`RoutesTab`), route timeline, layout constants (`passengerFrame.ts`) and loading shell. `ui/` holds `BottomSheet`, `RouteCarousel` and `PassengerDate` (today's date above the Live Routes title). |
+| `src/components/passenger/` | `PassengerWorkspace`, the Thumb drawer stop picker (`PassengerBoardingView` and `StopPickerSheet`), account tab, route schedule tab (`RoutesTab`), route timeline, layout constants (`passengerFrame.ts`) and loading shell. `ui/` holds `BottomSheet`, `RouteCarousel` and `PassengerDate` (today's date above the Live Routes title). |
 | `src/components/maps/` | Passenger map, road polylines (`DirectionsRoute`), bus glyph, traffic layer. |
 | `src/components/shared/` | Components used by both roles: `RoleGuard`, chat (`MessagingPanel`), `FeedbackModal`, workspace links, prefetch and loading, `TransitArtwork` (the background paintings of the landing page and the passenger workspace) and `InstallGuideLink` (the landing footer link to `/install`). |
 | `src/components/ui/` | `ConfirmModal`, `AlertModal`, `InAppSelect` (listbox) and `CustomSelect` (native select). |
 | `src/components/*.tsx` | `Providers`, `MapProviders`, `ServiceWorkerRegistrar`, `TelemetryTraceControls`. |
 | `src/hooks/` | Auth, Firestore collections, settings, passenger route schedules, live route catalog, RTDB reconnect, live-health clock, marker smoothing, dialog focus. |
-| `src/lib/` | Code without React: Firebase clients, API client, live bus store, bus health, stop progress, ETAs, route geometry, feedback store, route line labels (`routeLineLabel.ts`) and install platform detection (`installPlatform.ts`). |
+| `src/lib/` | Code without React: Firebase clients, API client, live bus store, bus health, stop progress, ETAs, route geometry, feedback store, route line labels (`routeLineLabel.ts`), install platform detection (`installPlatform.ts`) and the browser-simulated demo ride (`demoRide.ts`, served to the map through `passengerLiveSource.ts`). |
 | `src/config/` | `maps.ts` (Maps key, Map ID, default centre, map options), `passenger.ts` (default service start time, feedback word limit of 200) and `university.ts` (University links, each shown only when its URL is set, and the optional Profile build label from `NEXT_PUBLIC_BUILD_VERSION` and `NEXT_PUBLIC_BUILD_DATE`). |
 | `src/test-support/` | `fakeGoogleMapsSdk.ts`, a test-only Google Maps SDK that counts map constructions for the map-load tests. |
 | `src/sw.js` | Service worker source. |
@@ -126,7 +126,8 @@ The browser reads live and configuration data directly from Firebase and sends e
 | Operators | Firestore `drivers` (administrators: up to 250; others: their own record) | `onSnapshot` | `hooks/useDrivers.ts` |
 | Global settings | Firestore `settings/global` | `onSnapshot` | `hooks/useSettings.ts` |
 | Passenger route schedules | Firestore `settings/passengerRoutes`, joined with `routes` | `onSnapshot`; malformed entries are dropped and deleted routes and stops skipped (`lib/passengerRouteSchedule.ts`) | `hooks/usePassengerRouteConfig.ts` |
-| Chat | Firestore `ride_sessions/<id>/messages` | `onSnapshot` | `components/shared/MessagingPanel.tsx` |
+| Chat | Firestore `ride_sessions/<id>/messages`, latest 200 | `onSnapshot` while the chat is open | `components/shared/MessagingPanel.tsx`, `lib/rideChatMessages.ts` |
+| Chat unread count (the passenger's joined ride) | Same query as Chat | `onSnapshot` for the whole joined ride; an open chat shares its watch target | `hooks/useRideChatUnread.ts` |
 | Ride chat history (admin) | Firestore `ride_sessions/<id>/messages` and `ride_sessions/<id>/archivedMessages` | `onSnapshot` through `useCollection`, 100 messages per page, only while the ride is expanded | `components/admin/RideHistoryPanel.tsx` |
 | Role fallback | Firestore `users/<uid>` | `getDoc` | `hooks/useAuth.ts` |
 
@@ -169,7 +170,7 @@ The [HTTP contract](../docs/api/HTTP_CONTRACT.md) and the [API reference](../bac
 
 `src/app/manifest.ts` produces the manifest. Its colours and icons are listed in the [UI design system](../docs/design/UI_DESIGN_SYSTEM.md#9-pwa-manifest-and-map-styling).
 
-`scripts/generate-sw.mjs` runs after `next build`. It uses Workbox `injectManifest` to bundle `src/sw.js` into `frontend/out/sw.js`. The precache holds every exported HTML file, `manifest.webmanifest`, `icon*.png`, `apple-icon.png`, and every `/_next/static` JavaScript or CSS file that an exported HTML file references. The build fails if one file exceeds 1 MB or the precache exceeds 2 MB. When the inputs are unchanged, the script reuses the `sw.js` cached in `frontend/.next/cache/sw/`.
+`scripts/generate-sw.mjs` runs after `next build` and `scripts/compile-hints.mjs`. It uses Workbox `injectManifest` to bundle `src/sw.js` into `frontend/out/sw.js`. The precache holds every exported HTML file, `manifest.webmanifest`, `icon*.png`, `apple-icon.png`, and every `/_next/static` JavaScript or CSS file that an exported HTML file references. The build fails if one file exceeds 1 MB or the precache exceeds 2 MB. When the inputs are unchanged, the script reuses the `sw.js` cached in `frontend/.next/cache/sw/`.
 
 | Requests | Strategy | Cache |
 |---|---|---|
@@ -208,6 +209,15 @@ For work on this package:
 | `devIndicators` | Shown only when `EKI_DEVTOOLS=true`. |
 
 With `EKI_STRICT_PRODUCTION_BUILD=true`, which `npm run build:production` sets, `next.config.ts` fails if any required `NEXT_PUBLIC_*` value is missing, or if `NEXT_PUBLIC_FIREBASE_DATABASE_URL` or `NEXT_PUBLIC_BACKEND_URL` is not a non-local HTTPS URL.
+
+After `next build`, `scripts/compile-hints.mjs` processes the chunks that the landing page loads at start-up: every `/_next/static/chunks/*.js` file that `out/index.html` loads with a `<script src>`, except the `nomodule` polyfill. All but one of them are root chunks that every page loads.
+
+- The step adds V8's `//# allFunctionsCalledOnLoad` comment as the first line of each chunk and moves the chunk's source map down one line. Chromium then compiles the whole file on the background thread that streams it, instead of compiling each Turbopack module on the main thread when hydration first runs it. Other browsers ignore the comment.
+- Eager compilation also compiles functions that never run. It uses background CPU time and memory, and a streamed chunk runs only after it is compiled.
+- The build fails when a chunk's source map reference is not a single `//# sourceMappingURL=` line inside `/_next/static/`, or when the chunks exceed 170 KiB gzipped (`LANDING_JS_GZIP_BUDGET_BYTES` in the script). The budget message lists each chunk's size.
+- Chunk names do not change, and Hosting serves them as immutable for one year, so a browser can keep an unmarked copy until a later release renames the chunk. The step therefore adds only comments.
+
+`scripts/compile-hints.test.mjs` checks the step and that it runs before `scripts/generate-sw.mjs`.
 
 Firebase Hosting serves `frontend/out` with `cleanUrls: true`. The header rule for `/`, `/admin`, `/feedback`, `/install` and `/passenger` sends `Cache-Control: no-cache, no-store, must-revalidate`. It lists every top-level page folder in `src/app`, and `backend/src/securityConfig.test.ts` fails when a new page is not added to it. `/_next/static/**` is sent as immutable for one year, and images for 30 days with one day of stale-while-revalidate. `/sw.js` is never cached and carries `Service-Worker-Allowed: /`. A path with no file gets `404.html` (exported from `src/app/not-found.tsx`, with a link back to `/`) and HTTP 404. Hosting matches header rules for that page against `404.html`, so the `/404.html` rule sends it with the same `no-cache, no-store, must-revalidate`; without it Hosting adds its default one-hour `max-age=3600`, and a URL that becomes valid after a release could keep showing the 404 for an hour. `scripts/hosting-not-found.test.mjs` checks this. The release procedure is in [CI/CD and releases](../docs/operations/CI_CD_AND_RELEASES.md).
 

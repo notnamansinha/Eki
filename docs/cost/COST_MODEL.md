@@ -151,19 +151,19 @@ The Realtime Database bills stored data and downloaded data, not write operation
 | Passenger | `activeRouteGeometry/{busId}_{routeId}/{version}`, one read | `frontend/src/lib/activeRouteGeometry.ts:73` | One encoded polyline per new route version |
 | Admin | `publicRouteBuses` (all routes) | `frontend/src/components/admin/DashboardPanel.tsx:613`, `frontend/src/components/admin/FleetManagementPanel.tsx:77` | The changed fields of each publication |
 
-The worker leader publishes each change to one bus as a multi-path update of only the changed fields under `publicRouteBuses/route:{routeId}/buses/node:{busId}_{routeId}` (`backend/src/services/liveBusProjectionWriter.ts:171-220`), two publications per fix (telemetry, then route match). A listener therefore receives the changed fields of one bus, whatever the number of buses on the route. Until 2026-11-21 each publication was a transaction on the whole route node, which resent every bus on the route to every listener and downloaded the node to the backend again; [EKI-EVD-063](../testing/LIVE_PROJECTION_LEAF_WRITES_2026_11_21.md) measures both. The worker rewrites the whole `liveRouteCatalog` node when a route's availability changes (`backend/src/services/liveBusProjection.ts:149-154`). Each bus's availability receipt moves in 30 s steps and the catalog stores one receipt per bus, so receipt changes add at most two catalog changes per minute per bus (`backend/src/services/liveBusProjection.ts:92-97`).
+The worker leader publishes each change to one bus as a multi-path update of only the changed fields under `publicRouteBuses/route:{routeId}/buses/node:{busId}_{routeId}` (`backend/src/services/liveBusProjectionWriter.ts:171-220`), two publications per fix (telemetry, then route match). A listener therefore receives the changed fields of one bus, whatever the number of buses on the route. Until 2026-11-21 each publication was a transaction on the whole route node, which resent every bus on the route to every listener and downloaded the node to the backend again; [EKI-EVD-068](../testing/LIVE_PROJECTION_LEAF_WRITES_2026_11_21.md) measures both. The worker rewrites the whole `liveRouteCatalog` node when a route's availability changes (`backend/src/services/liveBusProjection.ts:149-154`). Each bus's availability receipt moves in 30 s steps and the catalog stores one receipt per bus, so receipt changes add at most two catalog changes per minute per bus (`backend/src/services/liveBusProjection.ts:92-97`).
 
-The backend constant comes from the loopback emulator run in the [R14 live projection evidence](../testing/R14_LIVE_PROJECTION.md) and counts application JSON bytes only. The listener constants come from the protocol-level emulator measurement in [EKI-EVD-063](../testing/LIVE_PROJECTION_LEAF_WRITES_2026_11_21.md), which counts the JSON the database sends for a bus record carrying every public field. Neither includes TLS overhead, so treat them as lower bounds on billed bytes.
+The backend constant comes from the loopback emulator run in the [R14 live projection evidence](../testing/R14_LIVE_PROJECTION.md) and counts application JSON bytes only. The listener constants come from the protocol-level emulator measurement in [EKI-EVD-068](../testing/LIVE_PROJECTION_LEAF_WRITES_2026_11_21.md), which counts the JSON the database sends for a bus record carrying every public field. Neither includes TLS overhead, so treat them as lower bounds on billed bytes.
 
 | Constant | Value | Evidence |
 |---|---|---|
-| Backend download per fix per bus | 4.8 KB | 78,611 bytes of listener events plus 17,626 bytes of source reads over 20 fixes (R14). It never included the whole-route transaction, which added about 9.3 KB per fix at one bus per route (EVD-063); leaf writes add only their acknowledgements |
-| Passenger listener download per fix of one bus on the route | 1.15 KB | 1,152 bytes for 1, 5 and 10 buses on the route (EVD-063) |
-| Admin fleet listener download per fix of one bus | 1.26 KB | 1,257 to 1,258 bytes for 1, 5 and 10 buses on the route (EVD-063) |
+| Backend download per fix per bus | 4.8 KB | 78,611 bytes of listener events plus 17,626 bytes of source reads over 20 fixes (R14). It never included the whole-route transaction, which added about 9.3 KB per fix at one bus per route (EVD-068); leaf writes add only their acknowledgements |
+| Passenger listener download per fix of one bus on the route | 1.15 KB | 1,152 bytes for 1, 5 and 10 buses on the route (EVD-068) |
+| Admin fleet listener download per fix of one bus | 1.26 KB | 1,257 to 1,258 bytes for 1, 5 and 10 buses on the route (EVD-068) |
 | Catalog size per route | 81 bytes | 811 bytes for 10 routes |
 | TLS handshake per new connection | 3.5 KB | Firebase billing guide [2] |
 
-Because each publication carries only one bus's changed fields, both listener terms are linear in the number of buses. With whole-route transactions the same listener received `0.21 + 2.75 * n_r` KB per fix and the backend about 8 KB more per fix for each bus on the route (EVD-063), so the passenger term grew with `n_r^2`.
+Because each publication carries only one bus's changed fields, both listener terms are linear in the number of buses. With whole-route transactions the same listener received `0.21 + 2.75 * n_r` KB per fix and the backend about 8 KB more per fix for each bus on the route (EVD-068), so the passenger term grew with `n_r^2`.
 
 | Download | Formula, KB per day (estimate) |
 |---|---|
@@ -201,7 +201,8 @@ Usage that scales with the fleet and with passengers:
 | Ride start and completion | About 10 reads and 10 writes per ride | `backend/src/services/rideSessionStart.ts:326-430`, `backend/src/services/tripStateEngine.ts:1132-1176` |
 | Each lifecycle change (stop reached, activation, delay) | About 4 reads and 3 writes | `backend/src/services/tripStateEngine.ts:465-478,710-762` |
 | Passenger app open: settings listener, user document, `routes` collection listener (one read per route), stored geometry, and the route schedule listener when the passenger opens the Routes tab | `R + 4` reads (upper bound: the Routes tab opened on every app open) | `frontend/src/hooks/useSettings.ts:68`, `frontend/src/hooks/useAuth.ts:293`, `frontend/src/hooks/useRoutes.ts:51`, `backend/src/services/routeGeometryReads.ts:22-24`, `frontend/src/hooks/usePassengerRouteConfig.ts:47` |
-| Ride chat opened | Up to 200 reads, then 1 per message | `frontend/src/components/shared/MessagingPanel.tsx:96-101` |
+| Ride chat opened by an administrator | Up to 200 reads per opening, then 1 per message while open | `frontend/src/components/shared/MessagingPanel.tsx:72-102`, `frontend/src/lib/rideChatMessages.ts:10-16` |
+| Passenger chat unread listener, for the whole joined ride | Up to 200 reads when the ride is joined or the page reloads during it (1 for an empty chat), then 1 per message. Opening the chat shares this listener's watch target and reads nothing more | `frontend/src/hooks/useRideChatUnread.ts:72-86`, `frontend/src/components/passenger/PassengerWorkspace.tsx:487-490` |
 | Feedback submitted: one transaction over the feedback, cooldown and profile documents | 3 reads and 2 writes | `frontend/src/lib/feedbackStore.ts:76-104` |
 | Admin dashboard day: drivers (up to 250), buses, bus locations and routes, ride history (2 x 100), feedback (up to 200), authorization check per admin request | About 1,000 reads per admin per day (assumption) | `frontend/src/hooks/useDrivers.ts:48-51`, `frontend/src/hooks/useBuses.ts:16`, `frontend/src/hooks/useRoutes.ts:51`, `frontend/src/components/admin/RideHistoryPanel.tsx:202-220`, `frontend/src/lib/feedbackStore.ts:120`, `backend/src/services/userAuthorization.ts:22-26` |
 | Live Ops `bus_locations` listener: 1 read per bus lifecycle change while a dashboard is open | Up to `A * B * r_b * L` reads per day (upper bound: every dashboard open during every change) | `frontend/src/hooks/useBusLocations.ts:15`, `frontend/src/components/admin/DashboardPanel.tsx:620`, `backend/src/services/tripStateEngine.ts:463-472` |
@@ -377,7 +378,7 @@ The subtotals exclude Firestore overage and backend hosting. Under the global Ma
 
 Passenger downloads from the Realtime Database and Dynamic Maps loads dominate at campus and large scale. Both grow with `P`; the Realtime Database term also grows with `n_r` (Section 3.3).
 
-The same scenarios with whole-route transactions and the EVD-063 constants come to about 138 GB, 1,096 GB and 6,955 GB per month of backend, passenger and admin download, against 37 GB, 227 GB and 1,162 GB with leaf writes (catalog excluded in both).
+The same scenarios with whole-route transactions and the EVD-068 constants come to about 138 GB, 1,096 GB and 6,955 GB per month of backend, passenger and admin download, against 37 GB, 227 GB and 1,162 GB with leaf writes (catalog excluded in both).
 
 ### 4.4 Allowances exceeded first
 
@@ -481,7 +482,7 @@ Repeat this check each month and whenever `B`, `R` or `P` changes:
 
 1. Read the Realtime Database, Firestore, Hosting and Authentication usage in the Firebase console. Firebase bills these totals.
 2. Run `firebase database:profile` during service hours to see downloaded bytes by path [26]. The profiler excludes protocol and TLS overhead, so use it to attribute traffic, not to price it.
-3. Read `workQueues.publicProjection` and `apiReads` from the admin-only `GET /api/health` (`backend/src/server.ts:258,276,286`). They count public bytes, source reads and cache hits. `workQueues.publicProjection.writeMode` must read `leaf`; `transaction-fallback` means the deployed rules deny the leaf write and every listener is receiving whole routes ([EVD-063](../testing/LIVE_PROJECTION_LEAF_WRITES_2026_11_21.md#6-rollout)).
+3. Read `workQueues.publicProjection` and `apiReads` from the admin-only `GET /api/health` (`backend/src/server.ts:258,276,286`). They count public bytes, source reads and cache hits. `workQueues.publicProjection.writeMode` must read `leaf`; `transaction-fallback` means the deployed rules deny the leaf write and every listener is receiving whole routes ([EVD-068](../testing/LIVE_PROJECTION_LEAF_WRITES_2026_11_21.md#6-rollout)).
 4. For a controlled capture of payload, watch and connection counts, follow [realtime transport measurements](../operations/REALTIME_TRANSPORT_MEASUREMENTS.md).
 5. Read Maps calls per SKU in the Google Cloud console and compare them with Section 4.2.
 6. Replace the assumptions in Section 4.1 with the measured values and recompute Section 4.

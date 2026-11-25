@@ -1,0 +1,16 @@
+- main:
+  - heading "Install Eki" [level=1]
+  - paragraph: Add Eki to your home screen to open it like an app.
+  - list:
+    - listitem:
+      - text: Tap the
+      - strong: Share
+      - text: button at the bottom of Safari.
+    - listitem:
+      - text: Scroll down and tap
+      - strong: Add to Home Screen
+      - text: .
+    - listitem:
+      - text: Tap
+      - strong: Add
+      - text: .

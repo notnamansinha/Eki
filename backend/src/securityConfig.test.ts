@@ -286,7 +286,10 @@ describe("production security configuration", () => {
     expect(feedbackService).toContain("isSessionPassenger");
     const messagingPanel = workspaceFile("frontend/src/components/shared/MessagingPanel.tsx");
     const feedbackPage = workspaceFile("frontend/src/components/admin/FeedbackPanel.tsx");
-    expect(messagingPanel).toContain("limitToLast(200)");
+    // The chat panel and the passenger unread badge read the same bounded window.
+    expect(workspaceFile("frontend/src/lib/rideChatMessages.ts")).toContain("limitToLast(200)");
+    expect(messagingPanel).toContain("rideChatMessagesQuery(sessionId)");
+    expect(workspaceFile("frontend/src/hooks/useRideChatUnread.ts")).toContain("rideChatMessagesQuery(sessionId)");
     expect(messagingPanel).toContain("requestId: pending.requestId");
     expect(messagingPanel).not.toContain("currentUserName");
     expect(feedbackPage).toContain("loadFeedback()");

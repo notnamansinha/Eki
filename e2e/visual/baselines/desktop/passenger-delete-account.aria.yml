@@ -1,0 +1,5 @@
+- dialog "Delete account?":
+  - heading "Delete account?" [level=3]
+  - paragraph: Permanently delete your Eki profile and login account? Your feedback, passenger ride entries, and messages will be retained. This action cannot be undone.
+  - button "Cancel"
+  - button "Delete account"

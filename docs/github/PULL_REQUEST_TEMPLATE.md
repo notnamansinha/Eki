@@ -20,7 +20,7 @@ Fixes #
 - [ ] `npm run verify`
 - [ ] `npm run test:rules` (rules, or backend code covered by the emulator suites)
 - [ ] `npm run test:e2e:admin` (admin, sign-in or feedback screens)
-- [ ] Passenger Playwright suites (`playwright.passenger-layout.config.ts`, `playwright.passenger-progress.config.ts`)
+- [ ] Passenger Playwright suites (`playwright.passenger-layout.config.ts`, `playwright.passenger-progress.config.ts`, `playwright.demo-ride.config.ts`)
 - [ ] Production audit Playwright suite, `playwright.production-audit.config.ts` (Live Ops, route editor, ride history or passenger screens)
 - [ ] `npm run qa:browser` and `npm run qa:api` (passenger or admin flows that use the backend, protected HTTP routes)
 - [ ] `npm run qa:budget` with a mapped test (critical source files)
