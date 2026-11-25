@@ -37,8 +37,15 @@ const board = async (page: Page) => {
   await expect(onBoard(page)).toBeVisible();
 };
 
-test.beforeEach(async ({ context, request, browser }, testInfo) => {
+test.beforeEach(async ({ context, page, request, browser }, testInfo) => {
   testInfo.annotations.push({ type: 'browser-version', description: browser.version() });
+  // Emulator accounts are on their first sign-in, so the passenger app tour
+  // would open by itself (frontend/src/lib/firstRunTour.ts). These flows are a
+  // returning passenger's: record the tour as seen for the fixture accounts
+  // before the app loads, as a passenger who has finished it would have.
+  await page.addInitScript(uids => {
+    for (const uid of uids) localStorage.setItem(`eki:tour:v1:${uid}`, 'done');
+  }, ['qa_passenger', 'qa_other', 'qa_admin']);
   const denied: string[] = [];
   await context.route('**/*', async route => {
     const url = new URL(route.request().url());
