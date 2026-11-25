@@ -1,8 +1,8 @@
 - main:
   - heading "QA route" [level=1]
   - button "Back to home"
-  - text: Isolated map or panel qa-session
   - button "Open live chat"
+  - text: Isolated map or panel qa-session
   - region "Location":
     - text: Show your walking time? Eki can use your location to estimate the walk to your stop. It stays on this device, and live tracking works without it.
     - button "Allow location"
