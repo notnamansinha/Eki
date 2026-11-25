@@ -182,7 +182,7 @@ test('every QA runner records the working tree through workingTreeState', async 
     assert.doesNotMatch(source, /--porcelain/, `${path.basename(name)} must use workingTreeState, not its own git status`);
     if (/workingTreeState\(/.test(source)) callers.push(path.basename(name));
   }
-  for (const name of ['acceptance-catalog.mjs', 'campaign.mjs', 'run-api.mjs', 'run-browser-tests.mjs', 'run-emulator-tests.mjs',
+  for (const name of ['acceptance-catalog.mjs', 'campaign.mjs', 'run-api.mjs', 'run-browser-tests.mjs', 'run-dast.mjs', 'run-emulator-tests.mjs',
     'run-gnss.mjs', 'run-mutation.mjs', 'run-native.mjs', 'run-reviewed-unit.mjs', 'run-soak.mjs', 'weekly-report.mjs', 'run-rules-emulator.mjs'])
     assert.ok(callers.includes(name), `${name} must record dirty through workingTreeState`);
 });
