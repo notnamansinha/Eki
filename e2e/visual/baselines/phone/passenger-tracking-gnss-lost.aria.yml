@@ -1,0 +1,25 @@
+- main:
+  - heading "QA route" [level=1]
+  - button "Back to home"
+  - status:
+    - paragraph: GPS signal lost
+    - paragraph: The bus has no GPS fix. Showing its last known location (just now); ETAs and boarding resume when GPS returns.
+  - text: Isolated map or panel qa-session
+  - button "Open live chat"
+  - status: GPS signal lost Last known location just now · not live
+  - region "Location":
+    - text: Show your walking time? Eki can use your location to estimate the walk to your stop. It stays on this device, and live tracking works without it.
+    - button "Allow location"
+    - button "Not now"
+  - paragraph: Synthetic SDK adapter · actual map logic
+  - img "Configured route path"
+  - img "qa-bus — GPS signal lost, last known location"
+  - button "Show stop Alpha"
+  - button "Show stop Beta"
+  - button "Center on bus" [pressed]
+  - button "Show route overview"
+  - button "Route timeline"
+- navigation "Passenger sections":
+  - button "Live"
+  - button "Routes"
+  - button "Profile"
