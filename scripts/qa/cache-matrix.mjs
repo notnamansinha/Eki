@@ -23,7 +23,13 @@ export const DUMMY_CREDENTIALS = Object.freeze({
   authorization: 'Bearer eki-cache-matrix-dummy', cookie: '__session=eki-cache-matrix-dummy',
 });
 export const LIVE_ONLY_CHECKS = Object.freeze(['conditional', 'range', 'compression', 'cdn-cache', 'alias']);
-const IMAGE_EXTENSIONS = /\.(png|jpe?g|webp|svg|ico|gif|avif)$/i;
+/**
+ * What the `image` class covers. Like the class requirements, this is the
+ * harness's own definition, not a copy of the firebase.json image rule. It is
+ * deliberately wider than that rule (`gif`, `avif`): an image the rule misses
+ * gets the Hosting default, which lacks `public`, and is reported.
+ */
+export const IMAGE_EXTENSIONS = /\.(png|jpe?g|webp|svg|ico|gif|avif)$/i;
 
 // ---------------------------------------------------------------- firebase.json
 
@@ -488,8 +494,13 @@ export function evaluateMatrix({ mode, hosting, plan, observations, documents, e
     rootEtag: root?.headers.etag ?? null, rootLastModified: root?.headers['last-modified'] ?? null,
     pops: [...new Set(observations.map(entry => entry.headers['x-served-by']).filter(Boolean))].sort(),
   };
-  const verdict = checks.some(entry => entry.status === 'FAIL') ? 'FAIL' : 'PASS';
-  return { verdict, identity, rows, checks };
+  return { verdict: matrixVerdict(checks), identity, rows, checks };
+}
+
+/** `FAIL` if a check failed, `WARN` if one has findings, else `PASS`. Findings never read as a clean pass. */
+export function matrixVerdict(checks) {
+  if (checks.some(entry => entry.status === 'FAIL')) return 'FAIL';
+  return checks.some(entry => entry.status === 'WARN') ? 'WARN' : 'PASS';
 }
 
 function liveChecks(rows, observations, find) {
@@ -558,20 +569,24 @@ function liveChecks(rows, observations, find) {
 
 /**
  * Compares two live reports taken before and after a Hosting release. The
- * release time is the `Last-Modified` of `/` after the deploy: Hosting stamps
- * every file of a release with it, so a response that carries an older stamp
- * came from a cache filled before the release. Hosting sends no `Age` header
- * (2026-11-23); when one is present it must be younger than the release.
+ * verdict rests on content: the build ID that every HTML response carries and
+ * the SHA-256 of `sw.js`. `Last-Modified` of `/` only tells a release without
+ * frontend changes from no release at all. `age-reset` compares every
+ * `Last-Modified`, and any `Age`, with that stamp, but reports disagreements as
+ * findings: that Hosting stamps every file of a release with the release time
+ * was observed on one release (2026-11-23), not proven. Hosting sent no `Age`.
  */
 export function compareSnapshots(before, after, { toleranceSeconds = 5 } = {}) {
   const checks = [];
   const beforeId = before.identity?.buildId, afterId = after.identity?.buildId;
   const released = Date.parse(after.identity?.rootLastModified ?? '');
   const previous = Date.parse(before.identity?.rootLastModified ?? '');
-  const newRelease = Number.isFinite(released) && Number.isFinite(previous) && released > previous;
-  checks.push(check('new-release', newRelease ? [] : [`Last-Modified of / is ${after.identity?.rootLastModified} after and ${before.identity?.rootLastModified} before`],
-    `released ${after.identity?.rootLastModified}`));
   const sameBuild = Boolean(beforeId) && beforeId === afterId;
+  const newBuild = Boolean(beforeId) && Boolean(afterId) && beforeId !== afterId;
+  const restamped = Number.isFinite(released) && Number.isFinite(previous) && released > previous;
+  const stamps = `Last-Modified of / ${before.identity?.rootLastModified} -> ${after.identity?.rootLastModified}`;
+  checks.push(check('new-release', newBuild || restamped ? [] : [`the build ID is unchanged and ${stamps}`],
+    `${newBuild ? 'new build ID' : 'same build ID'}; ${stamps}`));
   checks.push(check('new-build-id', afterId ? [] : ['no build ID after the deploy'], `${beforeId} -> ${afterId}`,
     sameBuild ? ['the build ID is unchanged: the deploy changed no frontend build input, so it cannot show invalidation of HTML'] : []));
   const sameWorker = before.identity?.swSha256 && before.identity.swSha256 === after.identity?.swSha256;
@@ -590,19 +605,20 @@ export function compareSnapshots(before, after, { toleranceSeconds = 5 } = {}) {
       const stamp = Date.parse(entry.headers?.['last-modified'] ?? '');
       if (Number.isFinite(stamp)) {
         stamped += 1;
-        if (stamp !== released) old.push(`${entry.origin} ${entry.path} (${entry.variant}): Last-Modified ${entry.headers['last-modified']}, not the release ${after.identity.rootLastModified}`);
+        if (stamp !== released) old.push(`${entry.origin} ${entry.path} (${entry.variant}): Last-Modified ${entry.headers['last-modified']}, not that of / (${after.identity.rootLastModified})`);
       }
       const age = Number(entry.headers?.age), date = Date.parse(entry.headers?.date ?? '');
       if (!Number.isFinite(age) || !Number.isFinite(date)) continue;
       const sinceRelease = (date - released) / 1000;
-      if (age > sinceRelease + toleranceSeconds) old.push(`${entry.origin} ${entry.path} (${entry.variant}): Age ${age} s, but the release is ${Math.round(sinceRelease)} s old`);
+      if (age > sinceRelease + toleranceSeconds) old.push(`${entry.origin} ${entry.path} (${entry.variant}): Age ${age} s, but / was stamped ${Math.round(sinceRelease)} s earlier`);
     }
   }
-  checks.push(Number.isFinite(released) ? check('age-reset', old, `${stamped} Last-Modified stamps compared with the release; no Age older than it`)
+  checks.push(Number.isFinite(released)
+    ? check('age-reset', [], `${stamped} Last-Modified stamps and every Age compared with the Last-Modified of /; differences are findings, because the release stamp is a premise under test`, old)
     : notRun('age-reset', 'NOT_APPLICABLE', 'no Last-Modified for / after the deploy'));
   const failed = name => checks.find(entry => entry.name === name).status === 'FAIL';
   const verdict = failed('new-release') ? 'NOT_A_NEW_RELEASE'
-    : ['no-stale-html', 'age-reset', 'new-service-worker', 'new-build-id'].some(failed) ? 'STALE'
+    : ['no-stale-html', 'new-service-worker', 'new-build-id'].some(failed) ? 'STALE'
       : sameBuild ? 'NO_FRONTEND_CHANGE' : 'INVALIDATED';
   return { verdict, before: before.identity, after: after.identity, checks };
 }

@@ -6,7 +6,7 @@ import { brotliCompressSync, gzipSync } from 'node:zlib';
 import {
   HOSTING_DEFAULT_CACHE_CONTROL, LIVE_BOUNDS, LIVE_ORIGINS, NOT_FOUND_PATH,
   buildPlan, compareSnapshots, createLimiter, discoverAssets, evaluateMatrix, expectedHeaders, exportCoverage,
-  extractBuildId, hostingConfig, observe, parseCacheMatrixArgs, policyProblems, requestHeaders, routeRequest,
+  extractBuildId, hostingConfig, matrixVerdict, observe, parseCacheMatrixArgs, policyProblems, requestHeaders, routeRequest,
   routesFromPageFiles,
 } from './qa/cache-matrix.mjs';
 
@@ -172,9 +172,11 @@ function run({ mode = 'live', change = () => {}, options = {} } = {}) {
 const status = (result, name) => result.checks.find(entry => entry.name === name).status;
 const failures = (result, name) => result.checks.find(entry => entry.name === name).failures.join('\n');
 
-test('a Hosting that follows firebase.json passes the live matrix', () => {
+test('a Hosting that follows firebase.json fails no check, and its findings make the verdict WARN', () => {
   const { result } = run();
-  assert.equal(result.verdict, 'PASS', JSON.stringify(result.checks.filter(entry => entry.status === 'FAIL'), null, 1));
+  assert.equal(result.verdict, 'WARN', JSON.stringify(result.checks.filter(entry => entry.status === 'FAIL'), null, 1));
+  assert.deepEqual(result.checks.filter(entry => entry.status === 'WARN').map(entry => entry.name), ['cache-policy-by-class', 'conditional']);
+  assert.match(result.checks[0].warnings.join('\n'), /^\/404: Cache-Control lacks no-store/m, '/404 with the one-hour default is a finding');
   assert.equal(status(result, 'conditional'), 'WARN', 'the no-store document answers 200 and is only a finding');
   assert.equal(result.identity.buildId, BUILD);
   assert.deepEqual(result.identity.pops, ['cache-bom-1-BOM']);
@@ -206,7 +208,14 @@ test('each deviation fails its own check', () => {
   }
   const hsts = run({ change: (probe, response) => { response.headers['strict-transport-security'] = 'max-age=31556926; includeSubDomains; preload'; } }).result;
   assert.equal(status(hsts, 'configured-headers'), 'WARN', 'a replaced header value is a finding, not a failure');
-  assert.equal(hsts.verdict, 'PASS');
+  assert.equal(hsts.verdict, 'WARN');
+});
+
+test('the verdict is PASS only without findings', () => {
+  const named = (...statuses) => statuses.map((value, index) => ({ name: `c${index}`, status: value }));
+  assert.equal(matrixVerdict(named('PASS', 'LIVE_ONLY', 'NOT_APPLICABLE', 'LOCAL_ONLY')), 'PASS');
+  assert.equal(matrixVerdict(named('PASS', 'WARN', 'LIVE_ONLY')), 'WARN');
+  assert.equal(matrixVerdict(named('WARN', 'FAIL', 'PASS')), 'FAIL');
 });
 
 test('a local run marks CDN checks live-only and checks every exported file', () => {
@@ -221,6 +230,11 @@ test('a local run marks CDN checks live-only and checks every exported file', ()
   const noScope = hostingConfig({ hosting: { headers: fixtureHosting.headers.filter(rule => rule.source !== '/sw.js')
     .concat([{ source: '/sw.js', headers: [{ key: 'Cache-Control', value: NO_STORE }] }]) } });
   assert.match(exportCoverage(noScope, fixtureFiles, ['/', '/admin']).failures.join('\n'), /service-worker-allowed is missing/);
+  // The image class is wider than the image rule on purpose: a format the rule misses is reported.
+  for (const real of [fixtureHosting, realHosting]) {
+    const formats = exportCoverage(real, new Set(['/index.html', '/hero.gif', '/photo.avif']), ['/']);
+    assert.match(formats.warnings.join('\n'), /2 file\(s\), for example \/hero\.gif, \/photo\.avif: image gets "max-age=3600" from hosting-default: Cache-Control lacks public/);
+  }
 });
 
 test('observations keep no cookie or CSP value and decode compressed bodies', () => {
@@ -255,16 +269,20 @@ test('the comparator accepts a clean invalidation and names each stale signal', 
   assert.match(staleAlias.checks.find(entry => entry.name === 'no-stale-html').failures.join('\n'), /alias \/ \(plain\) still carries build a{32}/);
   const oldWorker = compareSnapshots(before, snapshot({ build: NEXT_BUILD, stamp: LATER, worker: BUILD }));
   assert.equal(oldWorker.verdict, 'STALE');
+  // Last-Modified as a release stamp is a premise under test: a different stamp or an old Age is a finding, not STALE.
   const oldStamp = snapshot({ build: NEXT_BUILD, stamp: LATER });
   oldStamp.observations.find(entry => entry.path === '/logo.png').headers['last-modified'] = RELEASE;
   const stamped = compareSnapshots(before, oldStamp);
-  assert.equal(stamped.verdict, 'STALE');
-  assert.match(stamped.checks.find(entry => entry.name === 'age-reset').failures.join('\n'), /\/logo\.png \(plain\): Last-Modified Fri, 20 Nov/);
+  assert.equal(stamped.verdict, 'INVALIDATED');
+  assert.equal(status(stamped, 'age-reset'), 'WARN');
+  assert.match(stamped.checks.find(entry => entry.name === 'age-reset').warnings.join('\n'), /\/logo\.png \(plain\): Last-Modified Fri, 20 Nov/);
   const aged = snapshot({ build: NEXT_BUILD, stamp: LATER });
   Object.assign(aged.observations.find(entry => entry.path === '/logo.png').headers, { age: '90000', date: 'Tue, 24 Nov 2026 09:10:00 GMT' });
-  assert.match(compareSnapshots(before, aged).checks.find(entry => entry.name === 'age-reset').failures.join('\n'), /Age 90000 s, but the release is 600 s old/);
+  assert.match(compareSnapshots(before, aged).checks.find(entry => entry.name === 'age-reset').warnings.join('\n'), /Age 90000 s, but \/ was stamped 600 s earlier/);
   assert.equal(compareSnapshots(before, snapshot({ build: BUILD, stamp: LATER })).verdict, 'NO_FRONTEND_CHANGE');
-  assert.equal(compareSnapshots(before, snapshot({ build: NEXT_BUILD, stamp: RELEASE })).verdict, 'NOT_A_NEW_RELEASE');
+  // A new build is a new release whatever Last-Modified says; neither changing is no release.
+  assert.equal(compareSnapshots(before, snapshot({ build: NEXT_BUILD, stamp: RELEASE })).verdict, 'INVALIDATED');
+  assert.equal(compareSnapshots(before, snapshot({ build: BUILD, stamp: RELEASE })).verdict, 'NOT_A_NEW_RELEASE');
 });
 
 // ------------------------------------------------------------ bounds

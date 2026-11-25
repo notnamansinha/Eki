@@ -6,7 +6,7 @@ import { request as httpsRequest } from 'node:https';
 import { basename, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  LIVE_BOUNDS, LIVE_ORIGINS, LOCAL_BOUNDS, USER_AGENT,
+  IMAGE_EXTENSIONS, LIVE_BOUNDS, LIVE_ORIGINS, LOCAL_BOUNDS, USER_AGENT,
   buildPlan, compareSnapshots, createLimiter, decodeBody, evaluateMatrix, hostingConfig, observe,
   parseCacheMatrixArgs, requestHeaders, routesFromPageFiles, skippedObservation,
 } from './cache-matrix.mjs';
@@ -65,7 +65,7 @@ const relativeFiles = (directory, pattern) => existsSync(directory)
 async function matrix({ mode, origins, bounds, exportFiles = null }) {
   const limiter = createLimiter(bounds);
   const documents = routesFromPageFiles(relativeFiles(resolve(root, 'frontend/src/app'), /^page\.(tsx|ts|jsx|js|mdx)$/));
-  const publicImages = relativeFiles(resolve(root, 'frontend/public'), /\.(png|jpe?g|webp|svg|ico|gif|avif)$/i).map(file => `/${file}`);
+  const publicImages = relativeFiles(resolve(root, 'frontend/public'), IMAGE_EXTENSIONS).map(file => `/${file}`);
   const fetchProbe = async (probe, validators) => {
     const origin = origins[probe.origin];
     if (!origin) throw new Error(`no origin for ${probe.origin}`);
@@ -182,4 +182,5 @@ mkdirSync(evidenceDirectory, { recursive: true });
 writeFileSync(`${reportBase}.json`, `${JSON.stringify(report, null, 2)}\n`);
 writeFileSync(`${reportBase}.md`, markdown());
 console.log(`${report.mode} cache matrix: ${report.verdict}${report.setupError ? ` (${report.setupError})` : ''}; ${reportBase}.md`);
-process.exitCode = ['PASS', 'INVALIDATED'].includes(report.verdict) ? 0 : 1;
+// WARN exits 0: no check failed, and the report lists every finding.
+process.exitCode = ['PASS', 'WARN', 'INVALIDATED'].includes(report.verdict) ? 0 : 1;

@@ -2,13 +2,13 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-TST-017 | 1.0 | Current | 2026-11-24 |
+| EKI-TST-017 | 1.0 | Current | 2026-11-25 |
 
 ## 1. Purpose
 
 `npm run qa:cache` and `npm run qa:cache:live` check how Firebase Hosting caches the web app: the `Cache-Control` each class of path receives, the 404 answer, redirects, cookies, conditional and range requests, compression, CDN hits and per-user isolation. `npm run qa:cache:compare` checks that a Hosting release replaced every cached copy of the previous one.
 
-Every expectation is derived from the `hosting` block of [`firebase.json`](../firebase.json) when the run starts: its header rules, redirects, rewrites, `cleanUrls` and `trailingSlash`. No expected value is copied into the harness. [`scripts/qa/cache-matrix.mjs`](../scripts/qa/cache-matrix.mjs) holds the derivation, the plan, the evaluator and the before/after comparison; [`scripts/qa/run-cache-matrix.mjs`](../scripts/qa/run-cache-matrix.mjs) sends the requests and writes the reports.
+Every expected header value, status and redirect is derived from the `hosting` block of [`firebase.json`](../firebase.json) when the run starts: its header rules, redirects, rewrites, `cleanUrls` and `trailingSlash`. No expected value is copied into the harness. The path classes and their requirements (Section 3.1) are the harness's own definitions, deliberately independent of `firebase.json`, so a gap in `firebase.json` shows as a failure or a finding. [`scripts/qa/cache-matrix.mjs`](../scripts/qa/cache-matrix.mjs) holds the derivation, the plan, the evaluator and the before/after comparison; [`scripts/qa/run-cache-matrix.mjs`](../scripts/qa/run-cache-matrix.mjs) sends the requests and writes the reports.
 
 | Mode | Command | Target |
 |---|---|---|
@@ -35,7 +35,7 @@ A run requests one or more paths of each class. Documents come from the `page.ts
 |---|---|---|---|
 | `document` | Every page route; today `/`, `/admin`, `/feedback`, `/install` and `/passenger` | `/{,admin,feedback,install,passenger}` | `no-store`: the HTML names the chunks of one build |
 | `next-static` | The first JavaScript, CSS and `.woff2` file that `/` references | `/_next/static/**` | `public`, `immutable`, `max-age` of at least one year |
-| `image` | One file per extension: those `/` references, then `frontend/public` | `**/*.@(png\|jpg\|jpeg\|webp\|svg\|ico)` | `public` and a positive `max-age` |
+| `image` | One file per extension: those `/` references, then `frontend/public`. The class also covers `.gif` and `.avif`, which the rule omits, so such a file gets the Hosting default and is reported | `**/*.@(png\|jpg\|jpeg\|webp\|svg\|ico)` | `public` and a positive `max-age` |
 | `service-worker` | `/sw.js` | `/sw.js` | `no-store` and `Service-Worker-Allowed: /` |
 | `manifest`, `robots`, `sitemap` | `/manifest.webmanifest`, `/robots.txt`, `/sitemap.xml` | None: the Hosting default of one hour [1] | None |
 | `rsc-payload` | `/index.txt`, the flight data that client navigation fetches | None: the Hosting default | None: the Next.js router performs a full page load when a payload names another build ID (`next/dist/client/components/router-reducer/fetch-server-response.js`) |
@@ -90,11 +90,11 @@ Run from the repository root.
 
 1. Build the export with the placeholder variables of the CI `Strict production build` step, then run `npm run build:production`, or run `npm run build`. Expected: `frontend/out/index.html` exists.
 2. Run `git checkout -- firebase.json`. Expected: `git status --short` prints nothing.
-3. Run `npm run qa:cache`. Expected: in about 1 s, `local cache matrix: PASS` and `artifacts/qa/cache-matrix-local-report.md`. Findings appear as `WARN` lines and do not fail the run.
+3. Run `npm run qa:cache`. Expected: in about 1 s, `local cache matrix: WARN` and `artifacts/qa/cache-matrix-local-report.md`, exit code 0. With today's `firebase.json` the findings are `/404` and `/_not-found` (Hosting default) and the two `/_next/static/media` icons; a run without findings says `PASS`.
 
 ### 4.2 Live run
 
-1. Run `npm run qa:cache:live`. Expected: in about 25 s, `live cache matrix: PASS` and `artifacts/qa/cache-matrix-live-report.md`.
+1. Run `npm run qa:cache:live`. Expected: in about 25 s, `live cache matrix: WARN` and `artifacts/qa/cache-matrix-live-report.md`, exit code 0. The findings of 23 November were the replaced HSTS value, `/404` and `/_not-found`, and the 200 answer to conditional requests for `/`.
 2. Name the revision it measured. Read `Last-Modified of /` in the report, list the Deploy runs with `gh run list --workflow deploy.yml --repo notnamansinha/Eki --status success`, and read the Hosting step time of the candidate run with `gh run view <run-id> --repo notnamansinha/Eki --json jobs`. Expected: the `Deploy to staging (hosting + rules)` step of one run completed at that second; its head commit is the live revision.
 3. Attach both report files to the tracking issue.
 
@@ -109,11 +109,11 @@ The comparison needs a Hosting release that changes a frontend build input. A de
 
 | Comparison check | Passes when |
 |---|---|
-| `new-release` | `Last-Modified` of `/` is later than before |
+| `new-release` | The build ID changed, or `Last-Modified` of `/` is later than before. Neither gives `NOT_A_NEW_RELEASE` |
 | `new-build-id` | The build ID changed; unchanged is a finding and gives `NO_FRONTEND_CHANGE` |
 | `new-service-worker` | `sw.js` changed whenever the build ID changed |
 | `no-stale-html` | No HTML response after the deploy, on any path, variant or host, carries the old build ID, and all carry one ID |
-| `age-reset` | Every response carries the new release's `Last-Modified`, and any `Age` is shorter than the time since the release. Hosting stamps every file of a release with the release time and sends no `Age` header, so an older stamp shows a copy cached before the release |
+| `age-reset` | Never fails; reports findings. Every response is compared with the `Last-Modified` of `/`, and any `Age` with the time since that stamp. On the one release measured (23 November), all 57 stamped responses carried the second at which the Hosting deploy step completed, and Hosting sent no `Age`. That Hosting re-stamps every file at each release is not proven, so a different stamp is a finding until a measured deploy settles it. The verdict rests on `no-stale-html` and `new-service-worker` |
 
 ## 5. Bounds and evidence
 
@@ -135,7 +135,8 @@ Observations keep a fixed list of response headers, cut to printable ASCII and 3
 
 | Verdict | Exit code | Meaning |
 |---|---|---|
-| `PASS` | 0 | No check failed; findings may be listed |
+| `PASS` | 0 | No check failed and none reported a finding |
+| `WARN` | 0 | No check failed; at least one check reported findings, each listed in the report |
 | `FAIL` | 1 | At least one check failed |
 | `BLOCKED` | 1 | The run could not start or finish; `setupError` names the step |
 | `INVALIDATED` | 0 | Comparison: a new release and build, and no stale copy |
@@ -155,7 +156,7 @@ The first runs are recorded in [Hosting cache matrix, 24 November](../docs/testi
 ## 7. Limits
 
 - The local replay applies the same derivation that the checks use. A local pass shows that the export and `firebase.json` agree; it does not show what Hosting does.
-- A live run sees the CDN point of presence that serves the runner's network, named in `X-Served-By`. Other points of presence are not observed.
+- A live run sees the CDN point of presence that serves the runner's network, named in `X-Served-By`. Other points of presence are not observed, so one run is a matrix for one point of presence, not per point of presence.
 - Isolation is shown with dummy credentials and the premises in Section 3.4, not with two signed-in users.
 - The comparison needs a deploy (issue #504). Until one is measured, invalidation after a release is not shown.
 
