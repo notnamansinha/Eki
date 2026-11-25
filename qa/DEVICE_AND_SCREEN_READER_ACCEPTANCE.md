@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-TST-016 | 1.0 | Current | 2026-11-24 |
+| EKI-TST-020 | 1.0 | Current | 2026-11-24 |
 
 ## 1. Purpose
 
@@ -121,7 +121,7 @@ Store screenshots and recordings with the issue or in approved storage, not in t
 
 ## 7. Known items to confirm
 
-The visual baseline review on 2026-11-24 ([EKI-EVD-063](../docs/testing/VISUAL_BASELINE_REVIEW_2026_11_24.md)) found these in the emulated renders. Confirm or clear each on a real device or with a screen reader and record the result as a finding.
+The visual baseline review on 2026-11-24 ([EKI-EVD-067](../docs/testing/VISUAL_BASELINE_REVIEW_2026_11_24.md)) found these in the emulated renders. Confirm or clear each on a real device or with a screen reader and record the result as a finding.
 
 | Item | Where | Check |
 |---|---|---|

@@ -2,11 +2,11 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-EVD-063 | 1.0 | Historical | 2026-11-24 |
+| EKI-EVD-067 | 1.0 | Historical | 2026-11-24 |
 
 ## 1. Scope
 
-This record covers the first reviewed set of visual and accessibility-tree baselines for issue #523, made with the suite described in [visual and accessibility-tree baselines](../../qa/VISUAL_BASELINES.md) (EKI-TST-015). It is browser evidence at level L3: emulated phone, tablet and desktop in Chromium, with synthetic data. It is not evidence from a real device or a screen reader; the other two items of issue #523 were not run (Section 6).
+This record covers the first reviewed set of visual and accessibility-tree baselines for issue #523, made with the suite described in [visual and accessibility-tree baselines](../../qa/VISUAL_BASELINES.md) (EKI-TST-019). It is browser evidence at level L3: emulated phone, tablet and desktop in Chromium, with synthetic data. It is not evidence from a real device or a screen reader; the other two items of issue #523 were not run (Section 6).
 
 | Item | Value |
 |---|---|
@@ -78,6 +78,6 @@ These come from emulated renders and synthetic data. Each is listed in Section 7
 | Item of "Done when" | Status |
 |---|---|
 | A reviewed visual baseline set recorded against a named revision | Done: this record, revision `d12646d2`, baselines from `b077d035` |
-| A real-device matrix with at least one iPhone and one Android phone | Not run: no device on this host. Procedure: [EKI-TST-016](../../qa/DEVICE_AND_SCREEN_READER_ACCEPTANCE.md#4-real-device-matrix) |
-| Two screen-reader sessions | Not run: no screen reader installed on this host. Procedure: [EKI-TST-016](../../qa/DEVICE_AND_SCREEN_READER_ACCEPTANCE.md#5-screen-reader-sessions) |
+| A real-device matrix with at least one iPhone and one Android phone | Not run: no device on this host. Procedure: [EKI-TST-020](../../qa/DEVICE_AND_SCREEN_READER_ACCEPTANCE.md#4-real-device-matrix) |
+| Two screen-reader sessions | Not run: no screen reader installed on this host. Procedure: [EKI-TST-020](../../qa/DEVICE_AND_SCREEN_READER_ACCEPTANCE.md#5-screen-reader-sessions) |
 | Installed-PWA launch and offline cold start | Not run; DEV-10 of the same procedure, with issue #430 |
