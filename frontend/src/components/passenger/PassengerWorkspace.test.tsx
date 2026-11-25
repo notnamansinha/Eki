@@ -55,7 +55,7 @@ describe("passenger workspace navigation", () => {
     act(() => setScenario("gnss-lost"));
     expect(await screen.findByText("GPS signal lost")).toBeTruthy();
     expect(screen.queryByText("Live tracking paused")).toBeNull();
-    // The boarding card stays mounted (Board is disabled inside it); chat needs no GPS fix.
+    // The boarding card stays mounted (boarding waits inside it); chat needs no GPS fix.
     expect(screen.getByText("Boarding qa-session")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Open live chat" })).toBeTruthy();
     act(() => setScenario("forward"));

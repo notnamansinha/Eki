@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import PassengerBoardingView, { LOCATION_NOTICE, TRIP_DOCK_DELAY_MS } from "./PassengerBoardingView";
+import PassengerBoardingView, { DEMO_NOTICE, LOCATION_NOTICE, TRIP_DOCK_DELAY_MS } from "./PassengerBoardingView";
 import type { RouteData } from "@/hooks/useRoutes";
 import { DEMO_BOARDING_MS } from "@/lib/demoRide";
 const mocks = vi.hoisted(() => ({ auth: { currentUser: { uid: "qa-passenger", getIdToken: vi.fn(async () => "test-token") } } }));
@@ -24,19 +24,26 @@ const disabled = (name: string) => screen.getByRole("option", { name }).getAttri
 const choosable = (listbox: string) => within(screen.getByRole("listbox", { name: listbox })).getAllByRole("option")
   .filter(option => option.getAttribute("aria-disabled") !== "true").map(option => option.getAttribute("aria-label"));
 const hidden = (name: string) => (document.querySelector(`input[name="${name}"]`) as HTMLInputElement).value;
+/** The bus is on its way to Alpha, then waiting at it. */
+const approaching = { context: "s", minutes: { alpha: 2, beta: 6 }, nextStopIndex: 0 };
+const atAlpha = { context: "s", minutes: { beta: 3 }, nextStopIndex: 1, atStopIndex: 0 };
 /** Choose both stops through the From → To bar and wait for the drawer. */
 async function chooseStops(user: ReturnType<typeof userEvent.setup>, from = "Alpha", to = "Beta") {
   await user.click(screen.getByRole("combobox", { name: "Boarding stop" }));
   await user.click(screen.getByRole("option", { name: from }));
   await user.click(screen.getByRole("option", { name: to }));
-  return screen.findByRole("button", { name: "Board" }, DOCKED);
+  return screen.findByRole("group", { name: "Your trip" }, DOCKED);
 }
-async function prepare(props: Partial<Parameters<typeof PassengerBoardingView>[0]> = {}) {
+type Props = Parameters<typeof PassengerBoardingView>[0];
+/** Alpha → Beta chosen while the bus approaches; `arrive()` brings it to Alpha. */
+async function prepare(props: Partial<Props> = {}) {
   const joined = vi.fn();
-  render(<PassengerBoardingView sessionId="qa-session" route={route} tripState="in_service" onJoined={joined} {...props} />);
+  const base: Props = { sessionId: "qa-session", route, tripState: "in_service", onJoined: joined, stopEstimates: approaching, ...props };
+  const view = render(<PassengerBoardingView {...base} />);
   const user = userEvent.setup();
-  const board = await chooseStops(user);
-  return { user, joined, board };
+  await chooseStops(user);
+  const arrive = (more: Partial<Props> = {}) => view.rerender(<PassengerBoardingView {...base} stopEstimates={atAlpha} {...more} />);
+  return { user, joined, arrive };
 }
 
 describe("From → To bar and stop picker", () => {
@@ -96,15 +103,14 @@ describe("From → To bar and stop picker", () => {
     await waitFor(() => expect(document.activeElement).toBe(to));
     await user.keyboard("{End}{Enter}");
     expect([hidden("boarding-stop"), hidden("destination-station")]).toEqual(["alpha", "gamma"]);
-    // Docking moves focus onto Board, never onto a removed control.
-    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: "Board" })), DOCKED);
+    // Docking moves focus into the drawer, never onto a removed control.
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: "Show trip" })), DOCKED);
   });
 });
 
 describe("drawer", () => {
-  it("slides the trip into a drawer that keeps the boarding stop, the bus ETA and Board", async () => {
-    render(<PassengerBoardingView sessionId="qa-session" route={route} tripState="in_service"
-      stopEstimates={{ context: "s", minutes: { alpha: 2, beta: 6 }, nextStopIndex: 0 }} />);
+  it("slides the trip into a drawer that keeps the boarding stop and the bus ETA, with no Board button", async () => {
+    render(<PassengerBoardingView sessionId="qa-session" route={route} tripState="in_service" stopEstimates={approaching} />);
     const user = userEvent.setup();
     await user.click(screen.getByRole("combobox", { name: "Boarding stop" }));
     await user.click(screen.getByRole("option", { name: "Alpha" }));
@@ -116,7 +122,7 @@ describe("drawer", () => {
     expect(drawer.textContent).toContain("Alpha");
     expect(drawer.textContent).toContain("Bus in 2 min");
     expect(screen.getByText(LOCATION_NOTICE)).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Board" }).getAttribute("aria-describedby")).toBeTruthy();
+    expect(within(drawer).getAllByRole("button").map(button => button.getAttribute("aria-label") ?? button.textContent)).toEqual(["Show trip"]);
     expect(screen.queryByRole("combobox")).toBeNull();
   });
 
@@ -127,18 +133,25 @@ describe("drawer", () => {
     await user.click(screen.getByRole("button", { name: "Show trip" }));
     expect(document.activeElement).toBe(screen.getByRole("combobox", { name: "Boarding stop" }));
     await user.keyboard("{Escape}");
-    expect(await screen.findByRole("button", { name: "Board" })).toBeTruthy();
-    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Board" }));
+    expect(await screen.findByRole("group", { name: "Your trip" })).toBeTruthy();
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Show trip" }));
     await user.click(screen.getByRole("button", { name: "Show trip" }));
     await user.click(outside);
     expect(await screen.findByRole("group", { name: "Your trip" })).toBeTruthy();
     outside.remove();
   });
 
-  it("withholds Board while live tracking is paused and says why", async () => {
-    const { board } = await prepare({ boardingBlockedReason: "Boarding resumes when live tracking returns." });
-    expect(board).toHaveProperty("disabled", true);
-    expect(document.getElementById(board.getAttribute("aria-describedby")!)?.textContent).toBe("Boarding resumes when live tracking returns.");
+  it("waits to board while live tracking is paused and says why", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response('{"joined":true}')); vi.stubGlobal("fetch", fetchMock);
+    const reason = "Boarding resumes when live tracking returns.";
+    const { joined, arrive } = await prepare({ boardingBlockedReason: reason });
+    arrive({ boardingBlockedReason: reason });
+    expect(screen.getByText(reason)).toBeTruthy();
+    await new Promise(resolve => setTimeout(resolve, 50));
+    expect(gps).not.toHaveBeenCalled(); expect(fetchMock).not.toHaveBeenCalled();
+    // Tracking returns while the bus is still at the stop: boarding goes ahead.
+    arrive({ boardingBlockedReason: undefined });
+    await waitFor(() => expect(joined).toHaveBeenCalledOnce());
   });
 });
 
@@ -176,11 +189,10 @@ describe("passenger boarding workflow", () => {
 
   it("allows stop selection and boarding without displaying or submitting a code", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response('{"joined":true}')); vi.stubGlobal("fetch", fetchMock);
-    const { user, joined, board } = await prepare();
+    const { joined, arrive } = await prepare();
     expect(screen.queryByRole("textbox", { name: "Boarding code" })).toBeNull();
     expect(screen.queryByText(/8-character|8-CHAR|session code/)).toBeNull();
-    expect(board).toHaveProperty("disabled", false);
-    await user.click(board);
+    arrive();
     await waitFor(() => expect(joined).toHaveBeenCalledOnce());
     expect(JSON.parse(fetchMock.mock.calls[0][1].body)).not.toHaveProperty("boardingCode");
   });
@@ -199,18 +211,25 @@ describe("passenger boarding workflow", () => {
     expect(screen.getByRole("combobox", { name: "Destination station" }).textContent).toContain("Beta");
     expect(gps).not.toHaveBeenCalled(); expect(fetchMock).not.toHaveBeenCalled();
     rerender(<PassengerBoardingView sessionId="other-session" route={route} tripState="in_service" />);
-    expect(await screen.findByRole("button", { name: "Board" })).toBeTruthy();
+    expect(await screen.findByRole("group", { name: "Your trip" })).toBeTruthy();
+    expect(screen.getByRole("group", { name: "Your trip" }).textContent).not.toContain("On board");
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("submits chosen stops and GPS once and only announces a confirmed join", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response('{"joined":true}')); vi.stubGlobal("fetch", fetchMock);
-    const { user, joined, board } = await prepare(); await user.click(board);
+    const { joined, arrive } = await prepare();
+    // Nothing is sent, and location is not asked for, until the bus reaches the stop.
+    await new Promise(resolve => setTimeout(resolve, 50));
+    expect(gps).not.toHaveBeenCalled(); expect(fetchMock).not.toHaveBeenCalled();
+    arrive();
     await waitFor(() => expect(joined).toHaveBeenCalledOnce());
+    arrive(); arrive();
     expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({ boardingStopId: "alpha", alightingStopId: "beta", lat: 23, lng: 72, accuracy: 10 });
     expect(new Headers(fetchMock.mock.calls[0][1].headers).get("ngrok-skip-browser-warning")).toBe("1");
     expect(gps).toHaveBeenCalledOnce();
-    // On board: Board leaves the drawer, focus stays in it and the change is announced.
-    expect(screen.queryByRole("button", { name: "Board" })).toBeNull();
+    expect(fetchMock).toHaveBeenCalledOnce();
+    // On board: focus stays in the drawer and the change is announced.
     expect(screen.getByRole("group", { name: "Your trip" }).textContent).toContain("On board");
     expect(document.activeElement).toBe(screen.getByRole("button", { name: "Show trip" }));
     expect(screen.getAllByRole("status").some(region => region.textContent?.includes("On board"))).toBe(true);
@@ -218,15 +237,32 @@ describe("passenger boarding workflow", () => {
 
   it("does not call the API or confirm boarding when location permission is denied", async () => {
     gps.mockImplementation((_success, error) => error({ code: 1 }));
-    const fetchMock = vi.fn(); vi.stubGlobal("fetch", fetchMock);
-    const { user, joined, board } = await prepare(); await user.click(board);
+    const fetchMock = vi.fn().mockResolvedValue(new Response('{"joined":true}')); vi.stubGlobal("fetch", fetchMock);
+    const { user, joined, arrive } = await prepare(); arrive();
     expect(await screen.findByRole("alert")).toHaveProperty("textContent", "Location access is required to board this bus.");
     expect(fetchMock).not.toHaveBeenCalled(); expect(joined).not.toHaveBeenCalled();
+    // It is not retried by itself; Try again checks once more.
+    arrive();
+    expect(gps).toHaveBeenCalledOnce();
+    gps.mockImplementation(success => success({ coords: { latitude: 23, longitude: 72, accuracy: 10 } }));
+    await user.click(screen.getByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(joined).toHaveBeenCalledOnce());
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+  });
+
+  it("boards a passenger who names a stop the bus has already left, as they may be on it", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response('{"joined":true}')); vi.stubGlobal("fetch", fetchMock);
+    const joined = vi.fn();
+    render(<PassengerBoardingView sessionId="qa-session" route={route} tripState="in_service" onJoined={joined}
+      stopEstimates={{ context: "s", minutes: { gamma: 2 }, nextStopIndex: 2 }} />);
+    await chooseStops(userEvent.setup(), "Beta", "Gamma");
+    await waitFor(() => expect(joined).toHaveBeenCalledOnce());
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({ boardingStopId: "beta", alightingStopId: "gamma", lat: 23 });
   });
 
   it.each(["{}", "null", "{\"joined\":false}", "<html>warning</html>"])("does not announce a joined ride for %s", async body => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(body)));
-    const { user, joined, board } = await prepare(); await user.click(board);
+    const { joined, arrive } = await prepare(); arrive();
     expect(await screen.findByRole("alert")).toBeTruthy(); expect(joined).not.toHaveBeenCalled();
   });
 
@@ -268,32 +304,27 @@ describe("passenger boarding workflow", () => {
 
   it("aborts an in-flight join when the boarding view unmounts", async () => {
     const fetchMock = vi.fn((_url, options) => new Promise((_resolve, reject) => options.signal.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")))));
-    vi.stubGlobal("fetch", fetchMock); const { user, joined, board } = await prepare();
-    await user.click(board); await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    vi.stubGlobal("fetch", fetchMock); const { joined, arrive } = await prepare();
+    arrive(); await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
     cleanup(); expect(fetchMock.mock.calls[0][1].signal.aborted).toBe(true); expect(joined).not.toHaveBeenCalled();
   });
 });
 
 describe("demo ride boarding", () => {
-  const approaching = { context: "demo", minutes: { beta: 3, gamma: 6 }, nextStopIndex: 1 };
+  const approachingBeta = { context: "demo", minutes: { beta: 3, gamma: 6 }, nextStopIndex: 1 };
   const atBeta = { context: "demo", minutes: { gamma: 3 }, nextStopIndex: 2, atStopIndex: 1 };
 
-  it("says boarding is simulated, and refuses Board until the bus reaches the stop, as the 150 m check would", async () => {
+  it("marks a demo passenger on board when the demo bus reaches their stop, without location or the backend", async () => {
     const fetchMock = vi.fn(); vi.stubGlobal("fetch", fetchMock);
     const joined = vi.fn();
     const props = { sessionId: "demo-1", route, tripState: "in_service" as const, demo: true, onJoined: joined };
-    const view = render(<PassengerBoardingView {...props} stopEstimates={approaching} />);
-    const user = userEvent.setup();
-    const board = await chooseStops(user, "Beta", "Gamma");
-    expect(screen.getByText("Demo ride: boarding is simulated and does not use your location.")).toBeTruthy();
-    await user.click(board);
-    expect((await screen.findByRole("alert")).textContent).toBe("You must be near the bus to board. Wait until the demo bus reaches Beta.");
-    // The reason expires when the bus arrives; then boarding goes through.
-    view.rerender(<PassengerBoardingView {...props} stopEstimates={atBeta} />);
+    const view = render(<PassengerBoardingView {...props} stopEstimates={approachingBeta} />);
+    const drawer = await chooseStops(userEvent.setup(), "Beta", "Gamma");
+    expect(screen.getByText(DEMO_NOTICE)).toBeTruthy();
+    expect(drawer.textContent).toContain("Bus in 3 min");
     expect(screen.queryByRole("alert")).toBeNull();
-    expect(screen.getByRole("group", { name: "Your trip" }).textContent).toContain("Bus is here");
-    await user.click(screen.getByRole("button", { name: "Board" }));
-    expect(screen.getByText("Boarding the demo bus…")).toBeTruthy();
+    view.rerender(<PassengerBoardingView {...props} stopEstimates={atBeta} />);
+    expect(await screen.findByText("The demo bus has reached your stop. Marking you on board…")).toBeTruthy();
     await waitFor(() => expect(joined).toHaveBeenCalledOnce(), { timeout: DEMO_BOARDING_MS + 1_000 });
     expect(gps).not.toHaveBeenCalled();
     expect(fetchMock).not.toHaveBeenCalled();
@@ -303,13 +334,9 @@ describe("demo ride boarding", () => {
   it("tells a passenger whose stop the demo bus has left to choose one ahead", async () => {
     render(<PassengerBoardingView sessionId="demo-1" route={route} tripState="in_service" demo
       stopEstimates={{ context: "demo", minutes: { gamma: 2 }, nextStopIndex: 2 }} />);
-    const user = userEvent.setup();
-    await user.click(screen.getByRole("combobox", { name: "Boarding stop" }));
     // Every boarding choice is behind the bus, so the passed stops are already open.
-    await user.click(screen.getByRole("option", { name: "Beta" }));
-    await user.click(screen.getByRole("option", { name: "Gamma" }));
-    await user.click(await screen.findByRole("button", { name: "Board" }, DOCKED));
+    await chooseStops(userEvent.setup(), "Beta", "Gamma");
     expect((await screen.findByRole("alert")).textContent).toBe("The demo bus has already left Beta. Choose a stop ahead of it.");
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
   });
 });
-

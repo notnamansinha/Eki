@@ -155,18 +155,20 @@ test("field ride 29 Oct 2026: A marked at A, B at B, GNSS loss and silence shown
   await expect(page.getByRole("option", { name: "Alpha", exact: true })).toContainText("Passed");
   await picker.press("Escape");
   await page.screenshot({ path: info.outputPath("at-beta.png"), fullPage: true });
-  // Board appears once both stops are set, in the drawer the bar slides into.
+  // Both stops set: the bar slides into the drawer, waiting for the bus at Gamma.
   await page.getByRole("combobox", { name: "Boarding stop" }).click();
-  await page.getByRole("option", { name: "Beta", exact: true }).click();
+  await page.getByRole("option", { name: "Gamma", exact: true }).click();
   await page.getByRole("option", { name: "Delta", exact: true }).click();
   await page.clock.runFor(1_000);
-  await expect(page.getByRole("button", { name: "Board", exact: true })).toBeEnabled();
+  const trip = page.getByRole("group", { name: "Your trip", exact: true });
+  await expect(trip).toContainText("Gamma");
+  await expect(page.getByRole("button", { name: "Board", exact: true })).toHaveCount(0);
 
   // GNSS disconnected: the single loss packet is reported at once, boarding withheld.
   await page.getByRole("button", { name: "Publish GNSS loss", exact: true }).click();
   await expect(page.getByText("GPS signal lost").first()).toBeVisible();
   // The card stays (a chosen stop or "On board" survives the blip); boarding waits for GPS.
-  await expect(page.getByRole("button", { name: "Board", exact: true })).toBeDisabled();
+  await expect(trip).toContainText("Gamma");
   await expect(page.getByText("Boarding resumes when live tracking returns.")).toBeVisible();
   await expect(page.getByTitle(/GPS signal lost, last known location/)).toBeVisible();
   await page.screenshot({ path: info.outputPath("gnss-lost.png"), fullPage: true });

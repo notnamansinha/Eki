@@ -24,19 +24,16 @@ const prepareBoarding = async (page: Page) => {
   await page.getByRole('button', { name: 'Track Synthetic route', exact: true }).click();
   await page.getByRole('combobox', { name: 'Boarding stop', exact: true }).click();
   await choose(page, 'Synthetic origin');
-  // The list moves straight on to the destination, then the bar slides into the drawer with Board.
+  // The list moves straight on to the destination, then the bar slides into the drawer.
   await choose(page, 'Synthetic end');
-  await expect(page.getByRole('button', { name: 'Board', exact: true })).toBeVisible();
+  await expect(page.getByRole('group', { name: 'Your trip', exact: true })).toBeVisible();
 };
 const onBoard = (page: Page) => page.getByRole('group', { name: 'Your trip', exact: true }).getByText('On board', { exact: true });
+// There is no Board button. The synthetic bus has already reached the origin,
+// so choosing it sends the join with one location fix, as on arrival.
 const board = async (page: Page) => {
   await prepareBoarding(page);
-  const boardButton = page.getByRole('button', { name: 'Board', exact: true });
-  expect(await boardButton.evaluate(element => {
-    const bounds = element.getBoundingClientRect();
-    return element.contains(document.elementFromPoint(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2));
-  })).toBe(true);
-  await page.getByRole('button', { name: 'Board', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Board', exact: true })).toHaveCount(0);
   await expect(onBoard(page)).toBeVisible();
 };
 
@@ -219,11 +216,11 @@ test('boards through real auth API and persistence then restores one membership 
 });
 
 test('boards without requesting a code and records one authenticated passenger', async ({ page, request }, info) => {
-  await page.goto('/'); await login(page); await prepareBoarding(page);
+  await page.goto('/'); await login(page);
+  const submitted = page.waitForRequest(req => req.url().endsWith('/api/sessions/qa_session/join') && req.method() === 'POST');
+  await prepareBoarding(page);
   await expect(page.getByRole('textbox', { name: 'Boarding code' })).toHaveCount(0);
   await expect(page.getByText(/8-character|8-CHAR CODE/)).toHaveCount(0);
-  const submitted = page.waitForRequest(req => req.url().endsWith('/api/sessions/qa_session/join') && req.method() === 'POST');
-  await page.getByRole('button', { name: 'Board', exact: true }).click();
   expect((await submitted).postDataJSON()).not.toHaveProperty('boardingCode');
   await expect(onBoard(page)).toBeVisible();
   expect((await evidence(request)).passengerIds).toEqual(['qa_passenger']);
@@ -233,8 +230,8 @@ test('boards without requesting a code and records one authenticated passenger',
 test('rejects distant geolocation without a manifest or optimistic success', async ({ page, context, request }) => {
   await context.setGeolocation({ latitude: 23.02, longitude: 72, accuracy: 5 });
   await page.goto('/'); await login(page); await prepareBoarding(page);
-  await page.getByRole('button', { name: 'Board', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('near the bus');
+  await expect(page.getByRole('button', { name: 'Try again', exact: true })).toBeVisible();
   expect((await evidence(request)).passengerIds).toEqual([]);
   await expect(onBoard(page)).toHaveCount(0);
 });

@@ -40,11 +40,12 @@ const PREPARATION_TIMEOUT_MS = 10_000;
 const BOARDING_API_TIMEOUT_MS = 10_000;
 /** The full From → To bar stays up this long after both stops are set, then slides into the drawer. */
 export const TRIP_DOCK_DELAY_MS = 900;
-/** Shown beside Board before the first join, so it comes before the browser's location prompt. */
-export const LOCATION_NOTICE = "Boarding shares your location once to check that you are at the stop.";
-const DEMO_NOTICE = "Demo ride: boarding is simulated and does not use your location.";
-const JOINING_NOTICE = "Verifying your boarding stops and live bus position…";
-const DEMO_JOINING_NOTICE = "Boarding the demo bus…";
+/** Shown in the drawer until the first join, so it comes before the browser's location prompt. */
+export const LOCATION_NOTICE = "When the bus reaches your stop, Eki checks your location once to mark you on board.";
+export const DEMO_NOTICE = "Demo ride: you are marked on board when the bus reaches your stop. Your location is not used.";
+const JOINING_NOTICE = "The bus has reached your stop. Checking your location to mark you on board…";
+const UPDATING_NOTICE = "Updating your stops…";
+const DEMO_JOINING_NOTICE = "The demo bus has reached your stop. Marking you on board…";
 
 function untilCancelled<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -122,8 +123,6 @@ export default function PassengerBoardingView({
   const [alightingStopId, setAlightingStopId] = useState(destinationStopId ?? "");
   const [joinState, setJoinState] = useState<JoinState>("idle");
   const [joinError, setJoinError] = useState("");
-  // A demo Board tapped before the bus arrived: the reason expires when it does.
-  const [demoTooEarly, setDemoTooEarly] = useState(false);
   const [hasJoined, setHasJoined] = useState(false);
   const [renderedSessionId, setRenderedSessionId] = useState(sessionId);
   const [renderedDestination, setRenderedDestination] = useState(destinationStopId);
@@ -142,12 +141,14 @@ export default function PassengerBoardingView({
   const rootRef = useRef<HTMLDivElement>(null);
   const fromRef = useRef<HTMLButtonElement>(null);
   const toRef = useRef<HTMLButtonElement>(null);
-  const boardRef = useRef<HTMLButtonElement>(null);
+  const retryRef = useRef<HTMLButtonElement>(null);
   const showTripRef = useRef<HTMLButtonElement>(null);
   const dockTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const focusOnDock = useRef(false);
   const focusOnOpen = useRef(false);
   const focusAfterJoin = useRef(false);
+  // The trip (session and stops) last sent to boarding, so each is sent once.
+  const submittedTrip = useRef<string | null>(null);
   // The parent's callback may change identity each render; keep effects stable.
   const boardingChange = useRef(onBoardingStopChange);
   useEffect(() => { boardingChange.current = onBoardingStopChange; });
@@ -186,6 +187,7 @@ export default function PassengerBoardingView({
     let current = true;
     queueMicrotask(() => {
       if (!current || !mountedRef.current || sessionRef.current !== sessionId) return;
+      submittedTrip.current = `${sessionId}|${restoredBoarding.boardingStopId}|${restoredBoarding.alightingStopId ?? ""}`;
       setBoardingStopId(restoredBoarding.boardingStopId);
       boardingChange.current?.(restoredBoarding.boardingStopId);
       setAlightingStopId(restoredBoarding.alightingStopId ?? "");
@@ -209,7 +211,8 @@ export default function PassengerBoardingView({
   // Stops are in ride order, so a trip runs from the boarding stop to a later one.
   const stopsChosen = boardingIndex >= 0 && alightingIndex > boardingIndex;
   const docked = stopsChosen && !expanded && picker === null;
-  const onBoard = joinState === "joined";
+  // Still on board while changed stops are being sent.
+  const onBoard = hasJoined && joinState !== "error";
   const detailFor = (index: number) => stopEstimateLabel(stopEstimates, stops[index].id, index);
   const boardingDetail = boarding ? detailFor(boardingIndex) : "";
   const alightingDetail = alighting ? detailFor(alightingIndex) : "";
@@ -235,14 +238,16 @@ export default function PassengerBoardingView({
     .filter(Boolean).join(" · ");
   const delayed = liveHealth?.state === "delayed";
   const healthDescription = liveHealth ? describeLiveBusHealth(liveHealth) : undefined;
-  const boardDisabled = joinState === "joining" || onBoard || !stopsChosen || Boolean(boardingBlockedReason);
+  const boardingVisit = boardingIndex >= 0 ? progress?.states[boardingIndex] : undefined;
+  // The bus has reached the boarding stop: it is there, or it has been and
+  // gone (a passenger already on it is still within the 150 m check).
+  const busReachedBoarding = boardingVisit === "at" || isBehindBus(boardingVisit);
 
-  const demoBusArrived = demoTooEarly && progress?.states[boardingIndex] === "at";
-  // Beside Board: what is happening now, else why it cannot board, else the
-  // location notice until the first join (FR-PAS-053).
+  // Above the drawer: what is happening now, else why boarding waits, else
+  // the location notice until the first join (FR-PAS-053).
   const note: { text: string; tone?: "danger"; role?: "alert" | "status" } | undefined =
-    joinState === "error" && joinError && !demoBusArrived ? { text: joinError, tone: "danger", role: "alert" }
-    : joinState === "joining" ? { text: demo ? DEMO_JOINING_NOTICE : JOINING_NOTICE, role: "status" }
+    joinState === "error" && joinError ? { text: joinError, tone: "danger", role: "alert" }
+    : joinState === "joining" ? { text: demo ? DEMO_JOINING_NOTICE : hasJoined ? UPDATING_NOTICE : JOINING_NOTICE, role: "status" }
     : onBoard ? undefined
     : boardingBlockedReason && stopsChosen ? { text: boardingBlockedReason }
     : stopsChosen && !hasJoined ? { text: demo ? DEMO_NOTICE : LOCATION_NOTICE }
@@ -269,9 +274,9 @@ export default function PassengerBoardingView({
       return;
     }
 
+    submittedTrip.current = `${sessionId}|${boardingStopId}|${alightingStopId}`;
     setJoinState("joining");
     setJoinError("");
-    setDemoTooEarly(false);
     const updatingExistingPassenger = hasJoined;
     const controller = new AbortController();
     joinAbortRef.current = controller;
@@ -282,15 +287,10 @@ export default function PassengerBoardingView({
       getAuthVerificationGeneration() === authGeneration;
     try {
       if (demo) {
-        // Like the backend's 150 m check: the demo bus has to be at the stop,
-        // or about to reach it, before a first boarding succeeds.
-        const visit = progress?.states[boardingIndex];
-        const arriving = visit === "next" && /^(<1|1) min$/.test(boardingDetail);
-        if (!updatingExistingPassenger && visit !== "at" && !arriving) {
-          setDemoTooEarly(!isBehindBus(visit));
-          throw new Error(isBehindBus(visit)
-            ? `The demo bus has already left ${stops[boardingIndex].name}. Choose a stop ahead of it.`
-            : `You must be near the bus to board. Wait until the demo bus reaches ${stops[boardingIndex].name}.`);
+        // There is no passenger to locate, so a first boarding needs the demo
+        // bus at the stop; one that has left it went without them.
+        if (!updatingExistingPassenger && boardingVisit !== "at") {
+          throw new Error(`The demo bus has already left ${stops[boardingIndex].name}. Choose a stop ahead of it.`);
         }
         await boardDemoRide(controller.signal);
       } else {
@@ -322,8 +322,8 @@ export default function PassengerBoardingView({
         }
       }
       if (!isCurrent()) return;
-      // Board leaves the drawer once on board; keep keyboard focus in it.
-      focusAfterJoin.current = document.activeElement === boardRef.current;
+      // Try again leaves the drawer once on board; keep keyboard focus in it.
+      focusAfterJoin.current = document.activeElement === retryRef.current;
       setHasJoined(true);
       setJoinState("joined");
       onJoined?.();
@@ -348,8 +348,23 @@ export default function PassengerBoardingView({
   const selectionChanged = () => {
     if (joinState === "joined" || joinState === "error") setJoinState("idle");
     setJoinError("");
-    setDemoTooEarly(false);
   };
+
+  // There is no Board button: the passenger is marked on board when the bus
+  // reaches their stop, and changed stops are sent once they are on board.
+  // Each trip is sent once; after a failure only Try again sends it again.
+  const tripKey = `${sessionId}|${boardingStopId}|${alightingStopId}`;
+  const readyToSend = stopsChosen && !boardingBlockedReason && joinState !== "joining" &&
+    (hasJoined || busReachedBoarding);
+  const joinLatest = useRef(joinRide);
+  useEffect(() => { joinLatest.current = joinRide; });
+  useEffect(() => {
+    if (!readyToSend || submittedTrip.current === tripKey) return;
+    submittedTrip.current = tripKey;
+    let current = true;
+    queueMicrotask(() => { if (current) void joinLatest.current(); });
+    return () => { current = false; };
+  }, [readyToSend, tripKey]);
 
   const cancelDock = () => {
     if (dockTimer.current) clearTimeout(dockTimer.current);
@@ -368,7 +383,6 @@ export default function PassengerBoardingView({
   };
 
   const openPicker = (field: PickerField, index?: number, fromKeyboard = false) => {
-    if (joinState === "joining") return;
     setKeyboardNavigation(fromKeyboard);
     cancelDock();
     const choices = selectableIndices(field);
@@ -443,7 +457,7 @@ export default function PassengerBoardingView({
     if (docked) {
       if (!focusOnDock.current) return;
       focusOnDock.current = false;
-      (boardRef.current ?? showTripRef.current)?.focus({ preventScroll: true });
+      (retryRef.current ?? showTripRef.current)?.focus({ preventScroll: true });
       return;
     }
     if (!focusOnOpen.current) return;
@@ -458,7 +472,7 @@ export default function PassengerBoardingView({
   }, [onBoard]);
 
   // A reopened bar tucks back into the drawer on a tap outside it, or Escape.
-  const tuckable = stopsChosen && expanded && picker === null && joinState !== "joining";
+  const tuckable = stopsChosen && expanded && picker === null;
   useEffect(() => {
     if (!tuckable) return;
     const outside = (event: PointerEvent) => {
@@ -499,7 +513,6 @@ export default function PassengerBoardingView({
   });
 
   const handleKeyDown = (field: PickerField) => (event: KeyboardEvent<HTMLButtonElement>) => {
-    if (joinState === "joining") return;
     const open = picker === field;
     const choices = selectableIndices(field);
     if (choices.length === 0) return;
@@ -550,10 +563,13 @@ export default function PassengerBoardingView({
     "aria-expanded": picker === field,
     "aria-controls": picker === field ? listId : undefined,
     "aria-activedescendant": picker === field && activeIndex !== undefined ? optionId(activeIndex) : undefined,
-    disabled: joinState === "joining" || stops.length < 2,
+    disabled: stops.length < 2,
   });
   // Tapping the field that is already open keeps its list open.
   const openOnClick = (field: PickerField) => { if (picker !== field) openPicker(field); };
+
+  // A failed check can be tried again; the demo has no location to retry with.
+  const canRetry = joinState === "error" && !demo && stopsChosen && !boardingBlockedReason;
 
   const fromKicker = !boarding ? "From" : onBoard ? "From · on board" : `From · ${busEta(boardingDetail)}`;
   const toKicker = alighting && !/^Passed/.test(alightingDetail) ? `To · ${alightingDetail === "Bus is here" ? "bus is here" : alightingDetail}` : "To";
@@ -592,19 +608,12 @@ export default function PassengerBoardingView({
             <p className="pp-trip-drawer-title" data-tone={onBoard ? "live" : undefined}>{onBoard ? "On board" : boarding.name}</p>
             <p className="pp-trip-drawer-detail">{onBoard ? rideEta(alightingDetail, alighting.name) : busEta(boardingDetail, true)}</p>
           </div>
-          {!onBoard && (
-            <button
-              ref={boardRef}
-              type="button"
-              className="pp-trip-board"
-              onClick={() => void joinRide()}
-              disabled={boardDisabled}
-              aria-describedby={note && joinState !== "joining" ? noteId : undefined}
-              aria-busy={joinState === "joining" || undefined}
-            >
-              {joinState === "joining"
-                ? <><Loader2 className="size-5 animate-spin motion-reduce:animate-none" aria-hidden="true" /><span className="sr-only">Checking…</span></>
-                : "Board"}
+          {joinState === "joining" && (
+            <Loader2 className="pp-trip-checking size-5 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+          )}
+          {canRetry && (
+            <button ref={retryRef} type="button" className="pp-trip-board" onClick={() => void joinRide()} aria-describedby={noteId}>
+              Try again
             </button>
           )}
         </div>

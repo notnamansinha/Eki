@@ -2,7 +2,7 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 
 // The demo ride end to end on the real passenger layout, workspace, boarding
 // view and map logic: listed under Practice, the Thumb drawer stop picker,
-// boarding at the stop and the end of the ride. The page clock compresses the
+// being marked on board when the bus reaches the stop, and the end of the ride. The page clock compresses the
 // scripted ride (about five minutes) into seconds.
 
 const box = async (locator: Locator) => (await locator.boundingBox())!;
@@ -15,6 +15,8 @@ async function runUntil(page: Page, done: () => Promise<boolean>, stepMs = 2_000
 }
 
 test("the demo ride is listed under Practice and rides end to end with the Thumb drawer", async ({ page }, info) => {
+  // The page clock runs the whole scripted ride; leave room on a slow runner.
+  test.setTimeout(240_000);
   const errors: string[] = [];
   page.on("pageerror", error => errors.push(error.message));
   page.on("console", message => { if (message.type() === "error") errors.push(message.text()); });
@@ -57,12 +59,15 @@ test("the demo ride is listed under Practice and rides end to end with the Thumb
   await expect(page.getByRole("button", { name: /^Show stop Gurukul Road/ })).toBeVisible();
   await page.screenshot({ path: info.outputPath("05-trip-bar.png") });
 
-  // Then it slides into the right edge: stop, bus ETA and Board.
+  // Then it slides into the right edge: the stop and the bus ETA. There is
+  // no Board button; the passenger is boarded when the bus gets there.
   await page.clock.runFor(1_000);
   const drawer = page.getByRole("group", { name: "Your trip" });
   await expect(drawer).toContainText("Gurukul Road");
   await expect(drawer).toContainText(/Bus in \d+ min/);
-  await expect(page.getByText("Demo ride: boarding is simulated and does not use your location.")).toBeVisible();
+  await expect(page.getByText("Demo ride: you are marked on board when the bus reaches your stop. Your location is not used.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Board", exact: true })).toHaveCount(0);
+  await expect(drawer.getByRole("button")).toHaveCount(1);
   const drawerBox = await box(drawer);
   if (viewport.width < 544) {
     expect(drawerBox.x + drawerBox.width).toBeGreaterThanOrEqual(viewport.width - 1);
@@ -70,26 +75,16 @@ test("the demo ride is listed under Practice and rides end to end with the Thumb
   }
   await page.screenshot({ path: info.outputPath("06-drawer.png") });
 
-  // Board too early, as the 150 m check would refuse it.
-  const board = page.getByRole("button", { name: "Board", exact: true });
-  await board.click();
-  await expect(page.getByRole("alert")).toHaveText("You must be near the bus to board. Wait until the demo bus reaches Gurukul Road.");
-  await runUntil(page, async () => /Bus is here/.test(await drawer.textContent() ?? ""));
-  await expect(page.getByRole("alert")).toHaveCount(0);
+  // The bus reaches Gurukul Road and the passenger is marked on board.
+  const marking = page.getByText("The demo bus has reached your stop. Marking you on board…");
+  await runUntil(page, () => marking.isVisible(), 1_000);
   await expect(peek).toContainText("At Gurukul Road");
-  // Board is what a tap at its centre reaches.
-  expect(await board.evaluate(element => {
-    const rect = element.getBoundingClientRect();
-    const top = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2);
-    return top === element || element.contains(top);
-  })).toBe(true);
+  await expect(page.getByRole("alert")).toHaveCount(0);
   await page.screenshot({ path: info.outputPath("07-bus-here.png") });
-  await board.click();
-  await expect(page.getByText("Boarding the demo bus…")).toBeVisible();
   await page.clock.runFor(1_500);
   await expect(drawer).toContainText("On board");
   await expect(drawer).toContainText(/\d+ min to Ahmedabad University/);
-  await expect(board).toHaveCount(0);
+  await expect(marking).toHaveCount(0);
   await page.screenshot({ path: info.outputPath("08-on-board.png") });
 
   // ‹ pulls the full bar back out; Escape tucks it away.
@@ -100,7 +95,7 @@ test("the demo ride is listed under Practice and rides end to end with the Thumb
   await expect(drawer).toBeVisible();
 
   // The ride ends at the terminus without asking for feedback.
-  await runUntil(page, () => page.getByText("Demo ride complete").isVisible(), 5_000);
+  await runUntil(page, () => page.getByText("Demo ride complete").isVisible(), 10_000);
   await page.screenshot({ path: info.outputPath("10-complete.png") });
   await page.getByRole("button", { name: "Return to live routes" }).click();
   await expect(page.getByRole("button", { name: "Try the demo ride" })).toBeVisible();

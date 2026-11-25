@@ -144,12 +144,18 @@ Choosing opens the route timeline as the comboboxes' listbox
 (`StopPickerSheet`): the same rail and live ETAs, passed stops folded behind
 "N passed stops", stops that cannot be chosen kept as disabled options. With
 both stops set the bar shows the trip for 0.9 s, then slides into a drawer on
-the right edge with the stop, the bus ETA and Board; ‹ pulls it back out, and
+the right edge with the stop and the bus ETA; ‹ pulls it back out, and
 a tap on the map or Escape tucks it away. The timeline peek names the next
 stop or the stop the bus is at, with a Live chip; the ride status stays in a
 visually hidden polite live region. Keep the combobox names ("Boarding stop",
-"Destination station") and Board's name, the location notice beside Board
-before the first join, 44 px targets and the focus moves in FR-PAS-058.
+"Destination station"), the location notice above the drawer before the first
+join, 44 px targets and the focus moves in FR-PAS-058.
+
+There is no Board button (2026-11-25, at the user's request). The passenger is
+boarded once the bus has reached the boarding stop: at the stop, or already
+past it, since a passenger on board is still within the 150 m check. Each trip
+is sent once and a failed check offers Try again rather than retrying by
+itself (FR-PAS-052).
 
 ## Demo ride (2026-11-25)
 
@@ -158,7 +164,7 @@ below "No buses running", so the stop picker and boarding can be tried
 without a bus. `src/lib/demoRide.ts` simulates it in the browser on fixed
 road geometry (OpenStreetMap, ODbL) and publishes the same live-bus shape as
 RTDB through `src/lib/passengerLiveSource.ts`. It never contacts Firebase or
-the backend, offers no chat or walking-time notice, refuses Board until the
-bus is at the stop (as the 150 m check would) and ends without feedback.
+the backend, offers no chat or walking-time notice, boards the passenger when
+the demo bus is at their stop and ends without feedback.
 Keep it marked "Not a real bus" and out of the route count.
 `NEXT_PUBLIC_DEMO_RIDE=false` hides it.

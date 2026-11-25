@@ -98,7 +98,8 @@ describe("riding the demo", () => {
     await user.click(await screen.findByRole("combobox", { name: "Boarding stop" }));
     await user.click(screen.getByRole("option", { name: "Doordarshan Kendra" }));
     await user.click(screen.getByRole("option", { name: "Ahmedabad University" }));
-    await user.click(await screen.findByRole("button", { name: "Board" }));
+    // The demo bus is waiting at Doordarshan Kendra, so there is nothing to tap.
+    expect(screen.queryByRole("button", { name: "Board" })).toBeNull();
     await waitFor(() => expect(screen.getByRole("group", { name: "Your trip" }).textContent).toContain("On board"));
     expect(navigator.geolocation.getCurrentPosition).not.toHaveBeenCalled();
     expect(fetchMock).not.toHaveBeenCalled();
