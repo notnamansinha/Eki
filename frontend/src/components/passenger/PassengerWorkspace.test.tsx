@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
-import { lazy, Suspense, type ComponentType } from "react";
+import { lazy, Suspense, type ComponentProps, type ComponentType } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, configure, fireEvent, render, screen, act, waitFor } from "@testing-library/react";
+import { cleanup, configure, fireEvent, render, screen, act, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import PassengerWorkspace from "./PassengerWorkspace";
 import { BUS_EXPIRY_MS } from "@/lib/liveBusFreshness";
@@ -18,19 +18,38 @@ vi.mock("@/hooks/useRTDBResume", async () => import("../../../../e2e/fixtures/st
 vi.mock("@/lib/liveBusStore", async () => import("../../../../e2e/fixtures/state"));
 vi.mock("@/lib/joinedRideStatus", async () => import("../../../../e2e/fixtures/state"));
 vi.mock("@/lib/authState", async () => import("../../../../e2e/fixtures/state"));
+// An in-memory stand-in for the ride chat messages in Firestore. The real chat
+// unread hook always listens to it; the real chat panel does when `realPanel` is set.
+type ChatSnapshot = { docs: { id: string; data: () => Record<string, unknown> }[]; metadata: { fromCache: boolean } };
+const chat = vi.hoisted(() => ({ listen: vi.fn(), listeners: new Set<(snapshot: ChatSnapshot) => void>(),
+  latest: null as ChatSnapshot | null, realPanel: false }));
+vi.mock("@/lib/firebaseFirestore", () => ({ db: {} }));
+vi.mock("@/lib/firebaseAuth", () => ({ auth: { currentUser: { uid: "qa-passenger", getIdToken: async () => "test-token" } } }));
+vi.mock("firebase/firestore", () => ({ collection: vi.fn(), query: vi.fn(), orderBy: vi.fn(), limitToLast: vi.fn(), onSnapshot: chat.listen, Timestamp: class {} }));
 vi.mock("next/dynamic", () => ({ default: (loader: () => Promise<{ default: ComponentType<Record<string, unknown>> }>) => {
   const Loaded = lazy(loader);
   return function TestDynamic(props: Record<string, unknown>) { return <Suspense><Loaded {...props} /></Suspense>; };
 } }));
 vi.mock("@/components/maps/PassengerTrackingMap", () => ({ default: ({ targetStop, selectedDestinationStopId, route, selectedBusKey, onStopEstimatesChange }: PassengerMapProps) => <div data-testid="tracking-map" data-target={targetStop.id} data-selected={selectedDestinationStopId ?? ""}>QA map<button onClick={() => route && onStopEstimatesChange?.({ context: stopEstimateContext(route, selectedBusKey), minutes: { b: 3 } })}>Publish estimates</button></div> }));
-vi.mock("@/components/passenger/PassengerBoardingView", () => ({ default: ({ sessionId, stopEstimates }: { sessionId: string; stopEstimates?: PassengerStopEstimates }) => <><div>Boarding {sessionId}</div><span data-testid="boarding-eta">{stopEstimates?.minutes.b ?? "unknown"}</span></> }));
+vi.mock("@/components/passenger/PassengerBoardingView", () => ({ default: ({ sessionId, stopEstimates, onJoined }: { sessionId: string; stopEstimates?: PassengerStopEstimates; onJoined?: () => void }) => <><div>Boarding {sessionId}</div><span data-testid="boarding-eta">{stopEstimates?.minutes.b ?? "unknown"}</span><button onClick={() => onJoined?.()}>QA join {sessionId}</button></> }));
 vi.mock("@/components/passenger/AccountTab", () => ({ default: () => <button>QA account control</button> }));
 vi.mock("@/components/passenger/RoutesTab", () => ({ default: () => <h2>QA route schedules</h2> }));
-vi.mock("@/components/shared/MessagingPanel", () => ({ default: () => <div>QA chat</div> }));
+vi.mock("@/components/shared/MessagingPanel", async importOriginal => {
+  const { default: RealPanel } = await importOriginal<typeof import("@/components/shared/MessagingPanel")>();
+  return { default: (props: ComponentProps<typeof RealPanel>) => chat.realPanel ? <RealPanel {...props} /> : <div>QA chat</div> };
+});
 vi.mock("@/components/shared/FeedbackModal", () => ({ default: () => <div>QA feedback</div> }));
 beforeEach(() => {
   window.history.replaceState(null, "", window.location.pathname);
   setScenario("pending");
+  chat.realPanel = false; chat.latest = null; chat.listeners.clear();
+  chat.listen.mockReset().mockImplementation((_query: unknown, ...handlers: unknown[]) => {
+    const next = handlers.find(handler => typeof handler === "function") as (snapshot: ChatSnapshot) => void;
+    chat.listeners.add(next);
+    // As from a Firestore target that already holds data, a new listener gets the latest snapshot.
+    queueMicrotask(() => { if (chat.latest && chat.listeners.has(next)) next(chat.latest); });
+    return () => { chat.listeners.delete(next); };
+  });
 });
 afterEach(() => { cleanup(); vi.useRealTimers(); });
 describe("passenger workspace navigation", () => {
@@ -221,6 +240,16 @@ describe("passenger workspace navigation", () => {
     await user.click(screen.getByRole("button", { name: "Live" }));
     expect(await screen.findByRole("button", { name: "Track QA route" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "QA account control" })).toBeNull();
+  });
+  it("does not watch the chat of a ride the passenger has not joined", async () => {
+    // Only a session's manifest may read its messages, so there is nothing to count.
+    setScenario("forward"); render(<PassengerWorkspace />); const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Track QA route" }));
+    await user.click(await screen.findByRole("button", { name: "Open live chat" }));
+    await screen.findByText("QA chat");
+    await user.click(screen.getByRole("button", { name: "Close live chat" }));
+    expect(chat.listen).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Open live chat" }).querySelector(".pp-unread")).toBeNull();
   });
   it("does not ask an unjoined passenger for post-ride feedback", async () => {
     render(<PassengerWorkspace />); const user = userEvent.setup();
@@ -572,5 +601,70 @@ describe("passenger live data permission denial", () => {
       expect(screen.getAllByText(/This is not a connection problem/).length).toBeGreaterThan(0);
       expect(screen.queryByText("Check your connection, then try again.")).toBeNull();
     } finally { detail.mockRestore(); }
+  });
+});
+describe("joined ride chat unread badge", () => {
+  // The real panel scrolls to the newest message; jsdom has no layout or media queries.
+  const scrollIntoView = Object.getOwnPropertyDescriptor(Element.prototype, "scrollIntoView");
+  beforeEach(() => {
+    chat.realPanel = true;
+    vi.stubGlobal("matchMedia", (query: string) => ({ matches: false, media: query, addEventListener: () => {}, removeEventListener: () => {} }));
+    Object.defineProperty(Element.prototype, "scrollIntoView", { configurable: true, value: () => {} });
+  });
+  afterEach(() => {
+    localStorage.clear(); vi.unstubAllGlobals();
+    if (scrollIntoView) Object.defineProperty(Element.prototype, "scrollIntoView", scrollIntoView);
+    else delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView;
+  });
+  // IDs starting with "p" are the passenger's own messages; the rest are the driver's.
+  const deliver = (...ids: string[]) => act(() => {
+    const snapshot = { docs: ids.map(id => ({ id, data: () => ({ senderId: id.startsWith("p") ? "qa-passenger" : "qa-driver", text: id }) })),
+      metadata: { fromCache: false } };
+    chat.latest = snapshot;
+    chat.listeners.forEach(next => next(snapshot));
+  });
+  const badge = () => screen.getByRole("button", { name: "Open live chat" }).querySelector(".pp-unread")?.textContent ?? null;
+  async function joinRide() {
+    setScenario("forward"); render(<PassengerWorkspace />); const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Track QA route" }));
+    await user.click(await screen.findByRole("button", { name: "QA join qa-session" }));
+    return user;
+  }
+  it("leaves no badge after the passenger reads the driver's reply in the open chat and closes it", async () => {
+    const user = await joinRide();
+    deliver("d1");
+    await user.click(screen.getByRole("button", { name: "Open live chat" }));
+    const dialog = await screen.findByRole("dialog", { name: "Live chat" });
+    await within(dialog).findByText("d1");
+    deliver("d1", "p1", "d2");
+    await within(dialog).findByText("d2");
+    await user.click(within(dialog).getByRole("button", { name: "Close chat" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(badge()).toBeNull();
+  });
+  it("counts the driver's messages that arrive while the chat is closed and clears them when it opens", async () => {
+    const user = await joinRide();
+    await waitFor(() => expect(chat.listeners.size).toBe(1));
+    deliver("d1");
+    expect(badge()).toBeNull();
+    deliver("d1", "d2", "p1", "d3");
+    expect(badge()).toBe("2");
+    deliver("d1", "d2", "p1", "d3", "d4", "d5", "d6", "d7", "d8", "d9", "d10", "d11");
+    expect(badge()).toBe("9+");
+    await user.click(screen.getByRole("button", { name: "Open live chat" }));
+    await within(await screen.findByRole("dialog", { name: "Live chat" })).findByText("d11");
+    await user.click(screen.getByRole("button", { name: "Close live chat" }));
+    expect(badge()).toBeNull();
+  });
+  it("keeps counting while the passenger is on another tab and shows the count on return", async () => {
+    const user = await joinRide();
+    await waitFor(() => expect(chat.listeners.size).toBe(1));
+    deliver("d1");
+    await user.click(screen.getByRole("button", { name: "Profile" }));
+    deliver("d1", "d2");
+    await user.click(screen.getByRole("button", { name: "Live" }));
+    await user.click(await screen.findByRole("button", { name: "Track QA route" }));
+    await waitFor(() => expect(badge()).toBe("1"));
+    expect(chat.listen).toHaveBeenCalledOnce();
   });
 });

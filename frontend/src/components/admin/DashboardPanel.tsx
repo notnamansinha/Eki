@@ -886,10 +886,12 @@ export default function DashboardPanel() {
             { label: "Devices Online", value: devicesOnline, color: "text-brand-accent", Icon: Wifi },
             { label: "Offline / Unknown", value: unavailableDevices, color: "text-ui-warning", Icon: AlertTriangle },
           ].map(({ label, value, color, Icon }) => (
-            <div key={label} className="flex flex-col items-center justify-center gap-0.5 py-3 border-r border-ui-line last:border-0">
-              <Icon className={`w-3 h-3 ${color}`} />
+            <div key={label} className="flex min-w-0 flex-col items-center justify-center gap-0.5 px-1.5 py-3 border-r border-ui-line last:border-0">
+              <Icon className={`w-3 h-3 shrink-0 ${color}`} />
               <span className={`text-lg font-bold tabular-nums ${color}`}>{value}</span>
-              <span className="text-xs font-bold uppercase tracking-wide text-ui-quiet">{label}</span>
+              {/* Five cells share the 360 px sidebar (72 px each): uppercase "DIRECTION" alone is
+                  wider than a padded cell, so these labels keep their written case. */}
+              <span className="max-w-full break-words text-center text-xs font-bold leading-tight text-ui-quiet">{label}</span>
             </div>
           ))}
         </div>

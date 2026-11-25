@@ -22,6 +22,7 @@ import {
 } from "@/lib/passengerLiveBus";
 import { serverNow } from "@/lib/serverClock";
 import { useRTDBResume } from "@/hooks/useRTDBResume";
+import { useRideChatUnread } from "@/hooks/useRideChatUnread";
 import { isPassengerBusSelectable } from "@/lib/passengerAvailability";
 import { describeLiveBusHealth, liveBusHealth } from "@/lib/liveBusHealth";
 import {
@@ -210,7 +211,6 @@ export default function PassengerWorkspace() {
   const [activeBuses, setActiveBuses] = useState<ActiveBusData[]>([]);
   const [availableBuses, setAvailableBuses] = useState<PassengerBusAvailability[]>([]);
   const [availabilityNow, setAvailabilityNow] = useState(() => serverNow());
-  const [unreadCount, setUnreadCount] = useState(0);
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [feedbackBusId, setFeedbackBusId] = useState("");
   const [feedbackDriverId, setFeedbackDriverId] = useState("");
@@ -508,6 +508,10 @@ export default function PassengerWorkspace() {
   const endedMessage = completedRide !== null;
 
   const visibleView: ViewState = currentView;
+  // Unread chat follows the joined ride only: a passenger can read the chat of
+  // a session whose manifest lists them. Messages shown in the open chat are read.
+  const joinedChat = Boolean(trackedSessionId) && activeSessionId === trackedSessionId;
+  const chatUnread = useRideChatUnread(trackedSessionId, user?.uid ?? "", joinedChat && chatShown(visibleView));
   const keyboardRouteId = useRef<string | null>(null);
   const trackingBackButton = useRef<HTMLButtonElement>(null);
   const liveRoutesHeading = useRef<HTMLHeadingElement>(null);
@@ -618,7 +622,6 @@ export default function PassengerWorkspace() {
 
   const handleOpenMessaging = () => {
     setIsMessagingOpen(true);
-    setUnreadCount(0);
   };
 
   const handleRouteSelect = (routeId: string) => {
@@ -633,7 +636,6 @@ export default function PassengerWorkspace() {
     setSelectedLiveBusKey("");
     setSelectedBusId("");
     setIsMessagingOpen(false);
-    setUnreadCount(0);
     setCurrentView("tracking");
   };
 
@@ -930,9 +932,9 @@ export default function PassengerWorkspace() {
                       title={activeSessionId ? "Open live chat" : "Device online; chat will unlock when the ride is armed"}
                     >
                       <MessageCircle className="w-5 h-5" aria-hidden="true" style={{ color: "var(--accent)" }} />
-                      {unreadCount > 0 && (
+                      {joinedChat && chatUnread > 0 && (
                         <span className="pp-unread">
-                          {unreadCount > 9 ? "9+" : unreadCount}
+                          {chatUnread > 9 ? "9+" : chatUnread}
                         </span>
                       )}
                     </button>
@@ -966,7 +968,6 @@ export default function PassengerWorkspace() {
                     currentUserId={user?.uid || "anonymous"}
                     isOverlay={true}
                     onClose={() => setIsMessagingOpen(false)}
-                    onUnreadCountChange={setUnreadCount}
                     unavailableMessage={activeSessionId ? undefined : "The bus device is online. Chat will unlock when the administrator arms the ride."}
                   />
                 </div>

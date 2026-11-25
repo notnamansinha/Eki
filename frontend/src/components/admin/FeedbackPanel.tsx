@@ -445,11 +445,13 @@ export default function FeedbackPanel({ embedded = false }: { embedded?: boolean
           ].map(({ label, value, icon: Icon, color }) => (
             <div
               key={label}
-              className="bg-ui-paper border border-ui-line rounded-2xl p-4 flex flex-col gap-1"
+              className="bg-ui-paper border border-ui-line rounded-2xl p-3 sm:p-4 flex flex-col gap-1 min-w-0"
             >
-              <div className="flex items-center gap-2 text-ui-quiet">
-                <Icon className={`w-4 h-4 ${color}`} />
-                <span className="text-xs font-bold uppercase tracking-widest">
+              {/* A phone gives each card about 90 px: the icon sits above the label there,
+                  so "Unreviewed" fits on one line instead of squeezing the icon out. */}
+              <div className="flex flex-col items-start gap-1 text-ui-quiet sm:flex-row sm:items-center sm:gap-2">
+                <Icon className={`w-4 h-4 shrink-0 ${color}`} />
+                <span className="min-w-0 break-words text-xs font-bold uppercase tracking-wider sm:tracking-widest">
                   {label}
                 </span>
               </div>

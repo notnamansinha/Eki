@@ -1,0 +1,4 @@
+/* Replaces the transit artwork with a flat tone in every baseline except the
+   landing page, which shows it (e2e/visual/visual.ts). */
+.transit-artwork picture { visibility: hidden !important; }
+.transit-artwork { background: #77706a !important; }

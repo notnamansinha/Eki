@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-DAT-001 | 3.0 | Current | 2026-11-25 |
+| EKI-DAT-001 | 3.0 | Current | 2026-11-26 |
 
 ## 1. Purpose
 
@@ -345,7 +345,7 @@ The durable record of one ride.
 | `archivedMessages/{id}` | Copy of a cleared message | Admin message clear (`shifts.ts:435`) | Read by a session operator (`firestore.rules:135`) |
 | `messageRateLimits/{uid}` | `userId`, `sentAt` (Timestamp array), `lastSentAt`. Limits: 60 per hour, 10 per minute, 3 s gap (`backend/src/services/chatRateLimit.ts:1`) | Message endpoint, in the same transaction as the message | Owner read, when also allowed to read the session (`firestore.rules:140`) |
 
-Browsers read the latest 200 messages (`frontend/src/components/shared/MessagingPanel.tsx:98`).
+Browsers read the latest 200 messages (`frontend/src/lib/rideChatMessages.ts:10-16`): the chat panel while it is open, and, for the ride a passenger has joined, the unread badge for the whole ride (`frontend/src/hooks/useRideChatUnread.ts:72-86`). Both use the same query, so an open chat shares the badge's watch target.
 
 ### 4.8 `bus_locations/{busId}`
 

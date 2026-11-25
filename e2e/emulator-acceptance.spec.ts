@@ -251,6 +251,28 @@ test('chat reconciles a lost acknowledgement into one durable message and listen
   await expect(page.getByRole('dialog')).toHaveCount(0);
 });
 
+test('chat badge counts an operator message sent while chat is closed, never one read in the open chat', async ({ page, request }) => {
+  await page.goto('/'); await login(page); await board(page);
+  const operatorMessage = async () => (await (await request.post(`${control}/chat/operator-message`)).json()).text as string;
+  const chat = page.getByRole('button', { name: 'Open live chat', exact: true });
+  const badge = chat.locator('.pp-unread');
+  const earlier = await operatorMessage();
+  await chat.click();
+  await expect(page.getByText(earlier, { exact: true })).toBeVisible();
+  // The operator replies while the passenger is reading the open chat.
+  const reply = await operatorMessage();
+  await expect(page.getByText(reply, { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Close chat' }).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(badge).toHaveCount(0);
+  const later = await operatorMessage();
+  await expect(badge).toHaveText('1');
+  await chat.click();
+  await expect(page.getByText(later, { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Close chat' }).click();
+  await expect(badge).toHaveCount(0);
+});
+
 test('feedback confirms persistence and enforces cooldown after reopening the real modal', async ({ page, request }) => {
   await page.goto('/'); await login(page);
   await page.getByRole('button', { name: 'Profile', exact: true }).click();
@@ -399,7 +421,7 @@ test('admin vehicle create edit cancel and delete persist through real authoriza
   await page.getByRole('textbox', { name: 'New vehicle display name', exact: true }).fill('Synthetic new vehicle');
   const assignment = page.getByRole('checkbox', { name: 'Synthetic route', exact: true });
   await assignment.focus(); await assignment.press('Space'); await expect(assignment).toBeChecked();
-  await page.getByRole('button', { name: 'Add new vehicle', exact: true }).click();
+  await page.getByRole('button', { name: 'Add Vehicle', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Edit vehicle Synthetic new vehicle', exact: true })).toBeVisible();
   expect((await evidence(request)).buses.find((bus: { id: string }) => bus.id === 'qa_new')).toMatchObject({ name: 'Synthetic new vehicle', assignedRoutes: ['qa_route'] });
   await page.getByRole('button', { name: 'Edit vehicle Synthetic new vehicle', exact: true }).click();
@@ -592,7 +614,7 @@ test('admin operator creation edit cancellation and deletion update real claims 
   await page.goto('/?panel=fleet'); await login(page, 'qa_admin');
   await page.getByRole('textbox', { name: 'New vehicle Bus ID', exact: true }).fill('qa_spare');
   await page.getByRole('textbox', { name: 'New vehicle display name', exact: true }).fill('Synthetic spare');
-  await page.getByRole('button', { name: 'Add new vehicle', exact: true }).click();
+  await page.getByRole('button', { name: 'Add Vehicle', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Edit vehicle Synthetic spare', exact: true })).toBeVisible();
   await page.getByRole('textbox', { name: 'New operator ID', exact: true }).fill('qa_operator');
   await page.getByRole('textbox', { name: 'New operator display name', exact: true }).fill('Synthetic new operator');
@@ -600,7 +622,7 @@ test('admin operator creation edit cancellation and deletion update real claims 
   await select(page, 'Assign vehicle to new operator', 'Synthetic spare (qa_spare)');
   const rejectedAcknowledgement = page.waitForResponse(response => response.url() === 'http://127.0.0.1:3116/api/fleet/drivers/qa_operator'
     && response.request().method() === 'PUT');
-  await page.getByRole('button', { name: 'Add new operator', exact: true }).click();
+  await page.getByRole('button', { name: 'Add Operator', exact: true }).click();
   expect((await rejectedAcknowledgement).status()).toBe(400);
   await expect(page.getByText('Failed to add Operator: Assigned bus must have at least one valid route.', { exact: true })).toBeVisible();
   expect((await evidence(request)).drivers.map((driver: { id: string }) => driver.id)).toEqual(['qa_driver']);
@@ -613,7 +635,7 @@ test('admin operator creation edit cancellation and deletion update real claims 
   await expect(page.getByRole('button', { name: 'Cancel editing vehicle', exact: true })).toHaveCount(0);
   const acknowledgement = page.waitForResponse(response => response.url() === 'http://127.0.0.1:3116/api/fleet/drivers/qa_operator'
     && response.request().method() === 'PUT');
-  await page.getByRole('button', { name: 'Add new operator', exact: true }).click();
+  await page.getByRole('button', { name: 'Add Operator', exact: true }).click();
   const saved = await acknowledgement; expect(saved.status()).toBe(200); expect(await saved.json()).toEqual({ saved: true });
   await expect(page.getByRole('button', { name: 'Edit operator Synthetic new operator', exact: true })).toBeVisible();
   const created = await evidence(request);

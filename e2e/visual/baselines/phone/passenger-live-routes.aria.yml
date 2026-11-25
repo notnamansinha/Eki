@@ -1,0 +1,19 @@
+- main:
+  - button "Hide live routes" [expanded]
+  - paragraph:
+    - time: /Monday, \d+ November/
+  - heading "Live routes" [level=1]
+  - text: 2 routes
+  - paragraph: Select a route to view the live bus location.
+  - button "Track QA route":
+    - heading "QA route" [level=3]
+    - paragraph: Alpha → Beta
+    - text: /2 stops \d+ min route Track route/
+  - button "Track QA route B":
+    - heading "QA route B" [level=3]
+    - paragraph: Open for live status
+    - text: /2 stops \d+ min route View status/
+- navigation "Passenger sections":
+  - button "Live"
+  - button "Routes"
+  - button "Profile"
