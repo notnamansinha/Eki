@@ -2,7 +2,7 @@
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 type Snapshot = { val: () => unknown };
-type Listener = { receive: (snapshot: Snapshot) => void; fail: () => void };
+type Listener = { receive: (snapshot: Snapshot) => void; fail: (error?: Error) => void };
 const state = vi.hoisted(() => ({ generation: 0, user: { uid: "passenger" } as { uid: string } | null,
   listeners: new Map<string, Listener>(), detach: vi.fn() }));
 vi.mock("firebase/database", () => ({ ref: (_: unknown, path: string) => path,
@@ -62,6 +62,26 @@ describe("route catalog freshness and access", () => {
     act(() => result.current.retry()); await act(flush);
     act(() => { ready(); emit(catalogPath, null); });
     expect(result.current.error).toBeNull(); expect(result.current.catalogReady).toBe(true);
+  });
+  it("flags a permission denial separately from a connection failure", async () => {
+    const { result } = renderHook(() => useLiveRouteCatalog()); await act(flush);
+    act(() => state.listeners.get(catalogPath)!.fail(Object.assign(new Error("permission_denied at /liveRouteCatalog/values"), { code: "PERMISSION_DENIED" })));
+    expect(result.current.accessDenied).toBe(true);
+    expect(result.current.error).not.toMatch(/connection/);
+    await act(async () => { await vi.runOnlyPendingTimersAsync(); }); await act(flush);
+    // A retry's network error is not evidence that access returned.
+    act(() => state.listeners.get(catalogPath)!.fail(new Error("disconnected")));
+    expect(result.current.accessDenied).toBe(true);
+    expect(result.current.error).not.toMatch(/connection/);
+    await act(async () => { await vi.runOnlyPendingTimersAsync(); }); await act(flush);
+    act(() => { ready(); emit(catalogPath, null); });
+    expect(result.current.error).toBeNull(); expect(result.current.accessDenied).toBe(false);
+  });
+  it("gives connection advice for a failure that was never a denial", async () => {
+    const { result } = renderHook(() => useLiveRouteCatalog()); await act(flush);
+    act(() => state.listeners.get(catalogPath)!.fail(new Error("disconnected")));
+    expect(result.current.accessDenied).toBe(false);
+    expect(result.current.error).toMatch(/Check your connection/);
   });
   it("fails closed for legacy durable counts and malformed active leases", async () => {
     const { result } = renderHook(() => useLiveRouteCatalog()); await act(flush);

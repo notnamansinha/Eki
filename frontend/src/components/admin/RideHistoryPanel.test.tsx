@@ -3,6 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import RideHistoryPanel from "./RideHistoryPanel";
+// The panel reads NEXT_PUBLIC_SERVICE_TIME_ZONE once, when it loads, so pin the zone these dates assume before the import runs.
+vi.hoisted(() => { process.env.NEXT_PUBLIC_SERVICE_TIME_ZONE = "Asia/Kolkata"; });
 const state = vi.hoisted(() => ({ sessions: [{ id: "qa-session", busId: "qa-bus", driverId: "qa-driver", routeId: "qa-route", status: "completed", interruptionReason: undefined as string | undefined, armedAt: 1_750_000_000_000, startTime: 1_750_000_001_000, endTime: 1_750_000_600_000, passengers: [] as {userId: string; userName: string; boardingStopId: string; alightingStopId: string | null; joinedAt: number}[], stopsReached: [] }], error: null as string | null, pendingLimit: null as number | null, rideLimits: [] as number[], retry: vi.fn() }));
 vi.mock("@/hooks/useCollection", () => ({ useCollection: (path: string, options: { maxResults: number }) => { if (path === "ride_sessions") state.rideLimits.push(options.maxResults); return { data: path.endsWith("/archivedMessages") ? [{ id: "archived", senderName: "QA Passenger", text: "Chat retained after live clear", timestamp: 1_750_000_009_000 }] : path.endsWith("/messages") ? [{ id: "kept-message", senderName: "QA Passenger", text: "Stored ride chat", timestamp: 1_750_000_010_000 }] : options.maxResults === state.pendingLimit ? [] : state.sessions.slice(0, options.maxResults), loading: !path.includes("/") && options.maxResults === state.pendingLimit, error: state.error, retry: state.retry }; } }));
 // Stable data arrays, as useCollection keeps between snapshots, so unchanged rides are not re-rendered on every parent render.
@@ -19,6 +21,67 @@ async function openConfirmation() {
   return user;
 }
 describe("ride-history controls", () => {
+  const serviceDate = (at: number) => new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Kolkata" }).format(new Date(at));
+  it("dates the end of an overnight ride so it cannot read as ending before it started", () => {
+    const session = state.sessions[0] as Record<string, unknown>;
+    const original = { startTime: session.startTime, endTime: session.endTime };
+    // 18:27:31 IST on 15 Jun 2025, last recorded 15:32:16 IST the next day.
+    const start = Date.UTC(2025, 5, 15, 12, 57, 31), end = Date.UTC(2025, 5, 16, 10, 2, 16);
+    Object.assign(session, { status: "interrupted", startTime: start, endTime: end });
+    try {
+      render(<RideHistoryPanel />);
+      const row = screen.getByRole("button", { expanded: false });
+      const lastRecorded = within(row).getByText("Last recorded").parentElement!;
+      expect(lastRecorded.textContent).toContain(serviceDate(end));
+      expect(within(row).getByText("Started").parentElement!.textContent).not.toContain(serviceDate(start));
+    } finally { Object.assign(session, original); }
+  });
+  it.each([
+    // 23:59 IST to 00:01 IST the next day: two minutes, two service days.
+    ["crosses midnight in the service time zone", Date.UTC(2025, 5, 15, 18, 29), Date.UTC(2025, 5, 15, 18, 31), true],
+    // 00:01 to 23:59 IST on one day, which spans two UTC dates.
+    ["stays within one service day across a UTC date change", Date.UTC(2025, 5, 14, 18, 31), Date.UTC(2025, 5, 15, 18, 29), false],
+  ])("dates the end only when the ride %s", (_label, start, end, dated) => {
+    const session = state.sessions[0] as Record<string, unknown>;
+    const original = { startTime: session.startTime, endTime: session.endTime };
+    Object.assign(session, { startTime: start, endTime: end });
+    try {
+      render(<RideHistoryPanel />);
+      const ended = within(screen.getByRole("button", { expanded: false })).getByText("Ended").parentElement!;
+      expect(ended.textContent!.includes(serviceDate(end))).toBe(dated);
+    } finally { Object.assign(session, original); }
+  });
+  it("keeps a same-day ride end as a time only", () => {
+    render(<RideHistoryPanel />);
+    const row = screen.getByRole("button", { expanded: false });
+    expect(within(row).getByText("Ended").parentElement!.textContent).not.toContain(serviceDate(state.sessions[0].endTime));
+  });
+  it("names a session endpoint deleted from the route instead of showing its stop ID", () => {
+    const session = state.sessions[0] as Record<string, unknown>;
+    const original = { originStopId: session.originStopId, destinationStopId: session.destinationStopId, stopsReached: session.stopsReached, direction: session.direction };
+    Object.assign(session, { direction: "forward", originStopId: "stop-1792491592188-7k28u2", destinationStopId: "stop-gone-without-record",
+      stopsReached: [{ stopIndex: 0, stopId: "stop-1792491592188-7k28u2", stopName: "Old Gate", timestamp: 1_750_000_001_000 }] });
+    try {
+      render(<RideHistoryPanel />);
+      const row = screen.getByRole("button", { expanded: false });
+      expect(row.textContent).toContain("Direction: Old Gate → Removed stop");
+      expect(row.textContent).not.toContain("stop-1792491592188-7k28u2");
+    } finally { Object.assign(session, original); }
+  });
+  it("finds a removed endpoint's name in a duplicate record that deduplication drops", () => {
+    const session = state.sessions[0] as Record<string, unknown>;
+    const original = { originStopId: session.originStopId, destinationStopId: session.destinationStopId, stopsReached: session.stopsReached, direction: session.direction };
+    // The observed arrival wins deduplication but has no name; the recovered duplicate has it.
+    Object.assign(session, { direction: "forward", originStopId: "stop-gone", destinationStopId: "destination",
+      stopsReached: [
+        { stopIndex: 0, stopId: "stop-gone", stopName: "", timestamp: 1_750_000_001_000, evidence: "gnss_progress" },
+        { stopIndex: 0, stopId: "stop-gone", stopName: "Old Gate", timestamp: 1_750_000_002_000, evidence: "recovered_checkpoint" },
+      ] });
+    try {
+      render(<RideHistoryPanel />);
+      expect(screen.getByRole("button", { expanded: false }).textContent).toContain("Direction: Old Gate → Destination");
+    } finally { Object.assign(session, original); }
+  });
   it.each([
     ["pending", "Not started"],
     ["armed", "Ready"],
@@ -102,8 +165,9 @@ describe("ride-history controls", () => {
       state.pendingLimit = null; view.rerender(<RideHistoryPanel pageSize={PAGE} />);
       expect(collapsedRows(view.container)).toHaveLength(PAGE + 1);
       expect(constructed).toBe(0);
-      // Only the newly loaded completed ride formats its date, start and end times.
-      expect(formatted).toBe(3);
+      // Only the newly loaded completed ride formats its date, start and end
+      // times, plus its end date to tell whether the ride ended on another day.
+      expect(formatted).toBe(4);
     } finally {
       state.sessions = original;
       Intl.DateTimeFormat = RealDateTimeFormat;

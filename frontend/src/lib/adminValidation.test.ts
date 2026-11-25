@@ -4,12 +4,22 @@ import {
   passengerStopTimeKey,
   validateOperatorInput,
   validatePassengerRouteSchedule,
+  validateServiceStartTime,
   validateSettingsInput,
   validateVehicleInput,
 } from "./adminValidation";
 import { MAX_PASSENGER_ROUTES } from "./passengerRouteSchedule";
 
 describe("admin form validation", () => {
+  it("accepts only clock times for the service start time", () => {
+    for (const time of ["8:00 am", "8 am", "12:05 PM", "6:30 a.m.", " 7:15pm ", "06:30", "18:30", "0:00"]) {
+      expect(validateServiceStartTime(time)).toBeNull();
+    }
+    expect(validateServiceStartTime("  ")).toBe("Service start time is required.");
+    for (const time of ["banana o'clock", "13:00 pm", "0 am", "24:00", "8:60", "8:00 am ($$ fare)", "soon"]) {
+      expect(validateServiceStartTime(time)).toMatch(/must be a clock time/);
+    }
+  });
   it("reports missing and malformed vehicle fields instead of silently doing nothing", () => {
     expect(validateVehicleInput("", "Bus one", [])).toBe("Vehicle ID is required.");
     expect(validateVehicleInput("bus one", "Bus one", [])).toContain("letters, numbers");
