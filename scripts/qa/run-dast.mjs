@@ -5,6 +5,7 @@ import { resolve } from 'node:path';
 import { repositoryRoot } from './acceptance-catalog.mjs';
 import { safetyPreflight } from './safety-preflight.mjs';
 import { removeGeneratedDemoConfig } from './emulator-environment.mjs';
+import { describeDirty, workingTreeState } from './working-tree.mjs';
 import {
   LOCAL_BACKEND_PORT, LOCAL_PATH_VALUES, STAGING_ORIGIN, ZAP_IMAGE,
   CLOUD_RUN_NAME_CHARACTERS, HEX_DIGITS, applyTriage, assertStagingRun, automationPlan, canonicalCount, canonicalStatus,
@@ -44,7 +45,7 @@ const git = gitArgs => execFileSync('git', gitArgs, { cwd: repositoryRoot, encod
 const report = {
   schemaVersion: 1, profile: profileName, dryRun,
   sourceCommit: git(['rev-parse', 'HEAD']),
-  dirty: Boolean(git(['status', '--porcelain', '--untracked-files=all'])),
+  ...workingTreeState(repositoryRoot),
   startedAt: new Date().toISOString(), finishedAt: null,
   workflowRunId: process.env.GITHUB_RUN_ID ?? null, node: process.version, platform: process.platform,
   zapImage: ZAP_IMAGE, zapVersion: null,
@@ -285,7 +286,7 @@ async function runStaging() {
 
 function markdown() {
   const lines = [`# DAST ${profileName} scan`, '',
-    `Source ${report.sourceCommit}; dirty: ${report.dirty}; verdict: ${report.verdict}.`, '',
+    `Source ${report.sourceCommit}; dirty: ${describeDirty(report)}; verdict: ${report.verdict}.`, '',
     `Target: ${report.target}. ZAP ${report.zapVersion ?? 'not run'} (${report.zapImage}).`, ''];
   if (report.release) {
     lines.push(`Serving revision: ${report.release.before?.revision} built from ${report.release.before?.sourceSha}; `
