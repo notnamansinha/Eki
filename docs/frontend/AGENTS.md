@@ -168,3 +168,21 @@ the backend, offers no chat or walking-time notice, boards the passenger when
 the demo bus is at their stop and ends without feedback.
 Keep it marked "Not a real bus" and out of the route count.
 `NEXT_PUBLIC_DEMO_RIDE=false` hides it.
+
+## App tour (2026-11-25)
+
+After an account's first sign-in the passenger app runs a short, hands-on
+tour (`AppTour`, checked by `src/lib/firstRunTour.ts`) over the real screens,
+with Skip at the top of the card and Next at the bottom. On a "Your turn" step
+the spotlight stays usable and the tour moves on when the passenger acts: they
+tap the demo ride, choose their own stops so the From → To bar docks into the
+Thumb drawer, see where live chat sits (the demo ride has no driver, so the
+tour shows the chat button for that step only), tap Routes and then a route
+(the card changes once Routes is open), then tap Profile, where a closing card
+("You're all set") points at Replay app tour and Done ends the tour. Next does each step for them and
+is the keyboard and screen reader path. Profile has **Replay app tour**
+(Lucide Compass). Keep it to six steps with one short line of copy each
+(2026-11-25: the user asked for it hands-on, not just steps; 2026-11-26:
+less text), in the passenger palette and type
+(Playfair title, gold rule, Roboto copy, AU Red Next). A finished or skipped
+tour is remembered per account in this browser.
