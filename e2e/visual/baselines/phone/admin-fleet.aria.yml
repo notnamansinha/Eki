@@ -19,8 +19,8 @@
     - text: Assign Allowed Routes
     - checkbox "Ahmedabad University Extended Campus and Science Research Shuttle"
     - text: Ahmedabad University Extended Campus and Science Research Shuttle
-    - button "Add new vehicle": Add Vehicle
-    - button "Collapse saved vehicles": Saved Vehicles 1
+    - button "Add Vehicle"
+    - button "Saved Vehicles 1" [expanded]
     - text: Synthetic bus qa-bus In Service Device online 0 km/h
     - button "Edit vehicle Synthetic bus"
     - button "Delete vehicle Synthetic bus"
@@ -36,8 +36,8 @@
     - combobox "Assign vehicle to new operator":
       - option "— Assign Vehicle —" [selected]
       - option "Synthetic bus (qa-bus)"
-    - button "Add new operator": Add Operator
-    - button "Collapse saved operators": Saved Operators 1 1 Live
+    - button "Add Operator"
+    - button "Saved Operators 1 1 Live" [expanded]
     - text: Synthetic operator qa-driver In Service 0 km/h
     - button "Edit operator Synthetic operator"
     - button "Delete operator Synthetic operator"
