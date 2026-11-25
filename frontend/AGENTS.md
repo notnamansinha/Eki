@@ -177,8 +177,9 @@ with Skip at the top of the card and Next at the bottom. On a "Your turn" step
 the spotlight stays usable and the tour moves on when the passenger acts: they
 tap the demo ride, choose their own stops so the From → To bar docks into the
 Thumb drawer, see where live chat sits (the demo ride has no driver, so the
-tour shows the chat button for that step only), tap Routes and open a route's
-timetable, then tap Profile, where it ends. Next does each step for them and
+tour shows the chat button for that step only), tap Routes and then a route
+(the card changes once Routes is open), then tap Profile, where a closing card
+("You're all set") points at Replay app tour and Done ends the tour. Next does each step for them and
 is the keyboard and screen reader path. Profile has **Replay app tour**
 (Lucide Compass). Keep it to six steps with one short line of copy each
 (2026-11-25: the user asked for it hands-on, not just steps; 2026-11-26:
