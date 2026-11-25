@@ -151,8 +151,7 @@ visually hidden polite live region. Keep the combobox names ("Boarding stop",
 "Destination station"), the location notice above the drawer before the first
 join, 44 px targets and the focus moves in FR-PAS-058.
 
-There is no Board button (2026-11-25, at the user's request). The passenger is
-boarded once the bus has reached the boarding stop: under a minute away (the
+The drawer has no Board button. The passenger is boarded once the bus has reached the boarding stop: under a minute away (the
 origin may not be marked "at" before departure), at the stop, or already past
 it, since a passenger on board is still within the 150 m check. Each stage is
 one attempt; a failed check offers Try again rather than retrying by itself
@@ -163,7 +162,7 @@ one attempt; a failed check offers Try again rather than retrying by itself
 Live routes lists a "Demo ride" under "Practice", after the live routes or
 below "No buses running", so the stop picker and boarding can be tried
 without a bus. `src/lib/demoRide.ts` simulates it in the browser on fixed
-road geometry (OpenStreetMap, ODbL) and publishes the same live-bus shape as
+road geometry (OpenStreetMap, ODbL, credited under the Practice card) and publishes the same live-bus shape as
 RTDB through `src/lib/passengerLiveSource.ts`. It never contacts Firebase or
 the backend, offers no chat or walking-time notice, boards the passenger when
 the demo bus is at their stop and ends without feedback.

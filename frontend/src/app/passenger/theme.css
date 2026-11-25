@@ -1232,6 +1232,8 @@ button.pp-picker-passed:hover { background: var(--surface-3); }
 
 /* The demo ride sits under the live routes and says it is not a real bus. */
 .passenger-demo-ride { margin-top: 0.75rem; }
+.pp-attribution { margin: -0.5rem 0.25rem 1rem; color: var(--text-secondary); font-size: 0.75rem; line-height: 1.4; }
+.pp-attribution a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
 .pp-section-label { margin: 0 0.25rem 0.5rem; color: var(--text-secondary); font-size: 0.75rem; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; }
 .pp-demo-chip {
   display: inline-block;

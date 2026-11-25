@@ -123,6 +123,11 @@ export default function RouteCarousel({ routes, selectedRouteId, onClick, getAct
           <div className="passenger-live-route-list w-full flex flex-col gap-3 pb-4">
             {demos.map(card)}
           </div>
+          {/* The demo route's road geometry comes from OpenStreetMap (ODbL). */}
+          <p className="pp-attribution">
+            Demo route data ©{" "}
+            <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap contributors</a>
+          </p>
         </section>
       )}
     </>

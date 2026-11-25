@@ -424,6 +424,9 @@ export default function PassengerWorkspace() {
   }, []);
 
   const activeRoute = routes.find(route => route.id === effectiveRouteId);
+  // The tracked route is the browser-simulated demo ride: no chat, backend,
+  // location prompt or joined-ride pointer.
+  const trackingDemo = isDemoRouteId(effectiveRouteId);
   const busesOnRoute: VisibleBusData[] = [...activeBuses, ...availableBuses].filter(
     (bus) => bus.routeId === effectiveRouteId,
   );
@@ -461,7 +464,7 @@ export default function PassengerWorkspace() {
   // Chat is between passenger and driver; it needs the connection and a
   // reporting bus, not a GPS fix. A GNSS blip must not close or reset it.
   const chatAvailable = isConnected && !isResuming && !liveDataError && activeBusOnRoute?.automaticServicePaused !== true &&
-    !isDemoRouteId(activeBusOnRoute?.routeId) &&
+    !trackingDemo &&
     (activeBusHealth?.state === "live" || activeBusHealth?.state === "delayed" || activeBusHealth?.state === "gnss_lost");
   const chatShown = (view: ViewState) => view === "tracking" && isMessagingOpen && chatAvailable && Boolean(activeSessionId) &&
     isLiveChatDeviceOnline(activeBusOnRoute);
@@ -925,7 +928,7 @@ export default function PassengerWorkspace() {
                     tripState={activeBusOnRoute.tripState === "in_service" ? "in_service" : "pre_departure"}
                     liveHealth={activeBusHealth}
                     boardingBlockedReason={busSelectable ? undefined : "Boarding resumes when live tracking returns."}
-                    demo={isDemoRouteId(activeBusOnRoute.routeId)}
+                    demo={trackingDemo}
                     destinationStopId={effectiveDestinationStopId}
                     restoredBoarding={restoredBoarding && restoredBoarding.uid === user?.uid && restoredBoarding.sessionId === activeBusOnRoute.sessionId ? restoredBoarding : undefined}
                     onDestinationStopChange={setSelectedDestinationStopId}
@@ -933,7 +936,7 @@ export default function PassengerWorkspace() {
                     onJoined={() => {
                       boardingRevisionRef.current++;
                       // A demo ride has no server session to restore after a reload.
-                      if (user?.role === "passenger" && !isDemoRouteId(activeBusOnRoute.routeId)) saveJoinedRidePointer(user.uid, activeBusOnRoute.sessionId);
+                      if (user?.role === "passenger" && !trackingDemo) saveJoinedRidePointer(user.uid, activeBusOnRoute.sessionId);
                       trackedRideRef.current = recordSuccessfulJoin(
                         trackedRideRef.current,
                         {
@@ -958,7 +961,7 @@ export default function PassengerWorkspace() {
                     targetStop={targetStop}
                     selectedDestinationStopId={effectiveDestinationStopId}
                     selectedBoardingStopId={boardingAvailable && mapRoute.stops?.some(stop => stop.id === selectedBoardingStopId) ? selectedBoardingStopId : undefined}
-                    offerLocation={!isDemoRouteId(mapRoute.id)}
+                    offerLocation={!trackingDemo}
                     onStopEstimatesChange={updateStopEstimates}
                     route={mapRoute}
                     resumeGeneration={resumeGeneration}

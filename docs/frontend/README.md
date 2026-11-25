@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-PKG-002 | 4.3 | Current | 2026-11-25 |
+| EKI-PKG-002 | 5.0 | Current | 2026-11-25 |
 
 ## 1. Purpose
 

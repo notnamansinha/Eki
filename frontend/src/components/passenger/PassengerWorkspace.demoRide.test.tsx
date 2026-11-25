@@ -59,6 +59,8 @@ describe("demo ride in Live routes", () => {
     expect(screen.getByText("No buses running")).toBeTruthy();
     expect(screen.getByText("0 routes")).toBeTruthy();
     expect(screen.getByText("Not a real bus")).toBeTruthy();
+    // Its road geometry is OpenStreetMap data, credited where the ride is offered.
+    expect(screen.getByRole("link", { name: "OpenStreetMap contributors" }).getAttribute("href")).toBe("https://www.openstreetmap.org/copyright");
   });
 
   it("is listed after the live routes when buses are running", async () => {

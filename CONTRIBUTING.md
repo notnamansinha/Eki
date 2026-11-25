@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-GEN-007 | 1.1 | Current | 2026-11-07 |
+| EKI-GEN-007 | 2.0 | Current | 2026-11-25 |
 
 ## 1. Purpose
 
