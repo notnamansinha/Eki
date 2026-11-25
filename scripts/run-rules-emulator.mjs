@@ -24,12 +24,13 @@ import { workingTreeState } from "./qa/working-tree.mjs";
  */
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
-if (args.length > 1 || (args.length && !['--browser', '--browser-providers', '--browser-service', '--api', '--dast'].includes(args[0]))) throw new Error('Only named browser, API or DAST scopes are supported');
+if (args.length > 1 || (args.length && !['--browser', '--browser-providers', '--browser-service', '--api', '--dast', '--observability', '--observability-relay'].includes(args[0]))) throw new Error('Only named browser, API, DAST or observability scopes are supported');
 const api = args[0] === '--api';
 const dast = args[0] === '--dast';
-const browser = args.length === 1 && !api && !dast;
+const observability = args[0]?.startsWith('--observability') ?? false;
+const browser = args.length === 1 && !api && !dast && !observability;
 const evidenceDirectory = path.join(ROOT, 'artifacts/qa'); mkdirSync(evidenceDirectory, { recursive: true });
-const prefix = api ? 'api' : dast ? 'dast-local' : browser ? 'browser' : 'emulator';
+const prefix = api ? 'api' : dast ? 'dast-local' : observability ? args[0].slice(2) : browser ? 'browser' : 'emulator';
 for (const name of [`${prefix}-${browser ? 'playwright' : 'vitest'}.json`, `${prefix}-junit.xml`, `${prefix}-report.md`, `${prefix}-run.log`, ...(browser ? ['browser-results', 'browser-progress.json'] : [])]) rmSync(path.join(evidenceDirectory, name), { force: true, recursive: true });
 writeFileSync(path.join(evidenceDirectory, `${prefix}-report.json`), JSON.stringify({
   sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: ROOT, encoding: 'utf8' }).trim(),
@@ -59,7 +60,7 @@ const emulatorArgs = [
   "firestore,database,auth",
   "--project",
   "demo-eki-qa",
-  `node "${path.join(ROOT, api ? 'scripts/qa/run-api.mjs' : dast ? 'scripts/qa/run-dast.mjs' : browser ? 'scripts/qa/run-browser-tests.mjs' : 'scripts/qa/run-emulator-tests.mjs')}"`,
+  `node "${path.join(ROOT, api ? 'scripts/qa/run-api.mjs' : dast ? 'scripts/qa/run-dast.mjs' : observability ? 'scripts/qa/run-observability-drill.mjs' : browser ? 'scripts/qa/run-browser-tests.mjs' : 'scripts/qa/run-emulator-tests.mjs')}"${args[0] === '--observability-relay' ? ' --relay-in-emulators' : ''}`,
 ];
 
 function spawnNpx() {

@@ -123,6 +123,7 @@ A passing preflight proves the configuration only. Runtime isolation comes from 
 | GNSS properties | L1 | `npm run qa:gnss` | [GNSS properties](GNSS_PROPERTIES.md) |
 | Reviewed units | L1 | `npm run qa:unit:reviewed` | [Reviewed unit sub-oracles](REVIEWED_UNIT_EVIDENCE.md), [HTTP policy sub-oracles](HTTP_UNIT_EVIDENCE.md) |
 | Native firmware | L1 | `npm run qa:native` | [Native firmware evidence](NATIVE_EVIDENCE.md) |
+| Observability | L2 local, L4 relay | `npm run qa:observability`, `npm run qa:observability:relay` | [Observability drill](OBSERVABILITY_DRILL.md) |
 | Emulator integration | L2 | `npm run test:rules` | [Emulator acceptance](EMULATOR_ACCEPTANCE.md) |
 | HTTP authorization | L2 | `npm run qa:api` | [HTTP authorization sweep](HTTP_AUTHORIZATION.md) |
 | DAST and OpenAPI scans | L2 local, L4 staging | `npm run qa:dast`, `npm run qa:dast:staging` | [Bounded DAST and OpenAPI scans](DAST.md) |

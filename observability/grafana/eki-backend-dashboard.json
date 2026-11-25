@@ -66,7 +66,7 @@
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 5 },
       "id": 6,
       "options": { "legend": { "calcs": [], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
-      "targets": [{ "expr": "eki_device_telemetry_latency{service_name=\"eki-backend\",statistic=\"p95\"}", "legendFormat": "{{stage}}", "refId": "A" }],
+      "targets": [{ "expr": "eki_device_telemetry_latency_milliseconds{service_name=\"eki-backend\",statistic=\"p95\"}", "legendFormat": "{{stage}}", "refId": "A" }],
       "title": "Device pipeline p95 latency",
       "type": "timeseries"
     },
@@ -76,7 +76,7 @@
       "gridPos": { "h": 7, "w": 8, "x": 0, "y": 13 },
       "id": 7,
       "options": { "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
-      "targets": [{ "expr": "sum by (source) (rate(eki_background_failures_total{service_name=\"eki-backend\"}[5m]))", "legendFormat": "{{source}}", "refId": "A" }],
+      "targets": [{ "expr": "sum by (source) (rate(eki_background_failures_total{service_name=\"eki-backend\",source!=\"\"}[5m]))", "legendFormat": "{{source}}", "refId": "A" }],
       "title": "Background failure rate",
       "type": "timeseries"
     },
