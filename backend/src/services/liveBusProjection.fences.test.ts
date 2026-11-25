@@ -6,6 +6,8 @@ const fixture = vi.hoisted(() => ({
   listeners: new Map<string, (snapshot: any) => void>(),
   reads: [] as Array<{ path: string; limit?: number }>,
   writes: [] as string[],
+  updates: [] as Array<{ path: string; values: Record<string, any> }>,
+  denyLeafWrites: false,
   readGates: new Map<string, Promise<void>>(),
   retryGates: new Map<string, Promise<void>>(),
   afterCommitGates: new Map<string, Promise<void>>(),
@@ -68,8 +70,28 @@ vi.mock("../lib/firebaseAdmin", () => {
       if (fixture.loseAcknowledgement.delete(path)) throw Error("simulated lost acknowledgement after commit");
       return { committed: next !== undefined, snapshot: snapshot(committedSnapshot) };
     },
+    // Stands in for the rules-bound writer: applies a multi-path update only
+    // under the conditions database.rules.json evaluates for it.
+    update: async (values: Record<string, any>) => {
+      fixture.updates.push({ path, values: structuredClone(values) });
+      const current = read(path), next = structuredClone(current ?? {}), touched = new Set<string>();
+      for (const [child, value] of Object.entries(values)) {
+        const parts = child.split("/"); let target = next;
+        for (const part of parts.slice(0, -1)) target = target[part] ??= {};
+        if (value === null) delete target[parts.at(-1)!]; else target[parts.at(-1)!] = structuredClone(value);
+        if (parts[0] === "buses" && parts[1]) touched.add(parts[1]);
+      }
+      const allowed = !fixture.denyLeafWrites && typeof current?._workerGeneration === "number" &&
+        next._workerGeneration === current._workerGeneration && next.revision === current.revision + 1 &&
+        [...touched].every(key => !next.buses?.[key] || (typeof next.buses[key].busId === "string" && typeof next.buses[key].routeId === "string" &&
+          path === `publicRouteBuses/route:${next.buses[key].routeId}` && key === `node:${next.buses[key].busId}_${next.buses[key].routeId}`));
+      if (!allowed) throw Object.assign(new Error("PERMISSION_DENIED: Permission denied"), { code: "PERMISSION_DENIED" });
+      write(path, next);
+      fixture.writes.push(path);
+      await fixture.afterCommitGates.get(`update:${path}`);
+    },
   });
-  return { rtdb: { ref: (path: string) => reference(path) } };
+  return { rtdb: { ref: (path: string) => reference(path) }, liveProjectionWriterRtdb: () => ({ ref: (path: string) => reference(path) }) };
 });
 import { rtdb } from "../lib/firebaseAdmin";
 import { getLiveBusProjectionStatus, publicLiveBus, startLiveBusProjection } from "./liveBusProjection";
@@ -98,7 +120,7 @@ function containsCompletion(routeId: string, sessionId: string) {
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ["Date", "performance", "setTimeout", "clearTimeout", "setInterval", "clearInterval"] });
-  fixture.data = {}; fixture.listeners.clear(); fixture.reads = []; fixture.writes = [];
+  fixture.data = {}; fixture.listeners.clear(); fixture.reads = []; fixture.writes = []; fixture.updates = []; fixture.denyLeafWrites = false;
   fixture.readGates.clear(); fixture.retryGates.clear(); fixture.loseAcknowledgement.clear(); fixture.failures.mockClear();
   fixture.afterCommitGates.clear(); fixture.readyRetryGate = null; fixture.pendingReadyRetries = 0;
   fixture.releases = [];
@@ -301,7 +323,7 @@ describe("independent public projection fencing and lifecycle regressions", () =
     fixture.data.activeBuses = { bus1_route1: completed };
     fixture.data.publicRouteBuses = { [routeKey("route1")]: { _workerGeneration: 4, revision: 4, buses: { "node:bus1_route1": publicLiveBus(previous) } } };
     fixture.data.liveRouteCatalog = { _workerGeneration: 4, generations: { [routeKey("route1")]: 4 }, revisions: { [routeKey("route1")]: 4 }, values: { [routeKey("route1")]: { active: 1, available: 0, freshestAt: 0, availableReceipts: [] } } };
-    const release = gate(fixture.afterCommitGates, routePath("route1"));
+    const release = gate(fixture.afterCommitGates, `update:${routePath("route1")}`);
     start(); emit("child_added", "bus1_route1", completed); await settle();
     expect(projection("route1").revision).toBe(5);
     // The SDK acknowledgement retains revision5's committed snapshot while a
@@ -322,6 +344,18 @@ describe("independent public projection fencing and lifecycle regressions", () =
     const beforeStop = routePageReads(); const stopping = stop!();
     release(); await settle(); await stopping;
     expect(routePageReads()).toBe(beforeStop);
+  });
+
+  it("lets recovery run beside a stalled publication and repairs a leaf changed out of band without a revision", async () => {
+    fixture.data.activeBuses = { bus1_route1: live() };
+    start(); emit("child_added", "bus1_route1", fixture.data.activeBuses.bus1_route1); await settle();
+    const [key] = Object.keys(buses("route1")); const revision = projection("route1").revision;
+    // Neither the revision check nor the partial-record check can see this edit.
+    buses("route1")[key].tripState = "completed";
+    await recover(75_000);
+    expect(buses("route1")[key].tripState).toBe("in_service");
+    expect(projection("route1").revision).toBe(revision + 1);
+    expect(fixture.updates.at(-1)!.values).toEqual({ _workerGeneration: 4, revision: revision + 1, [`buses/${key}/tripState`]: "in_service" });
   });
 
   it("keeps a smaller-clock replacement after a delayed removed notification", async () => {

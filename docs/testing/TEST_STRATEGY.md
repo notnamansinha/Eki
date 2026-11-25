@@ -114,7 +114,7 @@ The `qa:*` scripts are listed in Section 4.6.
 | `privacyDeletion.integration.test.ts` | Privacy deletion paging, retries and recovery |
 | `telemetryCatalog.integration.test.ts` | Versioned telemetry route catalog and direction binding |
 | `staleBusSweeper.integration.test.ts` | Indexed stale-bus pages in RTDB |
-| `liveBusProjection.integration.test.ts`, `liveBusProjection.fences.integration.test.ts` | Live projection transactions, publisher fences and listener isolation |
+| `liveBusProjection.integration.test.ts`, `liveBusProjection.fences.integration.test.ts` | Live projection claims and leaf updates under the committed rules, publisher fences, listener isolation, and listener and backend bytes per fix for 1, 5 and 10 buses on a route |
 | `apiReads.integration.test.ts` | API read paths |
 | `qaTelemetryChain.integration.test.ts` | Authenticated device telemetry through the real router, workers and lifecycle to the public projection |
 

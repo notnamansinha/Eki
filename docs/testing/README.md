@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-TST-001 | 1.3 | Current | 2026-11-24 |
+| EKI-TST-001 | 1.3 | Current | 2026-11-25 |
 
 ## 1. Purpose
 
@@ -103,7 +103,7 @@ CI success, a synthetic browser test, a stationary trace, a short moving trace a
 | EKI-EVD-040 | 2026-10-15 | [PR #323 interaction and retirement review](PR_323_INTERACTION_REVIEW.md) | Audit | |
 | EKI-EVD-041 | 2026-10-18 | [PR #336 review follow-up](PR_336_REVIEW_VERIFICATION.md) | Audit | Stop radius superseded by EVD-032 |
 | EKI-EVD-042 | 2026-10-15 | [QA audit report, 15 October](QA_AUDIT_2026_10_15.md) | Browser | Localhost audit of the passenger account deletion branch |
-| EKI-EVD-043 | 2026-10-08 | [R14 live projection](R14_LIVE_PROJECTION.md) | Synthetic | Emulator transaction and payload measurements |
+| EKI-EVD-043 | 2026-10-08 | [R14 live projection](R14_LIVE_PROJECTION.md) | Synthetic | Emulator transaction and payload measurements; the write path and byte figures are replaced by EVD-068 |
 | EKI-EVD-044 | 2026-10-07 | [R31 moderation and instrumentation profile](R31_PROFILE.md) | Synthetic | Data: [baseline](R31_baseline_node24.json), [final](R31_final_node24.json) |
 | EKI-EVD-045 | 2026-10-04 | [Realtime transport evidence audit](REALTIME_TRANSPORT_EVIDENCE_AUDIT.md) | Audit | Review of captures, 2026-10-01 |
 | EKI-EVD-046 | 2026-10-04 | [Reroute latency simulation](REROUTE_SIMULATION_RESULTS.md) | Synthetic | Run 2026-09-10; not field latency |
@@ -128,6 +128,7 @@ CI success, a synthetic browser test, a stationary trace, a short moving trace a
 | EKI-EVD-065 | 2026-11-24 | [Hosting cache matrix, 24 November](CACHE_MATRIX_2026_11_24.md) | Synthetic | Loopback replay of the export, plus read-only HTTP readings of the staging Hosting site serving `6c47e727`; invalidation after a deploy not yet observed (#504) |
 | EKI-EVD-066 | 2026-11-24 | [Privacy verification, 24 November](PRIVACY_VERIFICATION_2026_11_24.md) | Synthetic and live public pages | Passenger deletion against disposable emulators, with a negative control; request hosts of the local export and of the live staging site; staging deletion and legal sign-off not done |
 | EKI-EVD-067 | 2026-11-24 | [Visual baseline review, 24 November](VISUAL_BASELINE_REVIEW_2026_11_24.md) | Browser | First reviewed visual and accessibility-tree baselines (56 each) in the pinned Linux Chromium; emulated, synthetic data; no real device or screen reader |
+| EKI-EVD-068 | 2026-11-21 | [Live projection leaf writes](LIVE_PROJECTION_LEAF_WRITES_2026_11_21.md) | Synthetic | Emulator listener and backend download per fix, whole-route transactions against per-bus leaf writes; replaces the EVD-043 byte figures |
 
 The `assets/` folder holds images referenced by these records. `simulations/generate-gnss.mjs` is the GNSS profile generator: the backend GNSS property tests that `qa:gnss` runs import it and the acceptance catalog reads its profile list, so it is current code, not evidence.
 
