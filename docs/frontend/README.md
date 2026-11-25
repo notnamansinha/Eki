@@ -95,13 +95,13 @@ After sign-in, `/` opens the workspace saved in `localStorage` key `eki:last-wor
 | `src/app/brand-theme.css` | The Ahmedabad University palette, font and gradient tokens shared by the passenger and administrator workspaces, scoped with `:root:has(.passenger-layout, .admin-layout)` so that dialogs portalled outside a layout inherit them. |
 | `src/app/passenger/theme.css`, `src/app/admin/theme.css` | The surface rules of each workspace, imported by its `layout.tsx`. The passenger file holds the `pp-*` classes, the phone Live routes sheet and the bottom navigation. The admin file holds the dark Live Ops scope and the continuous corners. |
 | `src/components/admin/` | Live Ops dashboard, route editor, fleet and personnel, ride history, feedback console, settings with the passenger route schedule editor (`PassengerRoutesSettings`), and `AdminPanelErrorBoundary`. |
-| `src/components/passenger/` | `PassengerWorkspace`, boarding card, account tab, route schedule tab (`RoutesTab`), route timeline, layout constants (`passengerFrame.ts`) and loading shell. `ui/` holds `BottomSheet`, `RouteCarousel` and `PassengerDate` (today's date above the Live Routes title). |
+| `src/components/passenger/` | `PassengerWorkspace`, the Thumb drawer stop picker (`PassengerBoardingView` and `StopPickerSheet`), account tab, route schedule tab (`RoutesTab`), route timeline, layout constants (`passengerFrame.ts`) and loading shell. `ui/` holds `BottomSheet`, `RouteCarousel` and `PassengerDate` (today's date above the Live Routes title). |
 | `src/components/maps/` | Passenger map, road polylines (`DirectionsRoute`), bus glyph, traffic layer. |
 | `src/components/shared/` | Components used by both roles: `RoleGuard`, chat (`MessagingPanel`), `FeedbackModal`, workspace links, prefetch and loading, `TransitArtwork` (the background paintings of the landing page and the passenger workspace) and `InstallGuideLink` (the landing footer link to `/install`). |
 | `src/components/ui/` | `ConfirmModal`, `AlertModal`, `InAppSelect` (listbox) and `CustomSelect` (native select). |
 | `src/components/*.tsx` | `Providers`, `MapProviders`, `ServiceWorkerRegistrar`, `TelemetryTraceControls`. |
 | `src/hooks/` | Auth, Firestore collections, settings, passenger route schedules, live route catalog, RTDB reconnect, live-health clock, marker smoothing, dialog focus. |
-| `src/lib/` | Code without React: Firebase clients, API client, live bus store, bus health, stop progress, ETAs, route geometry, feedback store, route line labels (`routeLineLabel.ts`) and install platform detection (`installPlatform.ts`). |
+| `src/lib/` | Code without React: Firebase clients, API client, live bus store, bus health, stop progress, ETAs, route geometry, feedback store, route line labels (`routeLineLabel.ts`), install platform detection (`installPlatform.ts`) and the browser-simulated demo ride (`demoRide.ts`, served to the map through `passengerLiveSource.ts`). |
 | `src/config/` | `maps.ts` (Maps key, Map ID, default centre, map options), `passenger.ts` (default service start time, feedback word limit of 200) and `university.ts` (University links, each shown only when its URL is set, and the optional Profile build label from `NEXT_PUBLIC_BUILD_VERSION` and `NEXT_PUBLIC_BUILD_DATE`). |
 | `src/test-support/` | `fakeGoogleMapsSdk.ts`, a test-only Google Maps SDK that counts map constructions for the map-load tests. |
 | `src/sw.js` | Service worker source. |
@@ -126,7 +126,8 @@ The browser reads live and configuration data directly from Firebase and sends e
 | Operators | Firestore `drivers` (administrators: up to 250; others: their own record) | `onSnapshot` | `hooks/useDrivers.ts` |
 | Global settings | Firestore `settings/global` | `onSnapshot` | `hooks/useSettings.ts` |
 | Passenger route schedules | Firestore `settings/passengerRoutes`, joined with `routes` | `onSnapshot`; malformed entries are dropped and deleted routes and stops skipped (`lib/passengerRouteSchedule.ts`) | `hooks/usePassengerRouteConfig.ts` |
-| Chat | Firestore `ride_sessions/<id>/messages` | `onSnapshot` | `components/shared/MessagingPanel.tsx` |
+| Chat | Firestore `ride_sessions/<id>/messages`, latest 200 | `onSnapshot` while the chat is open | `components/shared/MessagingPanel.tsx`, `lib/rideChatMessages.ts` |
+| Chat unread count (the passenger's joined ride) | Same query as Chat | `onSnapshot` for the whole joined ride; an open chat shares its watch target | `hooks/useRideChatUnread.ts` |
 | Ride chat history (admin) | Firestore `ride_sessions/<id>/messages` and `ride_sessions/<id>/archivedMessages` | `onSnapshot` through `useCollection`, 100 messages per page, only while the ride is expanded | `components/admin/RideHistoryPanel.tsx` |
 | Role fallback | Firestore `users/<uid>` | `getDoc` | `hooks/useAuth.ts` |
 

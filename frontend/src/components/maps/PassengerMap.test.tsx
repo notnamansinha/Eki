@@ -237,7 +237,8 @@ describe("published passenger stop progress", () => {
   }));
   const tripRoute = { ...route, stops };
   const road = { polyline: "_ekkC_omvLo}@o}@o}@o}@o}@o}@", polylineQuality: "HIGH_QUALITY" as const };
-  const row = (name: string) => screen.getByText(name).parentElement!.parentElement!;
+  // The peek also names the next stop; rows are the timeline's own entries.
+  const row = (name: string) => screen.getAllByText(name).find(node => node.closest(".pp-stop-row"))!.parentElement!.parentElement!;
   const next = () => screen.queryByText("Next stop")?.parentElement?.textContent;
   const openTimeline = () => userEvent.setup().click(screen.getByRole("button", { name: "Route timeline" }));
 

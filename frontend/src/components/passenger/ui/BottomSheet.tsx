@@ -8,6 +8,8 @@ interface BottomSheetProps {
   onToggle: () => void;
   headerIcon?: ReactNode;
   headerTitle: string;
+  /** Shown in the header instead of the title; the toggle keeps the title as its name. */
+  headerSummary?: ReactNode;
   children: ReactNode;
   bottomControls?: ReactNode;
   maxHeightClass?: string;
@@ -18,11 +20,13 @@ export default function BottomSheet({
   onToggle,
   headerIcon,
   headerTitle,
+  headerSummary,
   children,
   bottomControls,
   maxHeightClass = "max-h-[50vh]",
 }: BottomSheetProps) {
   const contentId = useId();
+  const summaryId = useId();
   // Collapsed content is already inert; also stop painting it, because the
   // desktop dock floats and leaves the translated body visible around it.
   const bodyVisibility = `transition-opacity duration-200 ${isOpen ? "opacity-100" : "opacity-0"}`;
@@ -76,6 +80,8 @@ export default function BottomSheet({
           ref={toggleRef}
           aria-expanded={isOpen}
           aria-controls={contentId}
+          aria-label={headerSummary ? headerTitle : undefined}
+          aria-describedby={headerSummary ? summaryId : undefined}
           data-map-sheet-toggle
           className="w-full h-[56px] flex items-center justify-between px-5 cursor-pointer relative rounded-t-[var(--pp-sheet-radius)] touch-none select-none"
           onClick={onToggle}
@@ -85,13 +91,17 @@ export default function BottomSheet({
           <div className="pp-grabber absolute top-2 left-1/2 -translate-x-1/2 w-9 h-[5px] rounded-full" aria-hidden="true" />
           
           <div className="flex items-center w-full justify-between mt-1">
-            <div className="flex items-center gap-2.5">
+            <div className="flex min-w-0 flex-1 items-center gap-2.5">
               {headerIcon && <div aria-hidden="true" style={{ color: "var(--accent)" }}>{headerIcon}</div>}
-              <span className="pp-sheet-title">
-                {headerTitle}
-              </span>
+              {headerSummary ? (
+                <span id={summaryId} className="pp-sheet-summary">{headerSummary}</span>
+              ) : (
+                <span className="pp-sheet-title">
+                  {headerTitle}
+                </span>
+              )}
             </div>
-            <div aria-hidden="true" style={{ color: "var(--text-secondary)" }}>
+            <div aria-hidden="true" className="ml-2 shrink-0" style={{ color: "var(--text-secondary)" }}>
               {isOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
             </div>
           </div>

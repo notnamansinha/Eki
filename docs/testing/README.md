@@ -25,6 +25,7 @@ This index lists the documents that define how Eki is tested and every dated evi
 | EKI-TST-012 | [Reviewed unit sub-oracles](../../qa/REVIEWED_UNIT_EVIDENCE.md) | Run the reviewed L1 unit selection |
 | EKI-TST-013 | [Scheduled reliability](../../qa/SCHEDULED_RELIABILITY.md) | Understand the nightly and weekly workflows |
 | EKI-TST-014 | [DAST and OpenAPI scans](../../qa/DAST.md) | Run the bounded ZAP scans against the local backend or the staging service |
+| EKI-TST-015 | [Load and fault drills](../../qa/LOAD_DRILLS.md) | Run the k6 profiles and Toxiproxy drills against the local backend or a deployed revision |
 | EKI-TST-016 | [Observability drill](../../qa/OBSERVABILITY_DRILL.md) | Check traces, metrics, logs and redaction end to end, locally or through a deployed collector |
 | EKI-TST-017 | [Hosting cache and CDN matrix](../../qa/CACHE_MATRIX.md) | Check Hosting cache headers on a local replay or the staging site, and invalidation after a deploy |
 | EKI-TST-018 | [Privacy verification](../../qa/PRIVACY_VERIFICATION.md) | Check account deletion, log redaction and the third parties public pages contact; read the DPDP notice checklist |
@@ -122,6 +123,7 @@ CI success, a synthetic browser test, a stationary trace, a short moving trace a
 | EKI-EVD-060 | 2026-10-11 | [Deterministic QA baseline](../../qa/BASELINE_2026_10_11.md) | Audit | First QA programme slice; the [QA programme](../../qa/README.md) describes the current state |
 | EKI-EVD-061 | 2026-11-03 | [Cloud Run staging latency, 2 November](CLOUD_RUN_LATENCY_2026_11_02.md) | Stationary physical | Run 2026-11-02 against the Cloud Run staging backend and the `asia-southeast1` RTDB, with Cloud Run request logs and a remote RTDB listener; no moving drive or browser |
 | EKI-EVD-062 | 2026-11-23 | [DAST local scan, 23 November](DAST_LOCAL_2026_11_23.md) | Synthetic | OWASP ZAP local profile against the disposable backend; two High false positives triaged; the staging profile was not run |
+| EKI-EVD-063 | 2026-11-24 | [Load and fault drills, local, 24 November](LOAD_DRILLS_LOCAL_2026_11_24.md) | Synthetic | Bounded k6 profiles and Toxiproxy drills against one local backend process and the emulators; the deployed run was not made |
 | EKI-EVD-064 | 2026-11-24 | [Observability drill, local, 24 November](OBSERVABILITY_DRILL_LOCAL_2026_11_24.md) | Synthetic | OTLP traces, metrics, logs and redaction on the disposable stack; sampling and dashboard findings; the deployed relay and alert delivery were not run |
 | EKI-EVD-065 | 2026-11-24 | [Hosting cache matrix, 24 November](CACHE_MATRIX_2026_11_24.md) | Synthetic | Loopback replay of the export, plus read-only HTTP readings of the staging Hosting site serving `6c47e727`; invalidation after a deploy not yet observed (#504) |
 | EKI-EVD-066 | 2026-11-24 | [Privacy verification, 24 November](PRIVACY_VERIFICATION_2026_11_24.md) | Synthetic and live public pages | Passenger deletion against disposable emulators, with a negative control; request hosts of the local export and of the live staging site; staging deletion and legal sign-off not done |
