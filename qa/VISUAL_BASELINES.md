@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-TST-019 | 1.0 | Current | 2026-11-24 |
+| EKI-TST-019 | 1.1 | Current | 2026-11-25 |
 
 ## 1. Purpose
 
@@ -113,7 +113,7 @@ When `@playwright/test` changes version, `scripts/qa-visual.test.mjs` fails with
 
 ## 5. Tolerance
 
-Every screenshot is pixel-exact, except `passenger-tracking` and `passenger-tracking-gnss-lost`, which allow 600 differing pixels (0.06 % of the desktop viewport). In repeated runs on one machine, the text on the translucent route timeline sheet and the edges of the location prompt over the map rendered differently by 133 to 543 pixels from run to run. Turning off the sheet's backdrop blur did not remove this. The accessibility trees of these two states are still compared exactly, so a changed label fails there.
+Screenshots are compared with zero differing pixels tolerated, except `passenger-tracking` and `passenger-tracking-gnss-lost`, which tolerate up to 600 differing pixels (0.06 % of the desktop viewport). In these two states, anti-aliasing of the text on the translucent route timeline sheet and of the location prompt over the map varied by 133 to 543 pixels between runs on one machine. Turning off the sheet's backdrop blur did not remove this. The accessibility trees of these two states are still compared exactly, so a changed label fails there.
 
 ## 6. Limits
 
