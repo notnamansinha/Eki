@@ -123,13 +123,17 @@ A passing preflight proves the configuration only. Runtime isolation comes from 
 | GNSS properties | L1 | `npm run qa:gnss` | [GNSS properties](GNSS_PROPERTIES.md) |
 | Reviewed units | L1 | `npm run qa:unit:reviewed` | [Reviewed unit sub-oracles](REVIEWED_UNIT_EVIDENCE.md), [HTTP policy sub-oracles](HTTP_UNIT_EVIDENCE.md) |
 | Native firmware | L1 | `npm run qa:native` | [Native firmware evidence](NATIVE_EVIDENCE.md) |
+| Observability | L2 local, L4 relay | `npm run qa:observability`, `npm run qa:observability:relay` | [Observability drill](OBSERVABILITY_DRILL.md) |
 | Emulator integration | L2 | `npm run test:rules` | [Emulator acceptance](EMULATOR_ACCEPTANCE.md) |
 | HTTP authorization | L2 | `npm run qa:api` | [HTTP authorization sweep](HTTP_AUTHORIZATION.md) |
 | DAST and OpenAPI scans | L2 local, L4 staging | `npm run qa:dast`, `npm run qa:dast:staging` | [Bounded DAST and OpenAPI scans](DAST.md) |
 | Browser | L3 | `npm run qa:browser` | [Browser acceptance](BROWSER_ACCEPTANCE.md) |
+| Visual and accessibility-tree baselines | L3 | `npm run qa:visual`, `npm run qa:visual:update` | [Visual and accessibility-tree baselines](VISUAL_BASELINES.md) |
+| Real devices and screen readers | L4 | Manual | [Device and screen-reader acceptance](DEVICE_AND_SCREEN_READER_ACCEPTANCE.md) |
 | Ledger | All | `npm run qa:report` | [Execution ledger](EXECUTION_EVIDENCE.md) |
 | Scheduled campaigns | L1 to L3 | `npm run qa:nightly`, `npm run qa:weekly` | [Scheduled reliability](SCHEDULED_RELIABILITY.md) |
 | Privacy verification | L2 local; L4 read-only staging and live public pages, which contact the staging project | `npm run qa:privacy:deletion`, `npm run qa:privacy:hosts` and their `:staging` and `:live` forms | [Privacy verification](PRIVACY_VERIFICATION.md) |
+| Hosting cache matrix | L0 local replay; L4 live, read-only GET requests to the staging Hosting site outside the safety preflight | `npm run qa:cache`, `npm run qa:cache:live`, `npm run qa:cache:compare` | [Hosting cache and CDN matrix](CACHE_MATRIX.md) |
 | Witnessed field | L5 | Manual | [Field acceptance package](FIELD_ACCEPTANCE.md) |
 
 [qa/BASELINE_2026_10_11.md](BASELINE_2026_10_11.md) (EKI-EVD-060) records the inspection that started this programme.

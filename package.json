@@ -36,6 +36,9 @@
     "qa:browser:providers": "npm run build --workspace=backend && node scripts/run-rules-emulator.mjs --browser-providers",
     "qa:browser:service": "npm run build --workspace=backend && node scripts/run-rules-emulator.mjs --browser-service",
     "qa:budget": "node scripts/qa/coverage-budget.mjs",
+    "qa:cache": "node scripts/qa/run-cache-matrix.mjs",
+    "qa:cache:live": "node scripts/qa/run-cache-matrix.mjs --live",
+    "qa:cache:compare": "node scripts/qa/run-cache-matrix.mjs --compare",
     "qa:gnss": "node scripts/qa/run-gnss.mjs",
     "qa:report": "node scripts/qa/execution-report.mjs",
     "qa:privacy:deletion": "npm run build --workspace=backend && node scripts/qa/run-privacy-deletion.mjs",
@@ -48,9 +51,14 @@
     "qa:api": "npm run build --workspace=backend && node scripts/run-rules-emulator.mjs --api",
     "qa:dast": "npm run build --workspace=backend && node scripts/run-rules-emulator.mjs --dast",
     "qa:dast:staging": "node scripts/qa/run-dast.mjs --staging",
+    "qa:observability": "npm run build --workspace=backend && node scripts/run-rules-emulator.mjs --observability",
+    "qa:observability:relay": "npm run build --workspace=backend && node scripts/qa/run-observability-drill.mjs --relay",
+    "qa:observability:collector": "node scripts/qa/replay-otel-collector.mjs",
     "qa:mutation": "node scripts/qa/run-mutation.mjs",
     "qa:soak": "npm run build --workspace=backend && node scripts/qa/run-soak.mjs",
-    "qa:weekly": "npm run qa:check && npm run qa:mutation && npm run qa:soak"
+    "qa:weekly": "npm run qa:check && npm run qa:mutation && npm run qa:soak",
+    "qa:visual": "node scripts/qa/run-visual.mjs",
+    "qa:visual:update": "node scripts/qa/run-visual.mjs --update"
   },
   "overrides": {
     "typed-rest-client": {

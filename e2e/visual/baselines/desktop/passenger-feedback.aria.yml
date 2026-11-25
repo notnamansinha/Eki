@@ -1,0 +1,9 @@
+- dialog "Send feedback":
+  - heading "Send feedback" [level=2]
+  - button "Close feedback"
+  - text: Comments and suggestions
+  - textbox "Comments and suggestions":
+    - /placeholder: Suggestions, ideas, bugs…
+  - status
+  - text: /0 \/ \d+ words/
+  - button "Submit feedback" [disabled]

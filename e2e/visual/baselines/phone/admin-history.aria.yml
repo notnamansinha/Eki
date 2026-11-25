@@ -1,0 +1,32 @@
+- main:
+  - tablist "Administration sections":
+    - tab "Live Ops"
+    - tab "Routes"
+    - tab "Fleet & People"
+    - tab "History" [selected]
+    - tab "Feedback"
+    - tab "Settings"
+  - link "Passenger Panel":
+    - /url: /passenger
+  - tabpanel "History":
+    - heading "Ride History" [level=2]
+    - 'button /Ended early \d+ Jun \d+ Started \d+:\d+:\d+ pm Last recorded \d+:\d+:\d+ pm Route: Ahmedabad University Extended Campus and Science Research Shuttle Direction: Direction pending Bus: Synthetic bus Driver: Synthetic operator The ride ended before the final stop was recorded\. Manually ended before the final stop\. 0/':
+      - text: "/Ended early \\d+ Jun \\d+ Started \\d+:\\d+:\\d+ pm Last recorded \\d+:\\d+:\\d+ pm Route: Ahmedabad University Extended Campus and Science Research Shuttle Direction: Direction pending Bus: Synthetic bus Driver: Synthetic operator/"
+      - paragraph: The ride ended before the final stop was recorded.
+      - paragraph: Manually ended before the final stop.
+      - text: "0"
+    - 'button /Ended early \d+ Jun \d+ Started \d+:\d+:\d+ pm Last recorded \d+:\d+:\d+ pm Route: Ahmedabad University Extended Campus and Science Research Shuttle Direction: Direction pending Bus: Synthetic bus Driver: Synthetic operator The ride ended before the final stop was recorded\. Closed after the ride''s inactivity limit was reached\. 0/':
+      - text: "/Ended early \\d+ Jun \\d+ Started \\d+:\\d+:\\d+ pm Last recorded \\d+:\\d+:\\d+ pm Route: Ahmedabad University Extended Campus and Science Research Shuttle Direction: Direction pending Bus: Synthetic bus Driver: Synthetic operator/"
+      - paragraph: The ride ended before the final stop was recorded.
+      - paragraph: Closed after the ride's inactivity limit was reached.
+      - text: "0"
+    - 'button /Ended early \d+ Jun \d+ Started \d+:\d+:\d+ pm Last recorded \d+:\d+:\d+ pm Route: Ahmedabad University Extended Campus and Science Research Shuttle Direction: Direction pending Bus: Synthetic bus Driver: Synthetic operator The ride ended before the final stop was recorded\. The interruption reason was not recorded\. 0/':
+      - text: "/Ended early \\d+ Jun \\d+ Started \\d+:\\d+:\\d+ pm Last recorded \\d+:\\d+:\\d+ pm Route: Ahmedabad University Extended Campus and Science Research Shuttle Direction: Direction pending Bus: Synthetic bus Driver: Synthetic operator/"
+      - paragraph: The ride ended before the final stop was recorded.
+      - paragraph: The interruption reason was not recorded.
+      - text: "0"
+    - 'button /Ended early \d+ Jun \d+ Started \d+:\d+:\d+ pm Last recorded \d+:\d+:\d+ pm Route: Ahmedabad University Extended Campus and Science Research Shuttle Direction: Direction pending Bus: Synthetic bus Driver: Synthetic operator The ride ended before the final stop was recorded\. The interruption reason is unavailable\. 0/':
+      - text: "/Ended early \\d+ Jun \\d+ Started \\d+:\\d+:\\d+ pm Last recorded \\d+:\\d+:\\d+ pm Route: Ahmedabad University Extended Campus and Science Research Shuttle Direction: Direction pending Bus: Synthetic bus Driver: Synthetic operator/"
+      - paragraph: The ride ended before the final stop was recorded.
+      - paragraph: The interruption reason is unavailable.
+      - text: "0"
