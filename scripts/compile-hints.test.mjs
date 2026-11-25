@@ -88,22 +88,19 @@ test("refuses source map references it cannot move safely", () => {
   assert.throws(() => sourceMapPathname("x();\n//# sourceMappingURL=../../../../secret.map", src), /outside/);
 });
 
-test("moves source map mappings and index-map sections down one line and marks them", () => {
+test("moves a flat source map down one line, marks it and refuses other map shapes", () => {
   const flat = shiftSourceMapOneLine({ version: 3, mappings: "AAAA,CAAC" });
   assert.equal(flat.mappings, ";AAAA,CAAC");
   assert.equal(flat[SHIFTED_MAP_MARKER], 1);
-  const indexMap = shiftSourceMapOneLine({ version: 3, sections: [{ offset: { line: 0, column: 0 }, map: {} }] });
-  assert.deepEqual(indexMap.sections[0].offset, { line: 1, column: 0 });
-  assert.equal(indexMap[SHIFTED_MAP_MARKER], 1);
-  assert.throws(() => shiftSourceMapOneLine({ version: 3 }), /Unsupported source map/);
+  assert.throws(() => shiftSourceMapOneLine({ version: 3, sections: [] }), /Unsupported source map/);
 });
 
 test("marks an export's landing chunks once, shifts their maps and leaves other chunks alone", () => withExport(async ({ outDir, chunks }) => {
   const first = await markLandingChunks(outDir);
   assert.deepEqual(first.chunks, ["/_next/static/chunks/a.js"]);
   assert.equal(first.marked, 1);
-  assert.equal(first.sizes.length, 1);
-  assert.equal(first.gzipBytes, first.sizes[0].gzipBytes);
+  assert.deepEqual(first.sizes.map(({ src }) => src), ["/_next/static/chunks/a.js"]);
+  assert.ok(first.sizes[0].gzipBytes > 0);
   assert.equal(await readFile(path.join(chunks, "a.js"), "utf8"), `${COMPILE_HINT}\nconsole.log(1);\n//# sourceMappingURL=hash-a.js.map`);
   assert.equal((await readMap(chunks)).mappings, ";AAAA");
   assert.equal(await readFile(path.join(chunks, "poly.js"), "utf8"), "polyfill();");
@@ -138,11 +135,11 @@ test("fails when the landing page loads no chunk, instead of silently skipping t
 });
 
 test("reports the budget with the largest chunks first", () => {
-  const sizes = [{ src: "/small.js", gzipBytes: 1024 }, { src: "/big.js", gzipBytes: 4096 }];
-  assert.equal(landingBudgetReport(sizes, 5120).ok, true);
-  const over = landingBudgetReport(sizes, 4096);
+  const atBudget = [{ src: "/small.js", gzipBytes: 1024 }, { src: "/big.js", gzipBytes: LANDING_JS_GZIP_BUDGET_BYTES - 1024 }];
+  assert.equal(landingBudgetReport(atBudget).ok, true);
+  const over = landingBudgetReport([{ src: "/small.js", gzipBytes: 1024 }, { src: "/big.js", gzipBytes: LANDING_JS_GZIP_BUDGET_BYTES }]);
   assert.equal(over.ok, false);
-  assert.equal(over.total, 5120);
+  assert.equal(over.total, LANDING_JS_GZIP_BUDGET_BYTES + 1024);
   assert.ok(over.message.indexOf("/big.js") < over.message.indexOf("/small.js"), over.message);
   assert.match(over.message, /LANDING_JS_GZIP_BUDGET_BYTES/);
 });

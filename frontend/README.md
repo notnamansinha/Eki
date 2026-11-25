@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-PKG-002 | 5.0 | Current | 2026-11-24 |
+| EKI-PKG-002 | 5.0 | Current | 2026-11-25 |
 
 ## 1. Purpose
 
@@ -209,7 +209,14 @@ For work on this package:
 
 With `EKI_STRICT_PRODUCTION_BUILD=true`, which `npm run build:production` sets, `next.config.ts` fails if any required `NEXT_PUBLIC_*` value is missing, or if `NEXT_PUBLIC_FIREBASE_DATABASE_URL` or `NEXT_PUBLIC_BACKEND_URL` is not a non-local HTTPS URL.
 
-After `next build`, `scripts/compile-hints.mjs` adds V8's `//# allFunctionsCalledOnLoad` comment as the first line of every `/_next/static/chunks/*.js` file that `out/index.html` loads with a `<script src>` (not the `nomodule` polyfill), and moves each file's source map down one line. All but one of those chunks are the root chunks every page loads. Without the comment, V8 compiles each Turbopack module lazily on the main thread when hydration first runs it, which was most of the landing page's one long task (#498). With it, Chromium compiles every function in these files on the background thread that streams them; that costs background CPU time and memory, and a streamed file runs only once it is compiled. Other browsers ignore the comment. The step fails the build when a chunk's source map reference is not one it can move safely, and when these chunks exceed 170 KiB gzipped (the `LANDING_JS_GZIP_BUDGET_BYTES` constant in the script), listing each chunk's size. Chunk names do not change, so a browser may keep an unmarked copy under the one-year immutable cache until a later release renames the chunk; the step must therefore only ever add comments. `scripts/compile-hints.test.mjs` checks the step and that it runs before `scripts/generate-sw.mjs`.
+After `next build`, `scripts/compile-hints.mjs` processes the chunks that the landing page loads at start-up: every `/_next/static/chunks/*.js` file that `out/index.html` loads with a `<script src>`, except the `nomodule` polyfill. All but one of them are root chunks that every page loads.
+
+- The step adds V8's `//# allFunctionsCalledOnLoad` comment as the first line of each chunk and moves the chunk's source map down one line. Chromium then compiles the whole file on the background thread that streams it, instead of compiling each Turbopack module on the main thread when hydration first runs it. Other browsers ignore the comment.
+- Eager compilation also compiles functions that never run. It uses background CPU time and memory, and a streamed chunk runs only after it is compiled.
+- The build fails when a chunk's source map reference is not a single `//# sourceMappingURL=` line inside `/_next/static/`, or when the chunks exceed 170 KiB gzipped (`LANDING_JS_GZIP_BUDGET_BYTES` in the script). The budget message lists each chunk's size.
+- Chunk names do not change, and Hosting serves them as immutable for one year, so a browser can keep an unmarked copy until a later release renames the chunk. The step therefore adds only comments.
+
+`scripts/compile-hints.test.mjs` checks the step and that it runs before `scripts/generate-sw.mjs`.
 
 Firebase Hosting serves `frontend/out` with `cleanUrls: true`. The header rule for `/`, `/admin`, `/feedback`, `/install` and `/passenger` sends `Cache-Control: no-cache, no-store, must-revalidate`. It lists every top-level page folder in `src/app`, and `backend/src/securityConfig.test.ts` fails when a new page is not added to it. `/_next/static/**` is sent as immutable for one year, and images for 30 days with one day of stale-while-revalidate. `/sw.js` is never cached and carries `Service-Worker-Allowed: /`. A path with no file gets `404.html` (exported from `src/app/not-found.tsx`, with a link back to `/`) and HTTP 404. Hosting matches header rules for that page against `404.html`, so the `/404.html` rule sends it with the same `no-cache, no-store, must-revalidate`; without it Hosting adds its default one-hour `max-age=3600`, and a URL that becomes valid after a release could keep showing the 404 for an hour. `scripts/hosting-not-found.test.mjs` checks this. The release procedure is in [CI/CD and releases](../docs/operations/CI_CD_AND_RELEASES.md).
 

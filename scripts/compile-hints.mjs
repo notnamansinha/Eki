@@ -90,31 +90,22 @@ export function sourceMapPathname(source, src) {
   return decodeURIComponent(url.pathname);
 }
 
-/** Move every mapping of a source map down one generated line, and mark the map as moved. */
+/** Move every mapping of a flat source map down one generated line, and mark the map as moved. */
 export function shiftSourceMapOneLine(map) {
-  if (typeof map.mappings === "string") return { ...map, mappings: `;${map.mappings}`, [SHIFTED_MAP_MARKER]: 1 };
-  if (Array.isArray(map.sections)) {
-    return {
-      ...map,
-      sections: map.sections.map((section) => ({
-        ...section,
-        offset: { ...section.offset, line: section.offset.line + 1 },
-      })),
-      [SHIFTED_MAP_MARKER]: 1,
-    };
-  }
-  throw new Error("Unsupported source map: neither mappings nor sections.");
+  if (typeof map.mappings !== "string") throw new Error("Unsupported source map: expected a flat map with mappings.");
+  return { ...map, mappings: `;${map.mappings}`, [SHIFTED_MAP_MARKER]: 1 };
 }
 
-function exportFile(outDir, pathname) {
-  return path.join(outDir, ...pathname.split("/").filter(Boolean));
+/** The file in the export directory that a site path such as `/_next/static/chunks/a.js` serves. */
+function fileForUrlPath(outDir, urlPath) {
+  return path.join(outDir, ...urlPath.split("/").filter(Boolean));
 }
 
 /**
  * Marks the landing page's initial chunks in an exported `out/` directory.
  * Each map is written before its chunk, and a map carries a marker once
  * moved, so a run that stopped half-way can be repeated safely.
- * Returns each chunk's gzip size, how many chunks were newly marked and the total.
+ * Returns the chunks, how many were newly marked and each chunk's gzip size.
  */
 export async function markLandingChunks(outDir) {
   const html = await readFile(path.join(outDir, "index.html"), "utf8");
@@ -125,12 +116,12 @@ export async function markLandingChunks(outDir) {
   let marked = 0;
   const sizes = [];
   for (const src of chunks) {
-    const file = exportFile(outDir, src);
+    const file = fileForUrlPath(outDir, src);
     const original = await readFile(file, "utf8");
     const { source, changed } = withCompileHint(original);
     const mapPathname = sourceMapPathname(original, src);
     if (mapPathname) {
-      const mapFile = exportFile(outDir, mapPathname);
+      const mapFile = fileForUrlPath(outDir, mapPathname);
       const map = JSON.parse(await readFile(mapFile, "utf8"));
       if (map[SHIFTED_MAP_MARKER] !== 1) {
         // A chunk that already starts with the hint but whose map was never
@@ -145,13 +136,14 @@ export async function markLandingChunks(outDir) {
     }
     sizes.push({ src, gzipBytes: gzipSync(source, { level: 9 }).length });
   }
-  return { chunks, marked, sizes, gzipBytes: sizes.reduce((sum, { gzipBytes }) => sum + gzipBytes, 0) };
+  return { chunks, marked, sizes };
 }
 
 const kib = (bytes) => `${(bytes / 1024).toFixed(1)} KiB`;
 
 /** Budget verdict with the chunks listed largest first, so a failure shows what grew. */
-export function landingBudgetReport(sizes, budget = LANDING_JS_GZIP_BUDGET_BYTES) {
+export function landingBudgetReport(sizes) {
+  const budget = LANDING_JS_GZIP_BUDGET_BYTES;
   const total = sizes.reduce((sum, { gzipBytes }) => sum + gzipBytes, 0);
   const table = [...sizes]
     .sort((a, b) => b.gzipBytes - a.gzipBytes)
