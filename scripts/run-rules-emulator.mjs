@@ -33,6 +33,8 @@ const SCOPES = {
   '--api': { prefix: 'api', runner: 'scripts/qa/run-api.mjs', minutes: 6 },
   '--dast': { prefix: 'dast-local', runner: 'scripts/qa/run-dast.mjs', minutes: 60 },
   '--load': { prefix: 'load-local', runner: 'scripts/qa/run-load.mjs', minutes: 45 },
+  '--observability': { prefix: 'observability', runner: 'scripts/qa/run-observability-drill.mjs', minutes: 6 },
+  '--observability-relay': { prefix: 'observability-relay', runner: 'scripts/qa/run-observability-drill.mjs', runnerArgs: '--relay-in-emulators', minutes: 6 },
 };
 const scopeName = args[0] ?? '';
 if (args.length > 1 || !Object.hasOwn(SCOPES, scopeName)) {
@@ -71,7 +73,7 @@ const emulatorArgs = [
   "firestore,database,auth",
   "--project",
   "demo-eki-qa",
-  `node "${path.join(ROOT, scope.runner)}"`,
+  `node "${path.join(ROOT, scope.runner)}"${scope.runnerArgs ? ` ${scope.runnerArgs}` : ''}`,
 ];
 
 function spawnNpx() {

@@ -1,0 +1,12 @@
+- main:
+  - paragraph:
+    - time: /Monday, \d+ November/
+  - heading "Live routes" [level=1]
+  - text: 0 routes
+  - paragraph: Select a route to view the live bus location.
+  - paragraph: No buses running
+  - paragraph: /Service starts at 8:\d+ am/
+- navigation "Passenger sections":
+  - button "Live"
+  - button "Routes"
+  - button "Profile"

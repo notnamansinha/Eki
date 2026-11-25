@@ -411,7 +411,6 @@ export default function FleetManagementPanel({ mode = "combined" }: Props) {
             </div>
             <button
               onClick={handleAddBus}
-              aria-label="Add new vehicle"
               disabled={saving}
               className="btn-rc-primary h-11 flex items-center justify-center gap-2 font-semibold uppercase text-xs tracking-widest px-4"
             >
@@ -423,7 +422,7 @@ export default function FleetManagementPanel({ mode = "combined" }: Props) {
           <div className="panel-rc overflow-hidden">
             <button
               onClick={() => setBusListOpen((o) => !o)}
-              aria-label={busListOpen ? "Collapse saved vehicles" : "Expand saved vehicles"}
+              aria-expanded={busListOpen}
               className="w-full flex items-center justify-between px-4 py-3 hover:bg-ui-soft transition-colors"
             >
               <div className="flex items-center gap-2">
@@ -611,7 +610,6 @@ export default function FleetManagementPanel({ mode = "combined" }: Props) {
             />
             <button
               onClick={handleAddDriver}
-              aria-label="Add new operator"
               disabled={saving}
               className="btn-rc-primary h-11 flex items-center justify-center gap-2 font-semibold uppercase text-xs tracking-widest px-4"
             >
@@ -623,7 +621,7 @@ export default function FleetManagementPanel({ mode = "combined" }: Props) {
           <div className="bg-brand-surface/40 border border-ui-line rounded-2xl overflow-hidden">
             <button
               onClick={() => setDriverListOpen((o) => !o)}
-              aria-label={driverListOpen ? "Collapse saved operators" : "Expand saved operators"}
+              aria-expanded={driverListOpen}
               className="w-full flex items-center justify-between px-4 py-3 hover:bg-ui-soft transition-colors"
             >
               <div className="flex items-center gap-2">

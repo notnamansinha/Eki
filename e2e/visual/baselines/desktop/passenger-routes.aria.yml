@@ -1,0 +1,42 @@
+- main:
+  - region "Routes":
+    - heading "Routes" [level=1]
+    - paragraph: Stops and scheduled times for each route.
+    - searchbox "Search routes or stops"
+    - list "Published routes":
+      - listitem:
+        - button "View schedule for Campus Loop":
+          - text: CL
+          - strong: Campus Loop
+          - text: Main Gate → Administrative Building
+      - listitem:
+        - button "View schedule for QA route":
+          - text: QR
+          - strong: QA route
+          - text: Alpha → Beta
+  - region "Route details":
+    - text: CL
+    - heading "Campus Loop" [level=2]
+    - paragraph: Main Gate → Administrative Building
+    - paragraph: Scheduled stops · 5 stops
+    - paragraph: Scheduled times only
+    - list "Campus Loop stops":
+      - listitem:
+        - paragraph: Main Gate
+        - paragraph: /Scheduled 7:\d+ am/
+      - listitem:
+        - paragraph: Central Library
+        - paragraph: /Scheduled 7:\d+ am/
+      - listitem:
+        - paragraph: Girls Hostel Block C (North Wing)
+        - paragraph: /Scheduled 7:\d+ am/
+      - listitem:
+        - paragraph: Sports Complex
+        - paragraph: Time not set
+      - listitem:
+        - paragraph: Administrative Building
+        - paragraph: /Scheduled 8:\d+ am/
+- navigation "Passenger sections":
+  - button "Live"
+  - button "Routes"
+  - button "Profile"

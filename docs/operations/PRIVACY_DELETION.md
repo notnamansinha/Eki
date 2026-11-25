@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-OPS-015 | 1.1 | Current | 2026-11-07 |
+| EKI-OPS-015 | 1.2 | Current | 2026-11-24 |
 
 ## 1. Purpose
 
@@ -93,5 +93,6 @@ Every fleet endpoint that changes Auth and the privacy worker share the fleet lo
 | Queue fairness, backoff, failure budget, poison records, claim and lease fencing | `backend/src/services/privacyDeletionQueue.test.ts`, `backend/src/services/qaPrivacyResubmissionEdge.test.ts` |
 | Cursor, retained records, rate-limit pages, an executor killed during Auth deletion | `backend/src/privacyDeletion.integration.test.ts`, run by `npm run test:rules` |
 | Confirmation, acknowledgement and sign-out in the browser | `frontend/src/components/passenger/AccountTab.test.tsx` |
+| Every store holding passenger data after a real deletion, with emulator Auth, the worker, a database sweep and a backend log scan; a read-only staging check | `npm run qa:privacy:deletion`, `npm run qa:privacy:deletion:staging` ([privacy verification](../../qa/PRIVACY_VERIFICATION.md)) |
 
 These tests use emulators and synthetic Auth. Deployed collection-group indexes, real Auth failure and revocation outcomes, process supervision, replica and console quiescence, backup erasure and institutional privacy approval need staging evidence and sign-off, tracked in the [university deployment checklist](UNIVERSITY_DEPLOYMENT_CHECKLIST.md).

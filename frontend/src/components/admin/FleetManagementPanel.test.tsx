@@ -33,16 +33,16 @@ describe("fleet and personnel controls", () => {
   it("announces and focuses operator validation in the operator form", async () => {
     const fetchMock = vi.fn(); vi.stubGlobal("fetch", fetchMock);
     render(<FleetManagementPanel />); const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "Add new operator" }));
+    await user.click(screen.getByRole("button", { name: "Add Operator" }));
     const error = screen.getByRole("alert");
     expect(error.textContent).toContain("Operator ID is required.");
     expect(error.parentElement?.textContent).toContain("Register new operator");
     expect(document.activeElement).toBe(error);
-    await user.click(screen.getByRole("button", { name: "Add new operator" }));
+    await user.click(screen.getByRole("button", { name: "Add Operator" }));
     expect(document.activeElement).toBe(error);
     expect(fetchMock).not.toHaveBeenCalled();
     await user.type(screen.getByLabelText("New operator ID"), "driver1");
-    await user.click(screen.getByRole("button", { name: "Add new operator" }));
+    await user.click(screen.getByRole("button", { name: "Add Operator" }));
     expect(screen.getByRole("alert").textContent).toContain("Operator display name is required.");
     expect(document.activeElement).toBe(screen.getByRole("alert"));
   });
@@ -53,7 +53,7 @@ describe("fleet and personnel controls", () => {
     await user.type(screen.getByLabelText("New operator ID"), "existing_driver");
     await user.type(screen.getByLabelText("New operator display name"), "Draft driver");
     await user.type(screen.getByLabelText("Firebase Auth UID for new operator"), "uid_1");
-    await user.click(screen.getByRole("button", { name: "Add new operator" }));
+    await user.click(screen.getByRole("button", { name: "Add Operator" }));
     const error = await screen.findByRole("alert");
     expect(error.textContent).toContain("Operator already exists");
     expect(error.parentElement?.textContent).toContain("Register new operator");
@@ -75,9 +75,9 @@ describe("fleet and personnel controls", () => {
   });
   it("validates empty vehicle and operator forms before any API call", async () => {
     const fetchMock = vi.fn(); vi.stubGlobal("fetch", fetchMock); render(<FleetManagementPanel />); const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: "Add new vehicle" })); expect(screen.getByText("Vehicle ID is required.")).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Add Vehicle" })); expect(screen.getByText("Vehicle ID is required.")).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "Dismiss error" }));
-    await user.click(screen.getByRole("button", { name: "Add new operator" })); expect(screen.getByText("Operator ID is required.")).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Add Operator" })); expect(screen.getByText("Operator ID is required.")).toBeTruthy();
     expect(fetchMock).not.toHaveBeenCalled();
   });
   it.each(["vehicle QA Bus", "operator QA Driver"])("cancels deletion of %s without a write", async target => {
@@ -91,14 +91,23 @@ describe("fleet and personnel controls", () => {
     await user.click(screen.getByRole("button", { name: "Edit vehicle QA Bus" }));
     await user.clear(screen.getByLabelText("Edit vehicle display name")); await user.type(screen.getByLabelText("Edit vehicle display name"), "Unsaved vehicle");
     await user.click(screen.getByRole("button", { name: "Cancel editing vehicle" }));
-    await user.click(screen.getByRole("button", { name: "Collapse saved vehicles" }));
+    // The toggles are named by their visible text (WCAG 2.2 SC 2.5.3) and report their state with aria-expanded.
+    const savedVehicles = screen.getByRole("button", { name: /^Saved Vehicles/ });
+    expect(savedVehicles.getAttribute("aria-expanded")).toBe("true");
+    await user.click(savedVehicles);
+    expect(savedVehicles.getAttribute("aria-expanded")).toBe("false");
     expect(screen.queryByRole("button", { name: "Edit vehicle QA Bus" })).toBeNull();
-    await user.click(screen.getByRole("button", { name: "Expand saved vehicles" }));
+    await user.click(savedVehicles);
+    expect(savedVehicles.getAttribute("aria-expanded")).toBe("true");
     expect(screen.getByRole("button", { name: "Edit vehicle QA Bus" })).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "Edit operator QA Driver" }));
     await user.click(screen.getByRole("button", { name: "Cancel editing operator" }));
-    await user.click(screen.getByRole("button", { name: "Collapse saved operators" }));
-    await user.click(screen.getByRole("button", { name: "Expand saved operators" }));
+    const savedOperators = screen.getByRole("button", { name: /^Saved Operators/ });
+    await user.click(savedOperators);
+    expect(savedOperators.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByRole("button", { name: "Edit operator QA Driver" })).toBeNull();
+    await user.click(savedOperators);
+    expect(savedOperators.getAttribute("aria-expanded")).toBe("true");
     expect(screen.getByRole("button", { name: "Edit operator QA Driver" })).toBeTruthy(); expect(fetchMock).not.toHaveBeenCalled();
   });
   it("retains new vehicle input after a server rejection", async () => {
@@ -107,7 +116,7 @@ describe("fleet and personnel controls", () => {
     await user.type(screen.getByLabelText("New vehicle Bus ID"), "qa-bus-new");
     await user.type(screen.getByLabelText("New vehicle display name"), "QA duplicate");
     await user.click(screen.getByRole("checkbox", { name: "QA route" }));
-    await user.click(screen.getByRole("button", { name: "Add new vehicle" }));
+    await user.click(screen.getByRole("button", { name: "Add Vehicle" }));
     expect(await screen.findByText(/vehicle already exists/)).toBeTruthy();
     expect((screen.getByLabelText("New vehicle display name") as HTMLInputElement).value).toBe("QA duplicate");
   });
@@ -116,7 +125,7 @@ describe("fleet and personnel controls", () => {
     render(<FleetManagementPanel />); const user = userEvent.setup();
     await user.type(screen.getByLabelText("New vehicle Bus ID"), " qa-bus ");
     await user.type(screen.getByLabelText("New vehicle display name"), "Replacement");
-    await user.click(screen.getByRole("button", { name: "Add new vehicle" }));
+    await user.click(screen.getByRole("button", { name: "Add Vehicle" }));
     expect(screen.getByText(/Vehicle ID "qa-bus" already exists/)).toBeTruthy();
     expect(fetchMock).not.toHaveBeenCalled();
     expect((screen.getByLabelText("New vehicle display name") as HTMLInputElement).value).toBe("Replacement");
@@ -127,7 +136,7 @@ describe("fleet and personnel controls", () => {
     await user.type(screen.getByLabelText("New operator ID"), "qa-driver");
     await user.type(screen.getByLabelText("New operator display name"), "Someone else");
     await user.type(screen.getByLabelText("Firebase Auth UID for new operator"), "other-uid");
-    await user.click(screen.getByRole("button", { name: "Add new operator" }));
+    await user.click(screen.getByRole("button", { name: "Add Operator" }));
     expect(screen.getByRole("alert").textContent).toContain('Operator ID "qa-driver" already exists');
     expect(fetchMock).not.toHaveBeenCalled();
   }, 15_000);
