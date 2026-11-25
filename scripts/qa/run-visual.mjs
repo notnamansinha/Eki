@@ -4,7 +4,7 @@ import { resolve } from 'node:path';
 import { repositoryRoot } from './acceptance-catalog.mjs';
 import { workingTreeState } from './working-tree.mjs';
 import {
-  VISUAL_IMAGE, assertImageMatches, dockerRunArgs, installedPlaywrightVersions,
+  VISUAL_IMAGE, assertImageMatches, dockerPortArgs, dockerRunArgs, installedPlaywrightVersions,
   parseVisualArgs, playwrightArgs, publishedPort,
 } from './visual-plan.mjs';
 
@@ -22,7 +22,6 @@ const options = parseVisualArgs(process.argv.slice(2));
 const versions = installedPlaywrightVersions(repositoryRoot);
 assertImageMatches(versions);
 
-const git = args => execFileSync('git', args, { cwd: repositoryRoot, encoding: 'utf8' }).trim();
 const docker = (args, extra = {}) => execFileSync('docker', args, { encoding: 'utf8', ...extra }).trim();
 const outputDirectory = resolve(repositoryRoot, 'artifacts/visual');
 mkdirSync(outputDirectory, { recursive: true });
@@ -31,7 +30,7 @@ const name = `eki-visual-${process.pid}`;
 const record = {
   schemaVersion: 1,
   mode: options.update ? 'update' : 'compare',
-  sourceCommit: git(['rev-parse', 'HEAD']),
+  sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repositoryRoot, encoding: 'utf8' }).trim(),
   ...workingTreeState(repositoryRoot),
   startedAt: new Date().toISOString(), finishedAt: null,
   image: VISUAL_IMAGE, playwright: versions.test,
@@ -56,7 +55,7 @@ try {
   docker(dockerRunArgs({ name, playwrightCorePath: resolve(repositoryRoot, 'node_modules/playwright-core') }), { stdio: ['ignore', 'pipe', 'inherit'] });
   started = true;
   waitForServer();
-  const port = publishedPort(docker(['port', name, '3000/tcp']));
+  const port = publishedPort(docker(dockerPortArgs(name)));
   const cli = resolve(repositoryRoot, 'node_modules/@playwright/test/cli.js');
   const run = spawnSync(process.execPath, [cli, ...playwrightArgs(options)], {
     cwd: repositoryRoot, stdio: 'inherit',
