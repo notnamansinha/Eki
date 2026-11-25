@@ -132,6 +132,7 @@ A passing preflight proves the configuration only. Runtime isolation comes from 
 | Real devices and screen readers | L4 | Manual | [Device and screen-reader acceptance](DEVICE_AND_SCREEN_READER_ACCEPTANCE.md) |
 | Ledger | All | `npm run qa:report` | [Execution ledger](EXECUTION_EVIDENCE.md) |
 | Scheduled campaigns | L1 to L3 | `npm run qa:nightly`, `npm run qa:weekly` | [Scheduled reliability](SCHEDULED_RELIABILITY.md) |
+| Hosting cache matrix | L0 local replay; L4 live, read-only GET requests to the staging Hosting site outside the safety preflight | `npm run qa:cache`, `npm run qa:cache:live`, `npm run qa:cache:compare` | [Hosting cache and CDN matrix](CACHE_MATRIX.md) |
 | Witnessed field | L5 | Manual | [Field acceptance package](FIELD_ACCEPTANCE.md) |
 
 [qa/BASELINE_2026_10_11.md](BASELINE_2026_10_11.md) (EKI-EVD-060) records the inspection that started this programme.

@@ -204,6 +204,7 @@ The register lists every controlled document by its source path. A mirror carrie
 | EKI-TST-013 | [Scheduled Reliability Workflows](../qa/SCHEDULED_RELIABILITY.md) | 2.1 | Current | 2026-11-07 |
 | EKI-TST-014 | [Bounded DAST and OpenAPI Scans](../qa/DAST.md) | 1.0 | Current | 2026-11-23 |
 | EKI-TST-016 | [Observability Drill](../qa/OBSERVABILITY_DRILL.md) | 1.0 | Current | 2026-11-25 |
+| EKI-TST-017 | [Hosting Cache and CDN Matrix](../qa/CACHE_MATRIX.md) | 1.0 | Current | 2026-11-25 |
 | EKI-TST-019 | [Visual and Accessibility-Tree Baselines](../qa/VISUAL_BASELINES.md) | 1.1 | Current | 2026-11-25 |
 | EKI-TST-020 | [Device and Screen-Reader Acceptance](../qa/DEVICE_AND_SCREEN_READER_ACCEPTANCE.md) | 1.1 | Current | 2026-11-24 |
 
@@ -274,6 +275,7 @@ The register lists every controlled document by its source path. A mirror carrie
 | EKI-EVD-061 | [Cloud Run staging latency: 2 November 2026](testing/CLOUD_RUN_LATENCY_2026_11_02.md) | 1.0 | Historical | 2026-11-03 |
 | EKI-EVD-062 | [DAST local scan: 23 November 2026](testing/DAST_LOCAL_2026_11_23.md) | 1.0 | Historical | 2026-11-23 |
 | EKI-EVD-064 | [Observability drill, local: 24 November 2026](testing/OBSERVABILITY_DRILL_LOCAL_2026_11_24.md) | 1.0 | Historical | 2026-11-25 |
+| EKI-EVD-065 | [Hosting cache matrix: 24 November 2026](testing/CACHE_MATRIX_2026_11_24.md) | 1.0 | Historical | 2026-11-24 |
 | EKI-EVD-067 | [Visual baseline review: 24 November 2026](testing/VISUAL_BASELINE_REVIEW_2026_11_24.md) | 1.0 | Historical | 2026-11-24 |
 
 <!-- register:end -->
