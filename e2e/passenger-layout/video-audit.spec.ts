@@ -312,7 +312,8 @@ test("edge: landscape phone and tiny heights keep the panel above a painted foot
         const center = { x: first.x + first.width / 2, y: Math.max(first.y, listBox.y) + shownPart(first) / 2 };
         expect(await hitTestable(page, "[aria-label='Track QA route']", [center]), label).toBe(true);
         await list.evaluate(element => element.scrollTo({ top: element.scrollHeight, behavior: "instant" }));
-        const last = (await page.getByRole("button", { name: "Track QA route B", exact: true }).boundingBox())!;
+        // The demo ride is listed after the live routes, so it is the last card.
+        const last = (await page.locator("[data-passenger-route]").last().boundingBox())!;
         expect(last.y + last.height, `${label}: last route card`).toBeLessThanOrEqual(listBottom + 0.5);
         expect(shownPart(last), `${label}: last route card`).toBeGreaterThanOrEqual(last.height * 0.75);
       }

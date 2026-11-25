@@ -12,3 +12,7 @@ export async function submitFeedback(uid: string, input: unknown) {
 }
 export function feedbackErrorMessage(_error: unknown, fallback: string) { return fallback; }
 export async function apiRequest() { return { accepted: true }; }
+/** The boarding view tells a timeout apart from other failures by this class. */
+export class ApiError extends Error {
+  constructor(message: string, readonly status?: number, readonly code?: string) { super(message); this.name = "ApiError"; }
+}

@@ -6,43 +6,45 @@ import RouteTimelineSheet from "./RouteTimelineSheet";
 import { route } from "../../../../e2e/fixtures/state";
 
 afterEach(cleanup);
+// The peek also names the next stop; these are the timeline's own rows.
+const inTimeline = (name: string) => screen.getAllByText(name).find(node => node.closest(".pp-stop-row"))!;
 it.each([undefined, null, "1", -1, 0.5, 2, Number.MAX_SAFE_INTEGER])("does not treat missing ETA as arrival when the published index is %s", async value => {
   render(<RouteTimelineSheet route={route} targetStopId="b" currentStopIndex={value as number | undefined} stopETAs={{ b: 1 }} />);
   await userEvent.setup().click(screen.getByRole("button", { name: "Route timeline" }));
   expect(screen.queryByText("Next stop")).toBeNull();
-  expect(screen.getByText("Alpha").parentElement!.parentElement!.getAttribute("data-passed")).toBe("false");
-  expect(screen.getByText("Beta").parentElement!.parentElement!.getAttribute("data-passed")).toBe("false");
+  expect(inTimeline("Alpha").parentElement!.parentElement!.getAttribute("data-passed")).toBe("false");
+  expect(inTimeline("Beta").parentElement!.parentElement!.getAttribute("data-passed")).toBe("false");
 });
 
 it("uses the published next stop even when its ETA is unavailable", async () => {
   render(<RouteTimelineSheet route={route} targetStopId="b" currentStopIndex={1} stopETAs={{}} />);
   await userEvent.setup().click(screen.getByRole("button", { name: "Route timeline" }));
   expect(screen.getByText("Next stop").parentElement!.textContent).toContain("Beta");
-  expect(screen.getByText("Alpha").parentElement!.parentElement!.getAttribute("data-passed")).toBe("true");
+  expect(inTimeline("Alpha").parentElement!.parentElement!.getAttribute("data-passed")).toBe("true");
   // data-current drives the current-stop highlight in theme.css.
-  expect(screen.getByText("Beta").parentElement!.parentElement!.getAttribute("data-current")).toBe("true");
-  expect(screen.getByText("Alpha").parentElement!.parentElement!.getAttribute("data-current")).toBe("false");
+  expect(inTimeline("Beta").parentElement!.parentElement!.getAttribute("data-current")).toBe("true");
+  expect(inTimeline("Alpha").parentElement!.parentElement!.getAttribute("data-current")).toBe("false");
 });
 
 it("does not show live progress in a preview", async () => {
   render(<RouteTimelineSheet route={route} targetStopId="b" currentStopIndex={1} stopETAs={{ b: 1 }} preview />);
   await userEvent.setup().click(screen.getByRole("button", { name: "Configured route" }));
   expect(screen.queryByText("Next stop")).toBeNull();
-  expect(screen.getByText("Alpha").parentElement!.parentElement!.getAttribute("data-passed")).toBe("false");
+  expect(inTimeline("Alpha").parentElement!.parentElement!.getAttribute("data-passed")).toBe("false");
 });
 
 it("does not apply one bus's index to an aggregate fleet timeline", async () => {
   render(<RouteTimelineSheet route={route} targetStopId="b" currentStopIndex={1} stopETAs={{ b: 1 }} aggregateArrivals />);
   await userEvent.setup().click(screen.getByRole("button", { name: "Route timeline" }));
   expect(screen.queryByText("Next stop")).toBeNull();
-  expect(screen.getByText("Alpha").parentElement!.parentElement!.getAttribute("data-passed")).toBe("false");
+  expect(inTimeline("Alpha").parentElement!.parentElement!.getAttribute("data-passed")).toBe("false");
 });
 
 it("shows the bus at the origin before departure instead of waiting for the next stop (field ride, 29 Oct 2026)", async () => {
   render(<RouteTimelineSheet route={route} targetStopId="b" currentStopIndex={0} atStopIndex={0} stopETAs={{ a: 0, b: 2 }} />);
   await userEvent.setup().click(screen.getByRole("button", { name: "Route timeline" }));
   expect(screen.getByText("Bus is here").parentElement!.textContent).toContain("Alpha");
-  expect(screen.getByText("Alpha").parentElement!.parentElement!.getAttribute("data-passed")).toBe("false");
+  expect(inTimeline("Alpha").parentElement!.parentElement!.getAttribute("data-passed")).toBe("false");
 });
 
 it("marks an intermediate stop on arrival and keeps an unobserved pass distinct", async () => {
@@ -53,5 +55,24 @@ it("marks an intermediate stop on arrival and keeps an unobserved pass distinct"
   await userEvent.setup().click(screen.getByRole("button", { name: "Route timeline" }));
   expect(screen.getByText("Bus is here").parentElement!.textContent).toContain(stops.at(-2)!.name);
   expect(screen.getByText("Passed · not confirmed").parentElement!.textContent).toContain(stops[1].name);
-  expect(screen.getByText(stops[1].name).parentElement!.parentElement!.getAttribute("data-passed")).toBe("true");
+  expect(inTimeline(stops[1].name).parentElement!.parentElement!.getAttribute("data-passed")).toBe("true");
+});
+
+it("names the next stop in the peek, and the stop the bus is at, with Live only when live", () => {
+  const view = render(<RouteTimelineSheet route={route} targetStopId="b" currentStopIndex={1} stopETAs={{ b: 2 }} live />);
+  const toggle = screen.getByRole("button", { name: "Route timeline" });
+  expect(toggle.textContent).toContain("Next · Beta");
+  expect(toggle.textContent).toContain("Live");
+  // The summary describes the toggle; its name stays "Route timeline".
+  expect(document.getElementById(toggle.getAttribute("aria-describedby")!)?.textContent).toContain("Beta");
+  view.rerender(<RouteTimelineSheet route={route} targetStopId="b" currentStopIndex={1} atStopIndex={0} stopETAs={{ b: 2 }} />);
+  expect(toggle.textContent).toContain("At Alpha");
+  expect(toggle.textContent).not.toContain("Live");
+});
+
+it("keeps the plain title when there is no single bus's progress to report", () => {
+  render(<RouteTimelineSheet route={route} targetStopId="b" currentStopIndex={1} stopETAs={{ b: 1 }} aggregateArrivals live />);
+  const toggle = screen.getByRole("button", { name: "Route timeline" });
+  expect(toggle.textContent).toContain("Route timeline");
+  expect(toggle.hasAttribute("aria-describedby")).toBe(false);
 });

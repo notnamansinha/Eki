@@ -1,17 +1,12 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import PassengerBoardingView from "./PassengerBoardingView";
+import PassengerBoardingView, { TRIP_DOCK_DELAY_MS } from "./PassengerBoardingView";
 import type { RouteData } from "@/hooks/useRoutes";
 import { beginAuthVerification } from "@/lib/authState";
 
 const sdk = vi.hoisted(() => ({ token: vi.fn(), auth: { currentUser: null as null | { uid: string; getIdToken: () => Promise<string> } } }));
 vi.mock("@/lib/firebaseAuth", () => ({ auth: sdk.auth }));
-vi.mock("@/components/ui/InAppSelect", () => ({ default: ({ ariaLabel, value, onChange, options, disabled }: {
-  ariaLabel: string; value: string; onChange: (value: string) => void; options: Array<{ value: string; label: string }>; disabled: boolean;
-}) => <select aria-label={ariaLabel} value={value} disabled={disabled} onChange={event => onChange(event.target.value)}>
-  {options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-</select> }));
 const route: RouteData = { id: "qa-route", name: "QA route", color: "#3B82F6", waypoints: [], stops: [
   { id: "alpha", name: "Alpha", shortName: "A", lat: 23, lng: 72 },
   { id: "beta", name: "Beta", shortName: "B", lat: 23.01, lng: 72.01 },
@@ -33,12 +28,31 @@ async function advance(ms: number) { await act(async () => { await vi.advanceTim
 function fix(index = 0) {
   callbacks[index].success({ coords: { latitude: 23, longitude: 72, accuracy: 10 } } as GeolocationPosition);
 }
+const value = (name: string) => (document.querySelector(`input[name="${name}"]`) as HTMLInputElement).value;
+/** From → To through the picker; the bar then docks into the drawer. */
+function chooseStops(from: string, to: string) {
+  fireEvent.click(screen.getByRole("combobox", { name: "Boarding stop" }));
+  fireEvent.click(screen.getByRole("option", { name: from }));
+  fireEvent.click(screen.getByRole("option", { name: to }));
+  act(() => { vi.advanceTimersByTime(TRIP_DOCK_DELAY_MS); });
+}
+function changeDestination(to: string) {
+  fireEvent.click(screen.getByRole("button", { name: "Show trip" }));
+  fireEvent.click(screen.getByRole("combobox", { name: "Destination station" }));
+  fireEvent.click(screen.getByRole("option", { name: to }));
+  act(() => { vi.advanceTimersByTime(TRIP_DOCK_DELAY_MS); });
+}
+const approaching = { context: "s", minutes: { alpha: 2, beta: 6 }, nextStopIndex: 0 };
+const atAlpha = { context: "s", minutes: { beta: 3 }, nextStopIndex: 1, atStopIndex: 0 };
 function prepare() {
   const joined = vi.fn();
-  const view = render(<PassengerBoardingView sessionId="qa-session" route={route} tripState="in_service" onJoined={joined} />);
-  fireEvent.change(screen.getByLabelText("Boarding stop"), { target: { value: "alpha" } });
-  fireEvent.change(screen.getByLabelText("Destination station"), { target: { value: "beta" } });
-  const board = () => fireEvent.click(screen.getByRole("button", { name: "Board" }));
+  const props = { sessionId: "qa-session", route, tripState: "in_service" as const, onJoined: joined };
+  const view = render(<PassengerBoardingView {...props} stopEstimates={approaching} />);
+  chooseStops("Alpha", "Beta");
+  /** The bus reaches Alpha on `sessionId`; there is no Board button, so this boards. */
+  const board = async (sessionId = "qa-session") => {
+    await act(async () => { view.rerender(<PassengerBoardingView {...props} sessionId={sessionId} stopEstimates={atAlpha} />); });
+  };
   return { ...view, joined, board };
 }
 function delayedFetch(ms: number) {
@@ -55,18 +69,19 @@ describe("boarding preparation and API budgets", () => {
     const view = prepare();
     const props = { sessionId: "qa-session", route, tripState: "in_service" as const, destinationStopId: "gamma" };
     view.rerender(<PassengerBoardingView {...props} />);
-    expect(screen.getByLabelText("Destination station")).toHaveProperty("value", "gamma");
-    expect(screen.getByLabelText("Boarding stop")).toHaveProperty("value", "alpha");
+    expect(value("destination-station")).toBe("gamma");
+    expect(value("boarding-stop")).toBe("alpha");
     expect(screen.queryByLabelText("Boarding code")).toBeNull();
-    fireEvent.change(screen.getByLabelText("Destination station"), { target: { value: "beta" } });
+    changeDestination("Beta");
     view.rerender(<PassengerBoardingView {...props} />);
-    expect(screen.getByLabelText("Destination station")).toHaveProperty("value", "beta");
+    expect(value("destination-station")).toBe("beta");
     view.rerender(<PassengerBoardingView {...props} destinationStopId="" />);
-    expect(screen.getByLabelText("Destination station")).toHaveProperty("value", "");
+    expect(value("destination-station")).toBe("");
   });
 
   it("leaves a full network budget after nine seconds of GPS acquisition", async () => {
-    const fetchMock = delayedFetch(9_000); const view = prepare(); view.board();
+    const fetchMock = delayedFetch(9_000); const view = prepare(); await view.board();
+    expect(screen.getByText("The bus has reached your stop. Checking your location to mark you on board…")).toBeTruthy();
     await advance(9_000); expect(fetchMock).not.toHaveBeenCalled();
     act(() => fix()); await flush(); expect(fetchMock).toHaveBeenCalledOnce();
     await advance(9_000);
@@ -74,7 +89,7 @@ describe("boarding preparation and API budgets", () => {
   });
 
   it("starts the ten-second API timeout only after token and location preparation", async () => {
-    const fetchMock = delayedFetch(20_000); const view = prepare(); view.board();
+    const fetchMock = delayedFetch(20_000); const view = prepare(); await view.board();
     await advance(9_000); act(() => fix()); await flush();
     await advance(9_999); expect(fetchMock.mock.calls[0][1].signal?.aborted).toBe(false);
     await advance(1); expect(screen.getByRole("alert").textContent).toContain("boarding request timed out");
@@ -82,57 +97,56 @@ describe("boarding preparation and API budgets", () => {
   });
 
   it.each([[1, "Location access is required"], [2, "Location is unavailable"], [3, "Location acquisition timed out"]])("distinguishes geolocation failure %s before any API call", async (code, expected) => {
-    const fetchMock = delayedFetch(1); const view = prepare(); view.board();
+    const fetchMock = delayedFetch(1); const view = prepare(); await view.board();
     act(() => callbacks[0].failure({ code } as GeolocationPositionError)); await flush();
     expect(screen.getByRole("alert").textContent).toContain(expected);
     expect(fetchMock).not.toHaveBeenCalled(); expect(view.joined).not.toHaveBeenCalled();
   });
 
   it("does not start a request when GPS completes after unmount", async () => {
-    const fetchMock = delayedFetch(1); const view = prepare(); view.board(); view.unmount();
+    const fetchMock = delayedFetch(1); const view = prepare(); await view.board(); view.unmount();
     act(() => fix()); await flush();
     expect(fetchMock).not.toHaveBeenCalled(); expect(view.joined).not.toHaveBeenCalled();
   });
 
   it("fences a former session's preparation and lets the new session board", async () => {
-    const fetchMock = delayedFetch(1); const view = prepare(); view.board();
+    const fetchMock = delayedFetch(1); const view = prepare(); await view.board();
     view.rerender(<PassengerBoardingView sessionId="qa-next-session" route={route} tripState="in_service" onJoined={view.joined} />);
     act(() => fix()); await flush(); expect(fetchMock).not.toHaveBeenCalled();
-    view.board(); act(() => fix(1)); await flush(); await advance(1);
+    await view.board("qa-next-session"); act(() => fix(1)); await flush(); await advance(1);
     expect(fetchMock.mock.calls[0][0]).toContain("/qa-next-session/join"); expect(view.joined).toHaveBeenCalledOnce();
   });
 
   it("ignores an old HTTP acknowledgement after the session changes", async () => {
     let acknowledge: (response: Response) => void = () => {};
     vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(resolve => { acknowledge = resolve; })));
-    const view = prepare(); view.board(); act(() => fix()); await flush();
+    const view = prepare(); await view.board(); act(() => fix()); await flush();
     view.rerender(<PassengerBoardingView sessionId="qa-next-session" route={route} tripState="in_service" onJoined={view.joined} />);
     await act(async () => acknowledge(new Response('{"joined":true}')));
     expect(view.joined).not.toHaveBeenCalled(); expect(screen.queryByText("On board")).toBeNull();
   });
 
-  it("coalesces two clicks in the same render before acquiring location", async () => {
-    delayedFetch(1); prepare(); const button = screen.getByRole("button", { name: "Board" });
-    act(() => { button.dispatchEvent(new MouseEvent("click", { bubbles: true })); button.dispatchEvent(new MouseEvent("click", { bubbles: true })); });
+  it("sends the trip once while the bus waits at the stop, acquiring location once", async () => {
+    delayedFetch(1); const view = prepare(); await await view.board(); await await view.board(); await await view.board();
     expect(gps).toHaveBeenCalledOnce(); expect(sdk.token).toHaveBeenCalledOnce();
   });
 
   it("bounds token preparation separately and never spends the network budget", async () => {
     sdk.token.mockImplementation(() => new Promise(() => {}));
-    const fetchMock = delayedFetch(1); const view = prepare(); view.board(); act(() => fix());
+    const fetchMock = delayedFetch(1); const view = prepare(); await view.board(); act(() => fix());
     await advance(10_000); expect(screen.getByRole("alert").textContent).toContain("Sign-in verification timed out");
     expect(fetchMock).not.toHaveBeenCalled(); expect(view.joined).not.toHaveBeenCalled();
   });
 
   it("leaves the network budget intact when token acquisition takes nine seconds", async () => {
     sdk.token.mockImplementation(() => new Promise(resolve => setTimeout(() => resolve("test-token"), 9_000)));
-    const fetchMock = delayedFetch(9_000); const view = prepare(); view.board(); act(() => fix());
+    const fetchMock = delayedFetch(9_000); const view = prepare(); await view.board(); act(() => fix());
     await advance(9_000); expect(fetchMock).toHaveBeenCalledOnce(); await advance(9_000);
     expect(view.joined).toHaveBeenCalledOnce();
   });
 
   it("bounds a GPS callback that never settles, with no HTTP request", async () => {
-    const fetchMock = delayedFetch(1); prepare().board(); await advance(10_000);
+    const fetchMock = delayedFetch(1); await prepare().board(); await advance(10_000);
     expect(screen.getByRole("alert").textContent).toContain("Location acquisition timed out");
     act(() => fix()); await flush(); expect(fetchMock).not.toHaveBeenCalled();
   });
@@ -140,21 +154,22 @@ describe("boarding preparation and API budgets", () => {
   it("discards token completion after unmount", async () => {
     let tokenReady: (token: string) => void = () => {};
     sdk.token.mockImplementation(() => new Promise(resolve => { tokenReady = resolve; }));
-    const fetchMock = delayedFetch(1); const view = prepare(); view.board(); act(() => fix()); view.unmount();
+    const fetchMock = delayedFetch(1); const view = prepare(); await view.board(); act(() => fix()); view.unmount();
     act(() => tokenReady("test-token")); await flush(); expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("allows an existing passenger's stop correction without GPS and requires GPS in a different session", async () => {
-    const fetchMock = delayedFetch(1); const view = prepare(); view.board(); act(() => fix()); await flush(); await advance(1);
-    fireEvent.change(screen.getByLabelText("Destination station"), { target: { value: "gamma" } }); view.board();
+    const fetchMock = delayedFetch(1); const view = prepare(); await view.board(); act(() => fix()); await flush(); await advance(1);
+    // On board, a changed destination is sent by itself, without asking for location.
+    changeDestination("Gamma");
     await flush(); await advance(1); expect(gps).toHaveBeenCalledOnce();
     expect(JSON.parse(fetchMock.mock.calls[1][1].body as string)).not.toHaveProperty("lat");
     view.rerender(<PassengerBoardingView sessionId="qa-next-session" route={route} tripState="in_service" onJoined={view.joined} />);
-    view.board(); expect(gps).toHaveBeenCalledTimes(2);
+    await view.board("qa-next-session"); expect(gps).toHaveBeenCalledTimes(2);
   });
 
   it.each(["principal", "verification"])("fences preparation when the same UID changes %s", async change => {
-    const fetchMock = delayedFetch(1); const view = prepare(); view.board();
+    const fetchMock = delayedFetch(1); const view = prepare(); await view.board();
     if (change === "principal") sdk.auth.currentUser = { uid: "qa-passenger", getIdToken: sdk.token };
     else beginAuthVerification();
     act(() => fix()); await flush();
@@ -164,7 +179,7 @@ describe("boarding preparation and API budgets", () => {
   it.each(["principal", "verification"])("fences an HTTP acknowledgement when the same UID changes %s", async change => {
     let acknowledge: (response: Response) => void = () => {};
     vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(resolve => { acknowledge = resolve; })));
-    const view = prepare(); view.board(); act(() => fix()); await flush();
+    const view = prepare(); await view.board(); act(() => fix()); await flush();
     if (change === "principal") sdk.auth.currentUser = { uid: "qa-passenger", getIdToken: sdk.token };
     else beginAuthVerification();
     await act(async () => acknowledge(new Response('{"joined":true}')));
@@ -174,10 +189,10 @@ describe("boarding preparation and API budgets", () => {
   it("ignores late preparation failures after a session change", async () => {
     let tokenFailure: (error: Error) => void = () => {};
     sdk.token.mockImplementationOnce(() => new Promise((_resolve, reject) => { tokenFailure = reject; }));
-    const fetchMock = delayedFetch(1); const view = prepare(); view.board();
+    const fetchMock = delayedFetch(1); const view = prepare(); await view.board();
     view.rerender(<PassengerBoardingView sessionId="qa-next-session" route={route} tripState="in_service" onJoined={view.joined} />);
     act(() => { tokenFailure(new Error("old token failed")); callbacks[0].failure({ code: 3 } as GeolocationPositionError); });
     await flush(); expect(screen.queryByRole("alert")).toBeNull(); expect(fetchMock).not.toHaveBeenCalled();
-    view.board(); act(() => fix(1)); await flush(); await advance(1); expect(view.joined).toHaveBeenCalledOnce();
+    await view.board("qa-next-session"); act(() => fix(1)); await flush(); await advance(1); expect(view.joined).toHaveBeenCalledOnce();
   });
 });

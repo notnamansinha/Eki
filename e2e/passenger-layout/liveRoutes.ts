@@ -22,3 +22,14 @@ export async function trackRoute(page: Page, name = "Track QA route") {
   await raiseLiveRoutes(page);
   await page.getByRole("button", { name, exact: true }).click();
 }
+
+/**
+ * Back sits on the tracking view's top line, under the fixture's QA controls
+ * in the top-left corner; step them aside for the tap, as a passenger has none.
+ */
+export async function backToHome(page: Page) {
+  const controls = page.locator("aside[aria-label='QA fixture controls']");
+  await controls.evaluate(element => { element.style.visibility = "hidden"; });
+  await page.getByRole("button", { name: "Back to home", exact: true }).click();
+  await controls.evaluate(element => { element.style.visibility = ""; });
+}
