@@ -4,8 +4,8 @@
   - status:
     - paragraph: GPS signal lost
     - paragraph: The bus has no GPS fix. Showing its last known location (just now); ETAs and boarding resume when GPS returns.
-  - text: Isolated map or panel qa-session
   - button "Open live chat"
+  - text: Isolated map or panel qa-session
   - status: GPS signal lost Last known location just now · not live
   - region "Location":
     - text: Show your walking time? Eki can use your location to estimate the walk to your stop. It stays on this device, and live tracking works without it.
