@@ -13,6 +13,8 @@ This suite records reviewed baselines of the public, passenger and admin surface
 
 It covers the "visual regression against reviewed baselines" item of issue #523. It does not replace testing on real devices or with screen readers; see the [device and screen-reader acceptance procedure](DEVICE_AND_SCREEN_READER_ACCEPTANCE.md).
 
+Issue #523 names a template command that runs `tests/responsive-visual.spec.ts` with `VISUAL=1` and a `web-test-arsenal` Playwright configuration; that spec and configuration belong to an external QA template and are not part of Eki. This suite (`npm run qa:visual`, specs in `e2e/visual/`) is the repository's implementation of that responsive visual baseline check and its only visual suite.
+
 ## 2. How it works
 
 ```mermaid
