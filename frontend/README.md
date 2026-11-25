@@ -126,7 +126,8 @@ The browser reads live and configuration data directly from Firebase and sends e
 | Operators | Firestore `drivers` (administrators: up to 250; others: their own record) | `onSnapshot` | `hooks/useDrivers.ts` |
 | Global settings | Firestore `settings/global` | `onSnapshot` | `hooks/useSettings.ts` |
 | Passenger route schedules | Firestore `settings/passengerRoutes`, joined with `routes` | `onSnapshot`; malformed entries are dropped and deleted routes and stops skipped (`lib/passengerRouteSchedule.ts`) | `hooks/usePassengerRouteConfig.ts` |
-| Chat | Firestore `ride_sessions/<id>/messages` | `onSnapshot` | `components/shared/MessagingPanel.tsx` |
+| Chat | Firestore `ride_sessions/<id>/messages`, latest 200 | `onSnapshot` while the chat is open | `components/shared/MessagingPanel.tsx`, `lib/rideChatMessages.ts` |
+| Chat unread count (the passenger's joined ride) | Same query as Chat | `onSnapshot` for the whole joined ride; an open chat shares its watch target | `hooks/useRideChatUnread.ts` |
 | Ride chat history (admin) | Firestore `ride_sessions/<id>/messages` and `ride_sessions/<id>/archivedMessages` | `onSnapshot` through `useCollection`, 100 messages per page, only while the ride is expanded | `components/admin/RideHistoryPanel.tsx` |
 | Role fallback | Firestore `users/<uid>` | `getDoc` | `hooks/useAuth.ts` |
 

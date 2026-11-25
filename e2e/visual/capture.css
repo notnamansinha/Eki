@@ -1,0 +1,2 @@
+/* Applied only while a baseline screenshot is taken (e2e/visual/visual.ts). */
+[aria-label="QA fixture controls"] { display: none !important; }

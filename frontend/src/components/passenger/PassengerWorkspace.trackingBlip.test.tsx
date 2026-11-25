@@ -19,6 +19,7 @@ vi.mock("@/hooks/useLiveRouteCatalog", async () => import("../../../../e2e/fixtu
 vi.mock("@/hooks/useRoutes", async () => import("../../../../e2e/fixtures/state"));
 vi.mock("@/hooks/useSettings", async () => import("../../../../e2e/fixtures/state"));
 vi.mock("@/hooks/useRTDBResume", async () => import("../../../../e2e/fixtures/state"));
+vi.mock("@/hooks/useRideChatUnread", async () => import("../../../../e2e/fixtures/state"));
 vi.mock("@/lib/liveBusStore", async () => import("../../../../e2e/fixtures/state"));
 vi.mock("@/lib/joinedRideStatus", async () => import("../../../../e2e/fixtures/state"));
 vi.mock("@/lib/authState", async () => import("../../../../e2e/fixtures/state"));

@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-PKG-008 | 2.3 | Current | 2026-11-11 |
+| EKI-PKG-008 | 2.4 | Current | 2026-11-24 |
 
 ## 1. Purpose
 
@@ -14,7 +14,7 @@ This Vite fixture renders the real passenger layout and theme, transit artwork, 
 
 | Replaced with synthetic data | Replaced with a placeholder panel |
 |---|---|
-| Auth, routes, passenger route schedules (`usePassengerRouteConfig`), live route catalog, settings, RTDB resume, route geometry, live bus store and joined-ride hooks; `firebaseAuth`, `feedbackStore` and `apiClient` | Chat (`MessagingPanel`), the boarding view, and the admin dashboard, route, fleet, history and feedback panels |
+| Auth, routes, passenger route schedules (`usePassengerRouteConfig`), live route catalog, settings, RTDB resume, route geometry, live bus store, joined-ride and chat unread (`useRideChatUnread`) hooks; `firebaseAuth`, `feedbackStore` and `apiClient` | Chat (`MessagingPanel`), the boarding view, and the admin dashboard, route, fleet, history and feedback panels |
 
 `RoleGuard` and `WorkspacePrefetch` pass through. The Google Maps SDK is replaced by a synthetic adapter, labelled on screen, that draws configured stops and positions without tiles or road geometry. Settings changes exist only in memory and disappear on restart.
 
