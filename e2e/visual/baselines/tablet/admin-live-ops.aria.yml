@@ -1,0 +1,23 @@
+- main:
+  - tablist "Administration sections":
+    - tab "Live Ops" [selected]
+    - tab "Routes"
+    - tab "Fleet & People"
+    - tab "History"
+    - tab "Feedback"
+    - tab "Settings"
+  - link "Passenger Panel":
+    - /url: /passenger
+  - tabpanel "Live Ops":
+    - paragraph: Synthetic SDK adapter · actual map logic
+    - text: qa-bus 1 device online · 1 service
+    - heading "Automatic service" [level=2]
+    - paragraph: Services start automatically when an assigned receiver sends a fresh, reliable GPS fix. Direction resolves at an endpoint or after a qualified departure.
+    - paragraph: An offline session is retained for recovery. Movement, stop arrivals and return services follow GNSS evidence.
+    - text: 1 In Service 0 Awaiting Start 0 Direction Pending 1 Devices Online 0 Offline / Unknown
+    - paragraph: Live Fleet
+    - button "Synthetic bus In Service Stopped 0 km/h":
+      - paragraph: Synthetic bus
+      - text: ""
+    - button "Open live details for qa-bus"
+    - button "Open live chat for qa-bus": Chat

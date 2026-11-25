@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-TST-001 | 1.2 | Current | 2026-11-07 |
+| EKI-TST-001 | 1.3 | Current | 2026-11-24 |
 
 ## 1. Purpose
 
@@ -25,7 +25,10 @@ This index lists the documents that define how Eki is tested and every dated evi
 | EKI-TST-012 | [Reviewed unit sub-oracles](../../qa/REVIEWED_UNIT_EVIDENCE.md) | Run the reviewed L1 unit selection |
 | EKI-TST-013 | [Scheduled reliability](../../qa/SCHEDULED_RELIABILITY.md) | Understand the nightly and weekly workflows |
 | EKI-TST-014 | [DAST and OpenAPI scans](../../qa/DAST.md) | Run the bounded ZAP scans against the local backend or the staging service |
+| EKI-TST-016 | [Observability drill](../../qa/OBSERVABILITY_DRILL.md) | Check traces, metrics, logs and redaction end to end, locally or through a deployed collector |
 | EKI-TST-017 | [Hosting cache and CDN matrix](../../qa/CACHE_MATRIX.md) | Check Hosting cache headers on a local replay or the staging site, and invalidation after a deploy |
+| EKI-TST-019 | [Visual and accessibility-tree baselines](../../qa/VISUAL_BASELINES.md) | Compare, update and review the screenshot and accessibility-tree baselines |
+| EKI-TST-020 | [Device and screen-reader acceptance](../../qa/DEVICE_AND_SCREEN_READER_ACCEPTANCE.md) | Run and record the real-device matrix and the screen-reader sessions |
 
 Two machine-parsed files hold the acceptance requirements and their historical status. Do not change their table structure: `scripts/qa/acceptance-catalog.mjs` parses both.
 
@@ -118,7 +121,9 @@ CI success, a synthetic browser test, a stationary trace, a short moving trace a
 | EKI-EVD-060 | 2026-10-11 | [Deterministic QA baseline](../../qa/BASELINE_2026_10_11.md) | Audit | First QA programme slice; the [QA programme](../../qa/README.md) describes the current state |
 | EKI-EVD-061 | 2026-11-03 | [Cloud Run staging latency, 2 November](CLOUD_RUN_LATENCY_2026_11_02.md) | Stationary physical | Run 2026-11-02 against the Cloud Run staging backend and the `asia-southeast1` RTDB, with Cloud Run request logs and a remote RTDB listener; no moving drive or browser |
 | EKI-EVD-062 | 2026-11-23 | [DAST local scan, 23 November](DAST_LOCAL_2026_11_23.md) | Synthetic | OWASP ZAP local profile against the disposable backend; two High false positives triaged; the staging profile was not run |
+| EKI-EVD-064 | 2026-11-24 | [Observability drill, local, 24 November](OBSERVABILITY_DRILL_LOCAL_2026_11_24.md) | Synthetic | OTLP traces, metrics, logs and redaction on the disposable stack; sampling and dashboard findings; the deployed relay and alert delivery were not run |
 | EKI-EVD-065 | 2026-11-24 | [Hosting cache matrix, 24 November](CACHE_MATRIX_2026_11_24.md) | Synthetic | Loopback replay of the export, plus read-only HTTP readings of the staging Hosting site serving `6c47e727`; invalidation after a deploy not yet observed (#504) |
+| EKI-EVD-067 | 2026-11-24 | [Visual baseline review, 24 November](VISUAL_BASELINE_REVIEW_2026_11_24.md) | Browser | First reviewed visual and accessibility-tree baselines (56 each) in the pinned Linux Chromium; emulated, synthetic data; no real device or screen reader |
 
 The `assets/` folder holds images referenced by these records. `simulations/generate-gnss.mjs` is the GNSS profile generator: the backend GNSS property tests that `qa:gnss` runs import it and the acceptance catalog reads its profile list, so it is current code, not evidence.
 
@@ -137,6 +142,7 @@ No record above establishes release readiness. The execution ledger always repor
 | Power, thermal, watchdog and journal | L5 | Bench runs on a spare board |
 | Secure fleet and OTA | L5 | Witnessed provisioning, signed OTA, active-ride deferral and rollback ([hardware security provisioning](../security/HARDWARE_SECURITY_PROVISIONING.md)) |
 | Live providers | L4 | Deployed Google sign-in, Maps, Routes and Places in an approved environment |
+| Real devices and screen readers | L4 | One record made with the [device and screen-reader acceptance procedure](../../qa/DEVICE_AND_SCREEN_READER_ACCEPTANCE.md): at least one iPhone and one Android phone, NVDA with Firefox and VoiceOver with Safari sessions, and passing visual baselines, all on one named revision ([issue #523](https://github.com/notnamansinha/Eki/issues/523)) |
 | Cloud Run staging acceptance | L4 to L5 | Tracker power cycle, Wi-Fi outage recovery and movement on the Cloud Run origin; a PWA update to the current build; the open rows of the [migration acceptance table](../operations/NGROK_REMOVAL_AND_FIREBASE_BACKEND_MIGRATION.md#9-required-feature-and-failure-acceptance); the RTDB region latency gate ([EKI-ADR-002](../design/RTDB_REGION_LATENCY_DECISION.md#21-cutover-gate)); a workstation-off route cycle and an observation window of at least 48 h ([issue #430](https://github.com/notnamansinha/Eki/issues/430)) |
 | Complete feature acceptance | L1 to L3 | Reviewed mappings and passing execution for each of the 351 feature cases and the SIM-01 to SIM-20 scenarios, which the catalog reports as NOT_COVERED |
 | University handover | Owner | The [deployment checklist](../operations/UNIVERSITY_DEPLOYMENT_CHECKLIST.md) |
