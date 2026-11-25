@@ -171,6 +171,8 @@ The [QA programme](../../qa/README.md) describes the evidence model. Every runne
 | `npm run qa:dast` | L2 | OWASP ZAP active scan of every published operation, per role, against the disposable backend (needs Docker) | [DAST and OpenAPI scans](../../qa/DAST.md) |
 | `npm run qa:dast:staging` | L4 | Bounded GET-only ZAP scan of the staging service with dedicated test accounts; `-- --dry-run` writes the plans only | [DAST and OpenAPI scans](../../qa/DAST.md) |
 | `npm run qa:browser` | L3 | Disposable browser acceptance; `qa:browser:providers` and `qa:browser:service` run narrow subsets | [Browser acceptance](../../qa/BROWSER_ACCEPTANCE.md) |
+| `npm run qa:privacy:deletion`, `qa:privacy:deletion:staging` | L2 local, L4 staging | Passenger account deletion checked store by store, a database sweep and a backend log scan; read-only on staging with a dedicated test account | [Privacy verification](../../qa/PRIVACY_VERIFICATION.md) |
+| `npm run qa:privacy:hosts`, `qa:privacy:hosts:live` | L3 local, L4 live | Request hosts of every public route, mapped to vendors and compared with the privacy notice | [Privacy verification](../../qa/PRIVACY_VERIFICATION.md) |
 | `npm run qa:visual` | L3 | Compares the reviewed screenshots and accessibility trees (needs Docker); `qa:visual:update` rewrites the baselines that differ, for review | [Visual baselines](../../qa/VISUAL_BASELINES.md) |
 | `npm run qa:report` | Ledger | Combines the six family reports into `artifacts/qa/execution-report.*` | [Execution ledger](../../qa/EXECUTION_EVIDENCE.md) |
 | `npm run qa:nightly` | Campaign | `qa:check`, then all six families through `scripts/qa/campaign.mjs`, then `campaign-report.mjs` | [Scheduled reliability](../../qa/SCHEDULED_RELIABILITY.md) |
