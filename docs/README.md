@@ -203,7 +203,7 @@ The register lists every controlled document by its source path. A mirror carrie
 | EKI-TST-012 | [Reviewed Unit Sub-Oracles](../qa/REVIEWED_UNIT_EVIDENCE.md) | 1.1 | Current | 2026-11-07 |
 | EKI-TST-013 | [Scheduled Reliability Workflows](../qa/SCHEDULED_RELIABILITY.md) | 2.1 | Current | 2026-11-07 |
 | EKI-TST-014 | [Bounded DAST and OpenAPI Scans](../qa/DAST.md) | 1.0 | Current | 2026-11-23 |
-| EKI-TST-015 | [Load and Fault Drills](../qa/LOAD_DRILLS.md) | 1.0 | Current | 2026-11-24 |
+| EKI-TST-015 | [Load and Fault Drills](../qa/LOAD_DRILLS.md) | 1.0 | Current | 2026-11-25 |
 
 ### 4.14 Evidence records (EVD)
 
@@ -271,7 +271,7 @@ The register lists every controlled document by its source path. A mirror carrie
 | EKI-EVD-060 | [Deterministic QA baseline and first implementation slice](../qa/BASELINE_2026_10_11.md) | 1.0 | Historical | 2026-10-11 |
 | EKI-EVD-061 | [Cloud Run staging latency: 2 November 2026](testing/CLOUD_RUN_LATENCY_2026_11_02.md) | 1.0 | Historical | 2026-11-03 |
 | EKI-EVD-062 | [DAST local scan: 23 November 2026](testing/DAST_LOCAL_2026_11_23.md) | 1.0 | Historical | 2026-11-23 |
-| EKI-EVD-063 | [Load and fault drills, local: 24 November 2026](testing/LOAD_DRILLS_LOCAL_2026_11_24.md) | 1.0 | Historical | 2026-11-24 |
+| EKI-EVD-063 | [Load and fault drills, local: 24 November 2026](testing/LOAD_DRILLS_LOCAL_2026_11_24.md) | 1.1 | Historical | 2026-11-25 |
 
 <!-- register:end -->
 

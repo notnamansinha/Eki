@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-TST-015 | 1.0 | Current | 2026-11-24 |
+| EKI-TST-015 | 1.0 | Current | 2026-11-25 |
 
 ## 1. Purpose
 
@@ -81,6 +81,8 @@ The issue's "900 ms at peak" is read as the budget for the three profiles that g
 | `latency` | Client to API | Toxiproxy `latency` toxic, 800 ms added to every response | 15 s, 30 s, 30 s |
 | `partition` | Client to API | Toxiproxy `timeout` toxic on 30 % of connections: they carry no data and close after 3 s (a partial partition) | 15 s, 30 s, 30 s |
 | `dependency` (local only) | API to the Firestore emulator | The Toxiproxy proxy is disabled, so Firestore is unreachable | 20 s, 45 s, up to 180 s |
+
+Issue #518 also names a `bandwidth` toxic of 64 KB/s. It is not a drill: the API's responses average about 1.3 KB, so the limit adds about 20 ms, which no probe budget can tell from the baseline ([EKI-EVD-063](../testing/LOAD_DRILLS_LOCAL_2026_11_24.md), Section 6.3).
 
 During a drill the runner itself is the client. Three loops each send about four GET requests a second with a 5 s timeout, cycling through `PATHS` and `API_PATHS`. Each loop keeps one keep-alive connection, as a browser does, and replaces it after every tenth request (about every 2.5 s). Toxiproxy applies a toxic with a toxicity below 100 % per connection, so about 36 connections draw it during a 30 s fault. A fourth loop sends `GET /health` straight to the backend every 500 ms, without the proxy, as a control for the client-side drills. A probe is good when its class is ok and it finished within 800 ms. For each drill the report gives:
 

@@ -2,9 +2,9 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-EVD-063 | 1.0 | Historical | 2026-11-24 |
+| EKI-EVD-063 | 1.1 | Historical | 2026-11-25 |
 
-First runs of the local mode of the [load and fault drills](../../qa/LOAD_DRILLS.md) ([issue #518](https://github.com/notnamansinha/Eki/issues/518)): the five k6 profiles and three Toxiproxy drills against one compiled backend process in front of disposable Auth, Firestore and RTDB emulators, on one Windows workstation. No request left the machine. k6 reached only the loopback backend, the runner and the backend preloaded the loopback network guard, and Toxiproxy forwarded only to the loopback backend and the Firestore emulator. These are bounded local runs: they are not a capacity measurement, and the 6 min soak is not a duration soak. The deployed run was not made (Section 7).
+First runs of the local mode of the [load and fault drills](../../qa/LOAD_DRILLS.md) ([issue #518](https://github.com/notnamansinha/Eki/issues/518)): the k6 profiles (five in runs A to D; six, with `headroom`, in run E) and three Toxiproxy drills against one compiled backend process in front of disposable Auth, Firestore and RTDB emulators, on one Windows workstation. No request left the machine. k6 reached only the loopback backend, the runner and the backend preloaded the loopback network guard, and Toxiproxy forwarded only to the loopback backend and the Firestore emulator. These are bounded local runs: they are not a capacity measurement, and the 6 min soak is not a duration soak. The deployed run was not made (Section 7).
 
 ## 1. Setup
 
@@ -21,7 +21,7 @@ First runs of the local mode of the [load and fault drills](../../qa/LOAD_DRILLS
 
 ## 2. Runs
 
-Four complete runs were made. Runs A and B each led to a harness change; runs C and D used the final harness.
+Five complete runs were made. Runs A and B each led to a harness change; runs C and D used that harness. Run E, on 25 November, used the harness after the review of #561 added the `headroom` profile (1.2 times the expected peak) and the launcher's scope table.
 
 | Run | Harness commit | Started (UTC) | Duration | Verdict | Change after the run |
 |---|---|---|---|---|---|
@@ -29,8 +29,9 @@ Four complete runs were made. Runs A and B each led to a harness change; runs C 
 | B | `ae01d19` | 2026-11-23 20:54 | 21 min | `THRESHOLDS_FAILED` | Resource samples are written asynchronously; timer stalls are reported |
 | C | `60e2def` | 2026-11-23 21:18 | 20 min | `WITHIN_THRESHOLDS` | None |
 | D | `60e2def` | 2026-11-23 21:52 | 20 min | `WITHIN_THRESHOLDS` | None |
+| E | `d066938` | 2026-11-25 11:32 | 24 min | `WITHIN_THRESHOLDS` | None |
 
-Runs C and D met every threshold, recovered from every drill and kept the lease across the soak. Run D started as a full test suite was finishing on the same machine; its p95 values are higher than run C's and within budget. Run A failed only on the partition drill: two probes through the client path timed out in the last 2 s of its observation, so the old rule, which required clean final windows, did not count the recovery. Run B failed on the soak and on two drills (Section 6.1).
+Runs C, D and E met every threshold, recovered from every drill and kept the lease across the soak. Run D started as a full test suite was finishing on the same machine; its p95 values are higher than run C's and within budget. Run A failed only on the partition drill: two probes through the client path timed out in the last 2 s of its observation, so the old rule, which required clean final windows, did not count the recovery. Run B failed on the soak and on two drills (Section 6.1).
 
 ## 3. Load profiles
 
@@ -58,8 +59,14 @@ Every profile used `/health` and `/live` as public paths and authenticated reads
 | D | soak | 10 | 3,528 | 9.77 | 85.06 | 134 | 0 % | 100 % | 0 | 0 | passed |
 | D | stress | 60 | 6,512 | 7.17 | 90.12 | 146.51 | 0 % | 100 % | 0 | 433 (6.65 %) | passed |
 | D | spike | 100 | 3,964 | 10.42 | 138.91 | 268.06 | 0 % | 100 % | 0 | 397 (10.02 %) | passed |
+| E | smoke | 2 | 122 | 2.4 | 19.05 | 25.22 | 0 % | 100 % | 0 | 0 | passed |
+| E | load | 20 | 2,710 | 2.04 | 4.84 | 12.97 | 0 % | 100 % | 0 | 0 | passed |
+| E | soak | 10 | 3,596 | 2.08 | 19.2 | 52.15 | 0 % | 100 % | 0 | 0 | passed |
+| E | headroom | 24 | 3,250 | 1.97 | 4.37 | 12.4 | 0 % | 100 % | 0 | 0 | passed |
+| E | stress | 60 | 6,620 | 2.14 | 7.38 | 23.83 | 0 % | 100 % | 0 | 791 (11.95 %) | passed |
+| E | spike | 100 | 4,080 | 2.16 | 7.16 | 18.32 | 0 % | 100 % | 0 | 1,042 (25.54 %) | passed |
 
-No profile in any run received a 503 with `Retry-After`. The 429 responses in stress and spike are the per-IP budget of 1,000 requests a minute: every VU shares the runner's address, and at 60 and 100 VUs the API paths alone send about 30 and 50 requests a second. `/health` and `/live` never received 429. At 20 VUs (load) and 10 VUs (soak) no request was rate limited.
+No profile in any run received a 503 with `Retry-After`. The 429 responses in stress and spike are the per-IP budget of 1,000 requests a minute: every VU shares the runner's address, and at 60 and 100 VUs the API paths alone send about 30 and 50 requests a second. `/health` and `/live` never received 429. At 20 VUs (load), 24 VUs (headroom) and 10 VUs (soak) no request was rate limited.
 
 ## 4. Fault drills
 
@@ -77,6 +84,8 @@ Toxiproxy sat between the runner and the backend. A fourth loop probed `/health`
 | C | partition | 212, 11 `ECONNRESET` after 3 s | 7.4 / 20.6 | yes | 0 ms | 0 | 148/148 |
 | D | latency | 82, 1 within 800 ms | 827 / 958.3 | yes | 0 ms | 0 | 147/147 |
 | D | partition | 212, 12 `ECONNRESET` after 3 s | 6.6 / 17.8 | yes | 0 ms | 0 | 149/149 |
+| E | latency | 78, 2 within 800 ms | 848 / 1,128.1 | yes | 0 ms | 6 (6 timeouts) | 144/144 |
+| E | partition | 167, 10 `ECONNRESET` and 3 timeouts | 4.1 / 20.2 | yes | 0 ms | 0 | 149/149 |
 
 The backend behaved the same in every client-side drill: `/health` answered 200 to every direct probe and to every client probe that reached it. The latency toxic added its 800 ms to each response, and the client returned to its baseline as soon as the toxic was removed. The partition toxic held about 30 % of new connections and closed them after 3 s (run C: 11 probes ended with `ECONNRESET` after 3.0 s); each cost one probe, and the next request opened a new connection.
 
@@ -90,6 +99,7 @@ The second backend process sent its Firestore traffic through Toxiproxy, which w
 | B | 14.9 s | 24.1 s | 503 with `Retry-After` from 0.8 s, until 23.3 s after removal | Same, from 41.9 s into the outage | 200 throughout | 23.3 s | Same |
 | C | 14.9 s | 25.4 s | 503 with `Retry-After` from 0.8 s, until 6.3 s after removal | Same, from 41.8 s into the outage | 200 throughout | 24.1 s | Same |
 | D | 14.9 s | 25.5 s | 503 with `Retry-After` from 0.8 s, until 11.6 s after removal | Same, from 40.6 s into the outage | 200 throughout | 24.2 s | Same |
+| E | 15.5 s | 24.9 s | 503 with `Retry-After` from 1.0 s, until 0.4 s after removal | Same, from 41.6 s into the outage | 200 throughout | 23.6 s | Same |
 
 Read from the code, these follow the documented design: the catalog read cache answers 503 with `Retry-After: 1` when a fill misses its 3 s deadline (`backend/src/services/apiReadCache.ts`); route geometry is cached for 60 s (`routeGeometryReads.ts`); `/api/buses` reads the RTDB projection; `/health` reports the store probes that run every 30 s with a 5 s timeout, so it degrades on the first probe after the outage starts and recovers on the first successful probe after it ends. No request received a 500, and no response took longer than about 3 s.
 
@@ -101,6 +111,7 @@ Read from the code, these follow the documented design: the catalog read cache a
 | B | **Broken**: generations 1, 2 and 3 | 3, of 50 to 60 s, all in the soak | 113.7 to 117.2 | 50.0 to 46.3 | 1 in 64 reads, the planned restart |
 | C | Continuous: 23 reads, one owner, generation 1 | 0 | 113.8 to 115.9 | 50.0 to 45.0 | 1 in 75 reads, the planned restart |
 | D | Continuous: 23 reads, one owner, generation 1 | 0 | 118.4 to 120.5 | 50 to 44.6 | 1 in 72 reads, the planned restart |
+| E | Continuous: 23 reads, one owner, generation 1 | 0 | 123.1 to 121.7 | 49.7 to 44.6 | 1 in 88 reads, the planned restart |
 
 In every run the runner started two backend processes (the second for the dependency drill) and neither exited unexpectedly. The process check found exactly the planned restart each time, through counters such as the catalog cache's hits and fills going back to zero. Once k6's connections were open, each soak held 16 socket handles from start to end (run A's first soak sample, taken before they opened, read 6), and 19 to 21 active libuv resources; Windows exposes no file descriptor count.
 
@@ -121,6 +132,7 @@ Every run saw short stalls of the client path through Docker Desktop's port forw
 - Issue #518 recorded a 20 VU, 2 min k6 run of `/health`, `/live` and unauthenticated `/api/health`: 612 requests, p95 2.59 ms. The load profile here sends authenticated reads that reach Firestore and RTDB emulators, about 4.4 times as many requests, with p95 between 10.5 and 33.4 ms.
 - The thresholds (800 and 900 ms) are written for a deployed service. Authenticated Admin reads from India to the `us-central1` RTDB took 270 to 285 ms at the median ([RTDB region decision](../design/RTDB_REGION_LATENCY_DECISION.md)), and the Cloud Run backend leg is recorded in [Cloud Run latency, 2 November](CLOUD_RUN_LATENCY_2026_11_02.md). Loopback and emulator latencies say nothing about either.
 - `docs/context-docs/PERFORMANCE.md`, which the issue cites, is not in the repository.
+- The issue's `bandwidth` toxic (64 KB/s) is not a drill. In run E the `load` and `headroom` profiles received 1,255 bytes per response on average (3,401,838 bytes over 2,710 requests in `load`), so a 64 KB/s limit adds about 20 ms to a response. The 800 ms probe budget cannot tell that from the baseline, and the harness fails a drill whose fault changes nothing; the 800 ms `latency` drill covers a slow client path.
 
 ### 6.4 Product note
 
@@ -129,7 +141,7 @@ During the dependency drill the backend logged each failed geometry and catalog 
 ## 7. Limits
 
 - The deployed run was not made. It needs a window agreed with the staging owner, or a separate `eki-backend-*` service with at most one instance, and a dedicated administrator test account ([procedure](../../qa/LOAD_DRILLS.md#62-deployed-run)). Issue #518 stays open until a report against a named revision is attached.
-- Local results describe one workstation, loopback, emulators and synthetic data. They are not a capacity measurement. The expected peak is not defined in the repository, so the load profile's 20 VUs is a default, not the peak the issue asks for.
+- Local results describe one workstation, loopback, emulators and synthetic data. They are not a capacity measurement. The expected peak is not defined in the repository, so the load profile's 20 VUs, and `headroom`'s 24, are defaults, not the peak the issue asks for. A deployed run refuses to start until the operator states the peak in `EKI_LOAD_K6_VUS`.
 - Every VU shared one IP; the per-IP budget, not the backend's capacity, capped API traffic in stress and spike.
 - The soak lasted 6 min. It shows no growth in that window and cannot show a slow leak.
 - Per-device quotas with several trackers behind one NAT need the physical tracker ([issue #430](https://github.com/notnamansinha/Eki/issues/430)).
