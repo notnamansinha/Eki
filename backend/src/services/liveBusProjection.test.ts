@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WorkerFence } from "../lib/workerFence";
-const fixture = vi.hoisted(() => ({ data: {} as Record<string, any>, listeners: new Map<string, (s: any) => void>(), reads: [] as { path: string; limit?: number }[], updates: [] as { path: string; values: Record<string, any> }[], denyLeafWrites: false, fail: false, gate: null as Promise<void> | null, heldPath: "", holdTransaction: false }));
+const fixture = vi.hoisted(() => ({ data: {} as Record<string, any>, listeners: new Map<string, (s: any) => void>(), reads: [] as { path: string; limit?: number }[], updates: [] as { path: string; values: Record<string, any> }[], denyLeafWrites: false, beforeUpdate: null as ((path: string) => void) | null, fail: false, gate: null as Promise<void> | null, heldPath: "", holdTransaction: false }));
 vi.mock("../lib/firebaseAdmin", () => {
   const snapshot = (value: any, key: string | null = null): any => ({ key, val: () => value,
     forEach: (fn: (s: any) => void) => Object.entries(value ?? {}).forEach(([k, v]) => fn(snapshot(v, k))) });
@@ -30,6 +30,7 @@ vi.mock("../lib/firebaseAdmin", () => {
     // under the conditions database.rules.json evaluates for it.
     update: async (values: Record<string, any>) => {
       fixture.updates.push({ path, values: structuredClone(values) });
+      fixture.beforeUpdate?.(path);
       const current = read(path), next = structuredClone(current ?? {}), touched = new Set<string>();
       for (const [child, value] of Object.entries(values)) {
         const parts = child.split("/"); let target = next;
@@ -39,7 +40,8 @@ vi.mock("../lib/firebaseAdmin", () => {
       }
       const allowed = !fixture.denyLeafWrites && typeof current?._workerGeneration === "number" &&
         next._workerGeneration === current._workerGeneration && next.revision === current.revision + 1 &&
-        [...touched].every(key => !next.buses?.[key] || ("busId" in next.buses[key] && "routeId" in next.buses[key]));
+        [...touched].every(key => !next.buses?.[key] || (typeof next.buses[key].busId === "string" && typeof next.buses[key].routeId === "string" &&
+          path === `publicRouteBuses/route:${next.buses[key].routeId}` && key === `node:${next.buses[key].busId}_${next.buses[key].routeId}`));
       if (!allowed) throw Object.assign(new Error("PERMISSION_DENIED: Permission denied"), { code: "PERMISSION_DENIED" });
       write(path, next);
     },
@@ -53,7 +55,7 @@ const live = (sessionId = "s1") => ({ busId: "bus1", routeId: "route1", sessionI
 const emit = (event: string, value: any) => fixture.listeners.get(event)?.({ key: "bus1_route1", val: () => value });
 async function settle() { for (let n = 0; n < 40; n++) await Promise.resolve(); }
 function start(generation = 1, lifetime = 100_000) { const fence = new WorkerFence("test", generation, performance.now() + lifetime); stop = fence.run(startLiveBusProjection); return fence; }
-beforeEach(() => { vi.useFakeTimers(); fixture.data = {}; fixture.listeners.clear(); fixture.reads = []; fixture.updates = []; fixture.denyLeafWrites = false; fixture.fail = false; fixture.gate = null; fixture.heldPath = ""; fixture.holdTransaction = false; });
+beforeEach(() => { vi.useFakeTimers(); fixture.data = {}; fixture.listeners.clear(); fixture.reads = []; fixture.updates = []; fixture.denyLeafWrites = false; fixture.beforeUpdate = null; fixture.fail = false; fixture.gate = null; fixture.heldPath = ""; fixture.holdTransaction = false; });
 afterEach(async () => { await stop?.(); stop = undefined; vi.useRealTimers(); vi.unstubAllEnvs(); });
 const node = "node:bus1_route1", routePath = "publicRouteBuses/route:route1";
 const route = () => fixture.data.publicRouteBuses["route:route1"];
@@ -227,7 +229,12 @@ describe("public live projection", () => {
     const revision = route().revision;
     fixture.data.liveRouteCatalog._workerGeneration = 5;
     const writes = fixture.updates.length;
+    const catalog = structuredClone(fixture.data.liveRouteCatalog);
+    const catalogAttempts = (getLiveBusProjectionStatus() as unknown as Record<string, number>).catalogTransactionAttempts;
     await publish({ ...live("old"), lat: 99 });
+    // The route is the successor's: this generation publishes no catalog either.
+    expect(fixture.data.liveRouteCatalog).toEqual(catalog);
+    expect((getLiveBusProjectionStatus() as unknown as Record<string, number>).catalogTransactionAttempts).toBe(catalogAttempts);
     expect(fixture.updates).toHaveLength(writes + 1);
     expect(fixture.updates.at(-1)!.values).toMatchObject({ _workerGeneration: 4, revision: revision + 1, [`buses/${node}/lat`]: 99 });
     expect(route()).toEqual({ _workerGeneration: 5, revision, buses: { [node]: publicLiveBus(live("new")) } });
@@ -288,6 +295,23 @@ describe("public live projection", () => {
     await publish({ ...live(), lat: 25 });
     expect(route().buses[node].lat).toBe(25);
     expect(getLiveBusProjectionStatus()).toMatchObject({ writeMode: "leaf", leafWriteAttempts: 3, leafWriteFallbacks: 1 });
+    warn.mockRestore();
+  });
+  it("does not mistake a route that moved under a confirmed claim for missing rules", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    start(4, 1_000_000); await publish(live());
+    // Something else advances the stored revision just before each leaf write lands.
+    fixture.beforeUpdate = path => { const stored = fixture.data.publicRouteBuses[path.split("/")[1]]; stored.revision += 1; };
+    await publish({ ...live(), lat: 24 });
+    fixture.beforeUpdate = null;
+    expect(route().buses[node].lat).toBe(24);
+    expect(getLiveBusProjectionStatus()).toMatchObject({ writeMode: "leaf", leafWriteDenials: 2, leafWriteDrifts: 1, leafWriteFallbacks: 0 });
+    expect(warn).not.toHaveBeenCalled();
+    // The next publication claims afresh and goes back to leaf writes.
+    const leafWrites = (getLiveBusProjectionStatus() as unknown as Record<string, number>).leafWrites;
+    await publish({ ...live(), lat: 25 });
+    expect(route().buses[node].lat).toBe(25);
+    expect((getLiveBusProjectionStatus() as unknown as Record<string, number>).leafWrites).toBe(leafWrites + 1);
     warn.mockRestore();
   });
   it("publishes by whole-route transaction only when LIVE_PROJECTION_WRITE_MODE=transaction", async () => {

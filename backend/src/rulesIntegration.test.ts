@@ -245,6 +245,10 @@ rulesDescribe("Firebase security rules integration", () => {
         environment.authenticatedContext("fleet_viewer", { role: "admin", admin: true, authorizationVersion: "current" }), environment.unauthenticatedContext()]) {
         await assertFails(update(route(other), valid));
       }
+      // A bus must match the route and bus keys it is written under, and keep its identity.
+      await assertFails(update(route(writer), { _workerGeneration: 7, revision: 2, "buses/node:bus_4_route_1": { busId: "bus_4", routeId: "route_2" } }));
+      await assertFails(update(route(writer), { _workerGeneration: 7, revision: 2, "buses/node:bus_4_route_1": { busId: "bus_5", routeId: "route_1" } }));
+      await assertFails(update(route(writer), { _workerGeneration: 7, revision: 2, "buses/node:bus_1_route_1/busId": null }));
       await assertSucceeds(update(route(writer), valid));
       // The accepted write moved the revision: the same update cannot be applied twice.
       await assertFails(update(route(writer), valid));

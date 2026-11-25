@@ -258,6 +258,11 @@ integration("R14 actual SDK publisher fences, recovery and listener isolation", 
     await expect(fenced(4, { revision: revision + 1, [lat]: 30 })).rejects.toThrow(/permission.denied/i);
     await expect(fenced(4, { revision: revision + 3, [lat]: 30 })).rejects.toThrow(/permission.denied/i);
     await expect(fenced(4, { revision: revision + 2, "buses/node:ghost_routeA/lat": 30 })).rejects.toThrow(/permission.denied/i);
+    // Every bus written must carry an identity that matches the keys it is stored under.
+    await expect(fenced(4, { revision: revision + 2, "buses/node:busB_routeA": { busId: "busB", routeId: "routeB" } })).rejects.toThrow(/permission.denied/i);
+    await expect(fenced(4, { revision: revision + 2, "buses/node:busB_routeA": { busId: "busC", routeId: "routeA" } })).rejects.toThrow(/permission.denied/i);
+    await expect(fenced(4, { revision: revision + 2, "buses/node:busA_routeA/routeId": "routeB" })).rejects.toThrow(/permission.denied/i);
+    await expect(fenced(4, { revision: revision + 2, "buses/node:busA_routeA/busId": null })).rejects.toThrow(/permission.denied/i);
     // An update without the revision leaf keeps the stored revision, which is never the next one.
     await expect(fixture.writer!.ref(route).update({ _workerGeneration: 4, [lat]: 30 })).rejects.toThrow(/permission.denied/i);
     // Rules see merged data, so an omitted generation reads as the stored one: the fence

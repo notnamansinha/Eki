@@ -1,6 +1,6 @@
-import { isDeepStrictEqual } from "node:util";
-import { liveProjectionWriterRtdb, rtdb } from "../lib/firebaseAdmin";
-import { assertWorkerLeadership, bindWorkerCallback, bindWorkerContext, isRtdbPermissionDenied, workerRtdbFencedUpdate, workerRtdbTransaction, workerGeneration } from "../lib/workerFence";
+import { rtdb } from "../lib/firebaseAdmin";
+import { assertWorkerLeadership, bindWorkerCallback, bindWorkerContext, workerRtdbTransaction, workerGeneration } from "../lib/workerFence";
+import { createLiveBusProjectionWriter, projectionRouteKey } from "./liveBusProjectionWriter";
 import { createLatestPendingScheduler } from "../lib/latestPendingScheduler";
 import { LruCache } from "../lib/lruCache";
 import { createPagedLifecycleReplay } from "./pagedLifecycleReplay";
@@ -8,7 +8,7 @@ import { recordBackgroundFailure } from "../lib/backgroundFailureTracker";
 import { drainDynamicPromises } from "./tripStateLifecycle";
 
 const SAFE_ID = /^[A-Za-z0-9_-]{1,128}$/;
-export const projectionRouteKey = (routeId: string) => `route:${routeId}`;
+export { projectionLeafChanges, projectionRouteKey } from "./liveBusProjectionWriter";
 const projectionBusKey = (key: string) => `node:${key}`;
 const decodeRoute = (key: string) => key.startsWith("route:") ? key.slice(6) : key;
 const decodeBus = (key: string) => key.startsWith("node:") ? key.slice(5) : key;
@@ -101,38 +101,6 @@ export function routeAvailability(buses: Record<string, Record<string, unknown>>
   return { active, available, freshestAt, activeReceipts: activeReceipts.sort((a, b) => a - b), availableReceipts: availableReceipts.sort((a, b) => a - b) };
 }
 
-type RouteNode = { buses?: Record<string, Record<string, unknown>>; revision?: number; _workerGeneration?: number };
-/**
- * The leader's copy of one route's public buses and revision, as last confirmed
- * by the database. `epoch` is the recovery pass in which the claim behind it began.
- */
-type RouteView = { buses: Record<string, Record<string, unknown>>; revision: number; epoch: number };
-const isMap = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value);
-
-/**
- * The smallest multi-path update that turns `previous` into `next` at `path`:
- * changed leaves, `null` for removed ones, and a whole value where there was
- * none (or an array, which is replaced as a unit). Every leaf repeats its full
- * path on the wire, so a map most of whose fields changed is replaced whole
- * when that serializes smaller. No returned path is an ancestor of another,
- * as a multi-path update requires.
- */
-export function projectionLeafChanges(path: string, previous: unknown, next: unknown, changes: Record<string, unknown> = {}): Record<string, unknown> {
-  if (isMap(previous) && isMap(next)) {
-    const leaves: Record<string, unknown> = {};
-    for (const key of new Set([...Object.keys(previous), ...Object.keys(next)])) {
-      projectionLeafChanges(`${path}/${key}`, Object.hasOwn(previous, key) ? previous[key] : null, Object.hasOwn(next, key) ? next[key] : null, leaves);
-    }
-    if (Object.keys(leaves).length === 0) return changes;
-    if (JSON.stringify(leaves).length > JSON.stringify({ [path]: next }).length) changes[path] = next;
-    else Object.assign(changes, leaves);
-  } else if (!isDeepStrictEqual(previous ?? null, next ?? null)) changes[path] = next ?? null;
-  return changes;
-}
-
-/** After rules deny a write that follows a fresh claim, use whole-node transactions this long before probing again. */
-const LEAF_WRITE_RETRY_MS = 5 * 60_000;
-
 let projectionStatus = () => ({ scheduled: 0, processed: 0, coalesced: 0, failed: 0, rejected: 0 });
 export function getLiveBusProjectionStatus() { return projectionStatus(); }
 
@@ -151,18 +119,10 @@ export function startLiveBusProjection(): () => Promise<void> {
   const startupPublished = new LruCache<string, boolean>(1000);
   const startupPending = new Set<string>();
   const counters = { events: 0, skipped: 0, sourceReads: 0, sourceReadBytes: 0, reconstructionReads: 0, reconstructionReadBytes: 0, transactionAttempts: 0, committed: 0, publicBytes: 0, catalogTransactionAttempts: 0, committedCatalogWrites: 0, catalogPublicBytes: 0,
-    routeClaims: 0, leafWriteAttempts: 0, leafWrites: 0, leafWriteDenials: 0, leafWriteFallbacks: 0 };
-  // Per-bus leaf writes need a generation for the rules to compare. An
-  // unfenced run and LIVE_PROJECTION_WRITE_MODE=transaction keep the
+    routeClaims: 0, leafWriteAttempts: 0, leafWrites: 0, leafWriteDenials: 0, leafWriteFallbacks: 0, leafWriteDrifts: 0 };
+  // An unfenced run and LIVE_PROJECTION_WRITE_MODE=transaction keep the
   // whole-node transaction for every publication.
-  const leafCapable = generation > 0 && process.env.LIVE_PROJECTION_WRITE_MODE?.trim().toLowerCase() !== "transaction";
-  let leafRetryAt = 0;
-  const routeViews = new LruCache<string, RouteView>(1000);
-  // Advanced as each recovery pass starts. A copy whose claim began earlier can
-  // miss an edit made without a revision, such as an erased bus or route, and a
-  // replay that matches such a copy would write nothing. Publications therefore
-  // claim each route afresh once per pass before comparing against it.
-  let viewEpoch = 0;
+  const writer = createLiveBusProjectionWriter({ generation, counters, isStopped: () => stopped, mode: process.env.LIVE_PROJECTION_WRITE_MODE });
   let stopped = false;
   let initialized = false, readyPublished = false, readinessWrite: Promise<void> | null = null, stopPromise: Promise<void> | null = null;
   const report = (error: unknown) => recordBackgroundFailure("worker.liveProjection", "Public live projection", "[LiveProjection] Materialization/recovery failed:", error);
@@ -194,103 +154,6 @@ export function startLiveBusProjection(): () => Promise<void> {
     });
     if (catalog.committed) { catalogFingerprints.set(routeId, fingerprint); counters.committedCatalogWrites++; counters.catalogPublicBytes += Buffer.byteLength(JSON.stringify(catalog.snapshot.val()?.values ?? null)); }
   }
-  /**
-   * Whole-node transaction, run once per route per leadership and once per
-   * recovery pass, never per fix. It stamps this generation (rejected when a
-   * newer one already has) and restores a lost revision lineage above `floor`.
-   * A publication (`adopt`, inside `inRoute`) keeps the authoritative node as
-   * the copy its leaf writes are diffed against. It never aborts and adopts
-   * only a committed result: the SDK can resolve an abort from local state that
-   * includes another transaction's unconfirmed output, and a commit is accepted
-   * only against the server's current value. Recovery runs beside publications
-   * and must not replace a copy they may be changing, so it discards the copy
-   * instead: the next publication claims afresh, which repairs a destination
-   * that changed without a revision. A copy is stamped with the pass in which
-   * its claim began, so one that began before a pass started is not reused by
-   * that pass's replay (see `viewEpoch`).
-   */
-  async function claimRoute(routeId: string, floor: number, adopt: boolean): Promise<{ view: RouteView | null; node: RouteNode | null }> {
-    counters.routeClaims++;
-    const epoch = viewEpoch;
-    const result = await workerRtdbTransaction(rtdb.ref(`publicRouteBuses/${projectionRouteKey(routeId)}`), current => {
-      counters.transactionAttempts++;
-      if (stopped) return;
-      const revision = Number(current?.revision ?? 0);
-      const rebuilding = !current || revision < floor;
-      if (!adopt && !rebuilding && current?._workerGeneration === generation && typeof current.revision === "number") return;
-      return { ...current, buses: current?.buses ?? {}, revision: rebuilding ? Math.max(revision, floor) + 1 : revision };
-    });
-    const node = result.snapshot.val() as RouteNode | null;
-    const view = adopt && result.committed && !stopped && leafCapable && node?._workerGeneration === generation && typeof node.revision === "number"
-      ? { buses: { ...node.buses }, revision: node.revision, epoch } : null;
-    if (view) routeViews.set(routeId, view); else routeViews.delete(routeId);
-    return { view, node };
-  }
-  /** The original publication: replaces the route node, so every listener is resent every bus on the route. */
-  async function publishBusByTransaction(routeId: string, busKey: string, value: Record<string, unknown> | null): Promise<RouteNode | null> {
-    routeViews.delete(routeId);
-    const result = await workerRtdbTransaction(rtdb.ref(`publicRouteBuses/${projectionRouteKey(routeId)}`), current => {
-      counters.transactionAttempts++;
-      if (stopped) return;
-      const previous = current?.buses?.[busKey] ?? null;
-      if (isDeepStrictEqual(previous, value)) return current?._workerGeneration === generation ? undefined : { ...current };
-      const buses = { ...(current?.buses ?? {}) };
-      if (value) buses[busKey] = value; else delete buses[busKey];
-      return { ...current, buses, revision: Number(current?.revision ?? 0) + 1 };
-    });
-    if (result.committed && !stopped) { counters.committed++; counters.publicBytes += Buffer.byteLength(JSON.stringify(value)); }
-    // An abort can also mean a newer generation rejected the write; keep catalog reads canonical.
-    return result.snapshot.val();
-  }
-  /**
-   * Publishes one bus as a multi-path update of only its changed leaves, so a
-   * listener downloads those leaves rather than every bus on the route. The
-   * rules accept the update only while the stored generation and revision are
-   * the ones this leader last confirmed (see `workerRtdbFencedUpdate`).
-   * Returns the route as now known, or null when nothing may be concluded.
-   */
-  async function publishBus(routeId: string, busKey: string, value: Record<string, unknown> | null): Promise<RouteNode | RouteView | null> {
-    if (!leafCapable || performance.now() < leafRetryAt) return publishBusByTransaction(routeId, busKey, value);
-    for (let attempt = 0; attempt < 2; attempt++) {
-      let view = routeViews.get(routeId);
-      // A copy from before the current recovery pass may still list a bus that
-      // was erased since; comparing a replay against it could skip the repair.
-      if (!view || view.epoch !== viewEpoch) {
-        const claim = await claimRoute(routeId, 0, true);
-        if (stopped) return null;
-        // A newer generation owns the destination (or the claim could not
-        // commit): only a confirmed owner may write there.
-        if (!claim.view) return claim.node;
-        view = claim.view;
-      }
-      const changes = projectionLeafChanges(`buses/${busKey}`, Object.hasOwn(view.buses, busKey) ? view.buses[busKey] : null, value);
-      if (Object.keys(changes).length === 0) return view;
-      counters.leafWriteAttempts++;
-      try {
-        await workerRtdbFencedUpdate(liveProjectionWriterRtdb().ref(`publicRouteBuses/${projectionRouteKey(routeId)}`), { ...changes, revision: view.revision + 1 });
-      } catch (error) {
-        // The copy can no longer be trusted, whatever failed.
-        routeViews.delete(routeId);
-        if (!isRtdbPermissionDenied(error)) throw error;
-        counters.leafWriteDenials++;
-        if (stopped) return null;
-        // Claim again: that tells a successor's takeover (stop writing) from a
-        // drifted copy or a write the SDK resent after a lost acknowledgement.
-        continue;
-      }
-      if (value) view.buses[busKey] = value; else delete view.buses[busKey];
-      view.revision++;
-      counters.committed++; counters.leafWrites++; counters.publicBytes += Buffer.byteLength(JSON.stringify(changes));
-      return view;
-    }
-    // Denied twice, the second time straight after a successful claim: the
-    // deployed rules do not grant the fenced writer. The transaction is fenced
-    // on its own, so publication continues at the old download cost.
-    leafRetryAt = performance.now() + LEAF_WRITE_RETRY_MS;
-    counters.leafWriteFallbacks++;
-    console.warn("[LiveProjection] Rules denied the per-bus projection write after a fresh claim; using whole-route transactions for 5 minutes. Deploy database.rules.json to restore leaf writes.");
-    return publishBusByTransaction(routeId, busKey, value);
-  }
   const materialize = async (key: string, routeId: string) => {
     if (stopped) return;
     assertWorkerLeadership();
@@ -316,10 +179,10 @@ export function startLiveBusProjection(): () => Promise<void> {
     const live = publicLiveBus(snapshot.val());
     const value = live?.routeId === routeId && key === `${live.busId}_${routeId}` ? live : null;
     assertWorkerLeadership();
-    const view = await publishBus(routeId, busKey, value);
-    if (stopped) return;
+    const publication = await writer.publish(routeId, busKey, value);
+    if (stopped || !publication) return;
     assertWorkerLeadership();
-    await publishCatalog(routeId, view);
+    await publishCatalog(routeId, publication.route);
   };
   const scheduler = createLatestPendingScheduler<string, string>(async (key, routeId) => {
     await inRoute(routeId, () => materialize(key, routeId));
@@ -348,7 +211,7 @@ export function startLiveBusProjection(): () => Promise<void> {
       assertWorkerLeadership();
       // A new pass replays every source bus: refresh each route's copy before
       // the first replay compares against it, so this pass repairs it.
-      if (!cursor) viewEpoch++;
+      if (!cursor) writer.beginRecoveryPass();
       const position = cursor ? JSON.parse(cursor) : { phase: "live", key: "" };
       if (position.phase === "live") {
         let query = source.orderByKey();
@@ -381,7 +244,7 @@ export function startLiveBusProjection(): () => Promise<void> {
         if (stopped) return { items: [], nextCursor: null };
         const observed = Number(floorSnapshot.val() ?? 0);
         const floor = Number.isSafeInteger(observed) && observed >= 0 ? observed : 0;
-        recoveredView = (await claimRoute(routeId, floor, false)).node;
+        recoveredView = await writer.restoreLineage(routeId, floor);
       }
       if (stopped) return { items: [], nextCursor: null };
       assertWorkerLeadership();
@@ -419,7 +282,7 @@ export function startLiveBusProjection(): () => Promise<void> {
   });
   const fail = bindWorkerCallback(() => replay.request());
   source.on("child_added", receive, fail); source.on("child_changed", receive, fail); source.on("child_removed", removed, fail);
-  projectionStatus = () => ({ ...scheduler.snapshot(), ...counters, writeMode: !leafCapable ? "transaction" : performance.now() < leafRetryAt ? "transaction-fallback" : "leaf" });
+  projectionStatus = () => ({ ...scheduler.snapshot(), ...counters, writeMode: writer.writeMode() });
   replay.request();
   function publishReadiness(ready: boolean) {
     if (stopped || readinessWrite) return;

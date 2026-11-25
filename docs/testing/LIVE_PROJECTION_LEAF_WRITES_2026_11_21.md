@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-EVD-063 | 1.0 | Historical | 2026-11-23 |
+| EKI-EVD-063 | 1.0 | Historical | 2026-11-25 |
 
 ## 1. Purpose
 
@@ -12,17 +12,18 @@ This record measures the Realtime Database download of the public live-bus proje
 
 Before the change, every publication of one bus ran a transaction on the whole `publicRouteBuses/route:{routeId}` node. The database then sent every bus on that route to every listener, and the backend downloaded the route node again for the transaction itself.
 
-After the change, the leader publishes one bus as a multi-path `update()` of only the fields that changed under `buses/node:{busId}_{routeId}`, with `null` for a removed field and for a bus that leaves the route (`projectionLeafChanges` and `publishBus` in `backend/src/services/liveBusProjection.ts`).
+After the change, the leader publishes one bus as a multi-path `update()` of only the fields that changed under `buses/node:{busId}_{routeId}`, with `null` for a removed field and for a bus that leaves the route (`projectionLeafChanges` and `publish` in `backend/src/services/liveBusProjectionWriter.ts`).
 
 | Part | Behaviour | Source |
 |---|---|---|
-| Route claim | A whole-node transaction, as before, stamps the leader's `_workerGeneration` and returns the node the leader diffs against. A publishing claim always commits, so the leader adopts only a node the server has confirmed. It runs once per route after election and after a denial. Each 60 s recovery pass adds two more. The pass marks every copy stale when it starts, so its first replay on a route claims again and compares the source buses with the stored node. A bus or a whole route erased without a revision is therefore restored by that same pass, even when the bus sends nothing new. After the pass, the leader discards its copy, so the next publication claims again. In the emulator, a claim that writes back an unchanged node sends 0 bytes to listeners. | `claimRoute` |
+| Route claim | A whole-node transaction, as before, stamps the leader's `_workerGeneration` and returns the node the leader diffs against. A publishing claim always commits, so the leader adopts only a node the server has confirmed. It runs once per route after election and after a denial. Each 60 s recovery pass adds two more. The pass marks every copy stale when it starts, so its first replay on a route claims again and compares the source buses with the stored node. A bus or a whole route erased without a revision is therefore restored by that same pass, even when the bus sends nothing new. After the pass, the leader discards its copy, so the next publication claims again. In the emulator, a claim that writes back an unchanged node sends 0 bytes to listeners. | `claim`, `restoreLineage` |
 | Leaf write | Sent through a second Admin app whose `databaseAuthVariableOverride` is `{uid: 'eki:live-projection-writer'}`, so the security rules apply to it. The update carries `_workerGeneration` and `revision` (the confirmed revision plus 1). | `liveProjectionWriterRtdb` in `backend/src/lib/firebaseAdmin.ts`, `workerRtdbFencedUpdate` in `backend/src/lib/workerFence.ts` |
-| Stale-leader fence | `database.rules.json` accepts the update only when the caller has that identity, the stored `_workerGeneration` is a number equal to the one sent, and the sent revision is the stored revision plus 1. A successor's claim changes the stored generation, so every later write from the former leader is denied atomically at the destination. On a denial the leader claims again; a claim rejected by a newer generation stops the publication. | `database.rules.json`, `publishBus` |
-| Rules missing | Two denials in a row, the second straight after a confirmed claim, switch the leader to whole-route transactions for 5 min and log a warning. | `LEAF_WRITE_RETRY_MS` |
+| Stale-leader fence | `database.rules.json` accepts the update only when the caller has that identity, the stored `_workerGeneration` is a number equal to the one sent, and the sent revision is the stored revision plus 1. A successor's claim changes the stored generation, so every later write from the former leader is denied atomically at the destination. On a denial the leader claims again; a claim rejected by a newer generation stops the publication. | `database.rules.json`, `publish` |
+| Bus identity | Each bus written must keep `busId` and `routeId` as strings matching the keys it is stored under: `route:{routeId}` and `node:{busId}_{routeId}`. Removing a bus or one of its other fields is allowed. | `database.rules.json` |
+| Rules missing | After two denials in a row, the second straight after a confirmed claim, the leader reads the stored `_workerGeneration` and `revision`. If they still match the write it sent, the rules refused a valid update: it switches to whole-route transactions for 5 min and logs a warning. Otherwise the route moved under the claim: that publication goes by transaction, `leafWriteDrifts` counts it, and the next publication claims again with leaf writes. | `LEAF_WRITE_RETRY_MS`, `rulesRefusedValidWrite` |
 | Forced transactions | `LIVE_PROJECTION_WRITE_MODE=transaction` keeps the whole-route transaction for every publication. | [Configuration](../CONFIGURATION.md) |
 
-`GET /api/health` reports `workQueues.publicProjection.writeMode` (`leaf`, `transaction-fallback` or `transaction`) and the counters `routeClaims`, `leafWriteAttempts`, `leafWrites`, `leafWriteDenials` and `leafWriteFallbacks`. `publicBytes` now counts the JSON bytes of the changed fields written, not the whole bus value.
+`GET /api/health` reports `workQueues.publicProjection.writeMode` (`leaf`, `transaction-fallback` or `transaction`) and the counters `routeClaims`, `leafWriteAttempts`, `leafWrites`, `leafWriteDenials`, `leafWriteFallbacks` and `leafWriteDrifts` (`backend/src/server.ts:281` spreads `getLiveBusProjectionStatus()` into that object). `publicBytes` now counts the JSON bytes of the changed fields written, not the whole bus value.
 
 Browsers need no change. `frontend/src/lib/createLiveBusStore.ts` already consumes `child_added`, `child_changed` and `child_removed`, and the SDK delivers the merged bus record.
 
@@ -97,4 +98,4 @@ The leaf write needs the rules in this change deployed to the same instance (`bu
 | New backend, old rules | The rules deny the leaf write. The leader falls back to whole-route transactions, logs a warning every 5 min and reports `writeMode: transaction-fallback`. Publication continues at the old cost. |
 | Both deployed | `writeMode: leaf`, `leafWrites` increasing and `leafWriteFallbacks` 0 on `GET /api/health`. |
 
-Deploy the rules first so the backend starts in leaf mode. To return to whole-route transactions while keeping the new rules, set `LIVE_PROJECTION_WRITE_MODE=transaction` on the backend.
+Both orders occur in `.github/workflows/deploy.yml`. The automatic staging release after a green `main` build releases Hosting and `database:rtdb` only (line 402), so the rules reach the instance before any new backend. A manual dispatch with `deploy_backend=true` deploys the backend first and then the rules (`deploy-staging` needs `deploy-backend-staging`, line 276). Between those two jobs the new backend publishes by whole-route transaction at the old cost, and its next leaf attempt after the 5 min pause succeeds once the rules are released, with no restart. The production job releases Hosting and rules and deploys no backend. No deploy gate is needed for correctness, because each order publishes correctly. To return to whole-route transactions while keeping the new rules, set `LIVE_PROJECTION_WRITE_MODE=transaction` on the backend.

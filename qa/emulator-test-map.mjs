@@ -49,3 +49,26 @@ emulatorTestMap.push({
     semantics: 'The same signed emulator principal reads a retained message with its profile present, then is denied after profile deletion while the manifest/message are retained; trusted operator/admin neighbors still succeed.',
   }],
 });
+
+// Public projection leaf writes (EKI-EVD-063): the stale-leader fence enforced by the committed rules, and measured bytes per fix.
+const projectionSuite = 'R14 actual SDK publisher fences, recovery and listener isolation';
+const projectionSources = ['backend/src/lib/workerFence.ts', 'backend/src/services/liveBusProjection.ts', 'backend/src/services/liveBusProjectionWriter.ts', 'database.rules.json'];
+emulatorTestMap.push({
+  caseId: 'TRIP26',
+  scope: 'Loopback RTDB emulator with the committed rules: a public projection leaf update is accepted only from the generation that claimed the route, at the next revision, with a bus identity matching its keys; a still-running former leader is refused at the destination once its successor claims. Deployed rules and multi-replica acceptance remain separate.',
+  sourcePaths: projectionSources,
+  tests: [
+    { path: 'backend/src/liveBusProjection.fences.integration.test.ts', name: `${projectionSuite} > accepts a fenced leaf update only from the claimed generation at the next revision, under the committed rules`, level: 'L2',
+      semantics: 'A resent update, a skipped or omitted revision, a lower or unclaimed generation, a bus whose identity does not match its keys and the former leader after a successor claim are all refused by the committed rules; the writer identity has no other write.' },
+    { path: 'backend/src/liveBusProjection.fences.integration.test.ts', name: `${projectionSuite} > stops a still-running former leader at the destination once its successor has claimed the route`, level: 'L2',
+      semantics: 'With both generations publishing, the former leader makes one refused attempt and then stops, and the route holds only the successor state.' },
+    { path: 'backend/src/rulesIntegration.test.ts', name: 'Firebase security rules integration > grants the projection writer identity only a route write fenced by the stored generation and the next revision', level: 'L2',
+      semantics: 'Passenger, administrator and unauthenticated clients cannot write the projection; the writer uid gets only the fenced route write, once per revision, with matching bus identities.' },
+  ],
+}, {
+  caseId: 'OBS07',
+  scope: 'Loopback RTDB emulator measurement of protocol bytes per fix to a passenger route listener, the admin fleet listener and the publisher connections, for whole-route transactions against leaf writes with 1, 5 and 10 buses on a route. TLS and production billing remain separate.',
+  sourcePaths: ['backend/src/services/liveBusProjection.ts', 'backend/src/services/liveBusProjectionWriter.ts'],
+  tests: [{ path: 'backend/src/liveBusProjection.fences.integration.test.ts', name: `${projectionSuite} > delivers a route listener only the changed leaves of a fix, whatever the number of buses on the route`, level: 'L2',
+    semantics: 'Leaf listener bytes per fix stay within 2 % across 1, 5 and 10 buses while transaction bytes grow with the bus count; the measurement is printed as R14_LISTENER_WIRE_MEASUREMENT.' }],
+});

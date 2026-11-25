@@ -22,7 +22,7 @@
         "buses": {
           ".read": "auth != null",
           ".write": false,
-          "$busKey": { ".validate": "newData.hasChildren(['busId', 'routeId'])" }
+          "$busKey": { ".validate": "newData.hasChildren(['busId', 'routeId']) && newData.child('busId').isString() && newData.child('routeId').isString() && $routeId === 'route:' + newData.child('routeId').val() && $busKey === 'node:' + newData.child('busId').val() + '_' + newData.child('routeId').val()" }
         }
       }
     },

@@ -83,7 +83,8 @@ vi.mock("../lib/firebaseAdmin", () => {
       }
       const allowed = !fixture.denyLeafWrites && typeof current?._workerGeneration === "number" &&
         next._workerGeneration === current._workerGeneration && next.revision === current.revision + 1 &&
-        [...touched].every(key => !next.buses?.[key] || ("busId" in next.buses[key] && "routeId" in next.buses[key]));
+        [...touched].every(key => !next.buses?.[key] || (typeof next.buses[key].busId === "string" && typeof next.buses[key].routeId === "string" &&
+          path === `publicRouteBuses/route:${next.buses[key].routeId}` && key === `node:${next.buses[key].busId}_${next.buses[key].routeId}`));
       if (!allowed) throw Object.assign(new Error("PERMISSION_DENIED: Permission denied"), { code: "PERMISSION_DENIED" });
       write(path, next);
       fixture.writes.push(path);

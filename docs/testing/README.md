@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-TST-001 | 1.4 | Current | 2026-11-24 |
+| EKI-TST-001 | 1.3 | Current | 2026-11-25 |
 
 ## 1. Purpose
 

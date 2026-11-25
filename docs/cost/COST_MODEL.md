@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-CST-001 | 3.0 | Current | 2026-11-21 |
+| EKI-CST-001 | 3.0 | Current | 2026-11-25 |
 
 ## 1. Purpose and scope
 
@@ -144,14 +144,14 @@ The Realtime Database bills stored data and downloaded data, not write operation
 
 | Client | Path | Code | What it downloads |
 |---|---|---|---|
-| Backend, one connection per process | `activeBuses` child events | `backend/src/services/tripStateEngine.ts:796,1349-1351`, `backend/src/services/liveBusProjection.ts:141,405` | Every write to any bus node, about four per fix |
-| Backend | `activeBuses/{busId}_{routeId}`, one read per public publication | `backend/src/services/liveBusProjection.ts:300` | One full bus node |
+| Backend, one connection per process | `activeBuses` child events | `backend/src/services/tripStateEngine.ts:796,1349-1351`, `backend/src/services/liveBusProjection.ts:112,284` | Every write to any bus node, about four per fix |
+| Backend | `activeBuses/{busId}_{routeId}`, one read per public publication | `backend/src/services/liveBusProjection.ts:176` | One full bus node |
 | Passenger | `publicRouteBuses/route:{routeId}/buses` for the selected route (the first live route when none is selected) and any joined ride's route | `frontend/src/lib/liveBusStore.ts:17`, `frontend/src/components/passenger/PassengerWorkspace.tsx:276-277,289-292` | Route snapshot, then the changed fields of each publication on that route |
 | Passenger | `liveRouteCatalog/values` and `clientProjectionStatus/public` | `frontend/src/hooks/useLiveRouteCatalog.ts:34,42` | The whole catalog on each change |
 | Passenger | `activeRouteGeometry/{busId}_{routeId}/{version}`, one read | `frontend/src/lib/activeRouteGeometry.ts:73` | One encoded polyline per new route version |
 | Admin | `publicRouteBuses` (all routes) | `frontend/src/components/admin/DashboardPanel.tsx:613`, `frontend/src/components/admin/FleetManagementPanel.tsx:77` | The changed fields of each publication |
 
-The worker leader publishes each change to one bus as a multi-path update of only the changed fields under `publicRouteBuses/route:{routeId}/buses/node:{busId}_{routeId}` (`backend/src/services/liveBusProjection.ts:241-279`), two publications per fix (telemetry, then route match). A listener therefore receives the changed fields of one bus, whatever the number of buses on the route. Until 2026-11-21 each publication was a transaction on the whole route node, which resent every bus on the route to every listener and downloaded the node to the backend again; [EKI-EVD-063](../testing/LIVE_PROJECTION_LEAF_WRITES_2026_11_21.md) measures both. The worker rewrites the whole `liveRouteCatalog` node when a route's availability changes (`backend/src/services/liveBusProjection.ts:181-186`). Each bus's availability receipt moves in 30 s steps and the catalog stores one receipt per bus, so receipt changes add at most two catalog changes per minute per bus (`backend/src/services/liveBusProjection.ts:92-97`).
+The worker leader publishes each change to one bus as a multi-path update of only the changed fields under `publicRouteBuses/route:{routeId}/buses/node:{busId}_{routeId}` (`backend/src/services/liveBusProjectionWriter.ts:171-220`), two publications per fix (telemetry, then route match). A listener therefore receives the changed fields of one bus, whatever the number of buses on the route. Until 2026-11-21 each publication was a transaction on the whole route node, which resent every bus on the route to every listener and downloaded the node to the backend again; [EKI-EVD-063](../testing/LIVE_PROJECTION_LEAF_WRITES_2026_11_21.md) measures both. The worker rewrites the whole `liveRouteCatalog` node when a route's availability changes (`backend/src/services/liveBusProjection.ts:149-154`). Each bus's availability receipt moves in 30 s steps and the catalog stores one receipt per bus, so receipt changes add at most two catalog changes per minute per bus (`backend/src/services/liveBusProjection.ts:92-97`).
 
 The backend constant comes from the loopback emulator run in the [R14 live projection evidence](../testing/R14_LIVE_PROJECTION.md) and counts application JSON bytes only. The listener constants come from the protocol-level emulator measurement in [EKI-EVD-063](../testing/LIVE_PROJECTION_LEAF_WRITES_2026_11_21.md), which counts the JSON the database sends for a bus record carrying every public field. Neither includes TLS overhead, so treat them as lower bounds on billed bytes.
 

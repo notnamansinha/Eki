@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-ARC-003 | 3.4 | Current | 2026-11-21 |
+| EKI-ARC-003 | 3.5 | Current | 2026-11-25 |
 
 ## 1. Introduction
 
@@ -149,6 +149,7 @@ All request budgets are divided by the replica shard factor (`backend/src/lib/ra
 | `serializedChangeWriter.ts` | Per-key serialized writes with fingerprint deduplication | `SerializedChangeWriter` | Leader |
 | `journeyLocation.ts` | Raw fix record for ride history | `journeyLocation`, `newerJourneyLocation` | Leader |
 | `liveBusProjection.ts` | Public projection, route catalog and readiness status | `startLiveBusProjection`, `publicLiveBus` | Leader |
+| `liveBusProjectionWriter.ts` | Route claims and per-bus leaf writes to `publicRouteBuses`, fenced by `database.rules.json`, with the whole-route transaction fallback | `createLiveBusProjectionWriter`, `projectionLeafChanges` | Leader |
 | `abandonedRideReconciler.ts`, `abandonedRideReconciliationLogic.ts` | Hourly interruption of inactive rides | `startAbandonedRideReconciler`, `reconciliationDecision` | Leader |
 
 **Riders, routes and fleet:**
@@ -248,7 +249,7 @@ The whole request has an 8 s response deadline and 5 s per dependency stage (`ba
 | Stale sweep | Leader | 1 s tick | 25 nodes per page, 4 writes at once, failure backoff up to 30 s | `tripStateEngine.ts:1361`, `backend/src/services/staleBusSweeper.ts:4` |
 | Completed ride retirement | Leader | 30 s after completion | One timer per node | `tripStateEngine.ts:1273` |
 | Route watcher reconnect | Leader | On listener error | 1 s doubling to 30 s | `tripStateEngine.ts:118` |
-| Public projection readiness and repair | Leader | 1 s and 60 s | One readiness write at a time | `backend/src/services/liveBusProjection.ts:429` |
+| Public projection readiness and repair | Leader | 1 s and 60 s | One readiness write at a time | `backend/src/services/liveBusProjection.ts:308` |
 | Abandoned-ride reconciliation | Leader | Startup and every hour | Pages of 100 | `backend/src/services/abandonedRideReconciler.ts:18`, `backend/src/lib/reconciliationPages.ts:2` |
 | Fleet authorization reconciliation | Leader | Startup and every 10 min | 30 s budget per page; cursor persisted | `workerCoordinator.ts:147`, `workerCoordinator.ts:171` |
 | Privacy deletion queue | Leader | Startup and every 60 s | Pages of 20 requests | `backend/src/services/privacyDeletionWorker.ts:126` |

@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-GEN-002 | 1.8 | Current | 2026-11-24 |
+| EKI-GEN-002 | 1.7 | Current | 2026-11-25 |
 
 ## 1. Purpose
 
@@ -51,7 +51,7 @@ The register lists every controlled document by its source path. A mirror carrie
 | ID | Document | Version | Status | Last updated |
 |---|---|---|---|---|
 | EKI-GEN-001 | [Eki Campus Bus Tracking](../README.md) | 1.3 | Current | 2026-11-07 |
-| EKI-GEN-002 | [Eki Documentation Index](README.md) | 1.8 | Current | 2026-11-24 |
+| EKI-GEN-002 | [Eki Documentation Index](README.md) | 1.7 | Current | 2026-11-25 |
 | EKI-GEN-003 | [Eki Documentation Standard](DOCUMENTATION_STANDARD.md) | 1.3 | Current | 2026-11-09 |
 | EKI-GEN-004 | [Getting Started with Eki](GETTING_STARTED.md) | 2.3 | Current | 2026-11-08 |
 | EKI-GEN-005 | [Eki Configuration Reference](CONFIGURATION.md) | 2.0 | Current | 2026-11-21 |
@@ -71,7 +71,7 @@ The register lists every controlled document by its source path. A mirror carrie
 |---|---|---|---|---|
 | EKI-ARC-001 | [Eki Architecture](design/ARCHITECTURE.md) | 2.5 | Current | 2026-11-11 |
 | EKI-ARC-002 | [Eki High-Level Design](design/HIGH_LEVEL_DESIGN.md) | 3.1 | Current | 2026-11-07 |
-| EKI-ARC-003 | [Low-Level Design](design/LOW_LEVEL_DESIGN.md) | 3.4 | Current | 2026-11-21 |
+| EKI-ARC-003 | [Low-Level Design](design/LOW_LEVEL_DESIGN.md) | 3.5 | Current | 2026-11-25 |
 | EKI-ARC-004 | [Tracking Algorithms](design/TRACKING_ALGORITHMS.md) | 1.4 | Current | 2026-11-07 |
 
 ### 4.4 Architecture decision records (ADR)
@@ -105,7 +105,7 @@ The register lists every controlled document by its source path. A mirror carrie
 
 | ID | Document | Version | Status | Last updated |
 |---|---|---|---|---|
-| EKI-DAT-001 | [Firebase Data Model](data/FIREBASE_DATA_MODEL.md) | 3.0 | Current | 2026-11-21 |
+| EKI-DAT-001 | [Firebase Data Model](data/FIREBASE_DATA_MODEL.md) | 3.0 | Current | 2026-11-25 |
 | EKI-DAT-002 | [Eki Storage Architecture](data/STORAGE_ARCHITECTURE.md) | 2.2 | Current | 2026-11-08 |
 
 ### 4.8 Security (SEC)
@@ -122,7 +122,7 @@ The register lists every controlled document by its source path. A mirror carrie
 
 | ID | Document | Version | Status | Last updated |
 |---|---|---|---|---|
-| EKI-CST-001 | [Eki Cost Model](cost/COST_MODEL.md) | 3.0 | Current | 2026-11-21 |
+| EKI-CST-001 | [Eki Cost Model](cost/COST_MODEL.md) | 3.0 | Current | 2026-11-25 |
 
 ### 4.10 Operations (OPS)
 
@@ -154,7 +154,7 @@ The register lists every controlled document by its source path. A mirror carrie
 | EKI-OPS-024 | [Telemetry Ingestion Load Test](operations/TELEMETRY_INGESTION_LOAD_TEST.md) | 1.1 | Current | 2026-11-07 |
 | EKI-OPS-025 | [Telemetry Latency Baseline](operations/TELEMETRY_LATENCY_BASELINE.md) | 1.0 | Current | 2026-10-30 |
 | EKI-OPS-026 | [Worker Leadership and Fencing](operations/WORKER_LEADERSHIP.md) | 2.0 | Current | 2026-11-21 |
-| EKI-OPS-027 | [Bounded Work Admission](operations/WORK_ADMISSION.md) | 1.2 | Current | 2026-11-21 |
+| EKI-OPS-027 | [Bounded Work Admission](operations/WORK_ADMISSION.md) | 1.2 | Current | 2026-11-25 |
 | EKI-OPS-028 | [ngrok Removal and Managed Firebase Backend Migration](operations/NGROK_REMOVAL_AND_FIREBASE_BACKEND_MIGRATION.md) | 1.4 | Proposed | 2026-11-07 |
 | EKI-OPS-029 | [Staging Runtime Configuration](operations/STAGING_RUNTIME_CONFIG.md) | 1.5 | Current | 2026-11-08 |
 | EKI-OPS-030 | [Running the Backend on a VPS (Backup Path)](../deploy/vps/README.md) | 1.1 | Current | 2026-11-07 |
@@ -189,8 +189,8 @@ The register lists every controlled document by its source path. A mirror carrie
 
 | ID | Document | Version | Status | Last updated |
 |---|---|---|---|---|
-| EKI-TST-001 | [Eki Testing and Evidence Index](testing/README.md) | 1.4 | Current | 2026-11-24 |
-| EKI-TST-002 | [Eki Test Strategy](testing/TEST_STRATEGY.md) | 3.3 | Current | 2026-11-21 |
+| EKI-TST-001 | [Eki Testing and Evidence Index](testing/README.md) | 1.3 | Current | 2026-11-25 |
+| EKI-TST-002 | [Eki Test Strategy](testing/TEST_STRATEGY.md) | 3.4 | Current | 2026-11-25 |
 | EKI-TST-003 | [Eki QA Programme](../qa/README.md) | 1.1 | Current | 2026-11-07 |
 | EKI-TST-004 | [Disposable Browser Acceptance](../qa/BROWSER_ACCEPTANCE.md) | 1.1 | Current | 2026-11-07 |
 | EKI-TST-005 | [Disposable Emulator Acceptance](../qa/EMULATOR_ACCEPTANCE.md) | 1.1 | Current | 2026-11-07 |
@@ -270,7 +270,7 @@ The register lists every controlled document by its source path. A mirror carrie
 | EKI-EVD-060 | [Deterministic QA baseline and first implementation slice](../qa/BASELINE_2026_10_11.md) | 1.0 | Historical | 2026-10-11 |
 | EKI-EVD-061 | [Cloud Run staging latency: 2 November 2026](testing/CLOUD_RUN_LATENCY_2026_11_02.md) | 1.0 | Historical | 2026-11-03 |
 | EKI-EVD-062 | [DAST local scan: 23 November 2026](testing/DAST_LOCAL_2026_11_23.md) | 1.0 | Historical | 2026-11-23 |
-| EKI-EVD-063 | [Live projection leaf writes: 21 November 2026](testing/LIVE_PROJECTION_LEAF_WRITES_2026_11_21.md) | 1.0 | Historical | 2026-11-23 |
+| EKI-EVD-063 | [Live projection leaf writes: 21 November 2026](testing/LIVE_PROJECTION_LEAF_WRITES_2026_11_21.md) | 1.0 | Historical | 2026-11-25 |
 
 <!-- register:end -->
 

@@ -73,7 +73,8 @@ describe("production security configuration", () => {
     expect(fenced).toContain("newData.child('_workerGeneration').val() === data.child('_workerGeneration').val()");
     expect(fenced).toContain("newData.child('revision').val() === data.child('revision').val() + 1");
     expect(fenced).not.toContain("||");
-    expect(database.rules.publicRouteBuses.$routeId.buses.$busKey[".validate"]).toBe("newData.hasChildren(['busId', 'routeId'])");
+    // Every bus written keeps its identity, and that identity matches the keys it is stored under.
+    expect(database.rules.publicRouteBuses.$routeId.buses.$busKey[".validate"]).toBe("newData.hasChildren(['busId', 'routeId']) && newData.child('busId').isString() && newData.child('routeId').isString() && $routeId === 'route:' + newData.child('routeId').val() && $busKey === 'node:' + newData.child('busId').val() + '_' + newData.child('routeId').val()");
     expect(workspaceFile("backend/src/lib/firebaseAdmin.ts")).toContain("databaseAuthVariableOverride: { ...RTDB_FENCED_WRITER_AUTH }");
     const syncRoles = workspaceFile("backend/src/syncRoleClaims.ts");
     expect(syncRoles).toContain("driverRouteAssignments/");

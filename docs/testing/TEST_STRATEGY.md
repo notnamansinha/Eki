@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-TST-002 | 3.3 | Current | 2026-11-21 |
+| EKI-TST-002 | 3.4 | Current | 2026-11-25 |
 
 ## 1. Purpose and scope
 

@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-DAT-001 | 3.0 | Current | 2026-11-21 |
+| EKI-DAT-001 | 3.0 | Current | 2026-11-25 |
 
 ## 1. Purpose
 
@@ -187,7 +187,7 @@ Configured geometry is never stored here; it comes from `routes/{routeId}`.
 
 ### 3.3 `publicRouteBuses/route:{routeId}`
 
-The browser-readable projection of live nodes, materialized by the leader (`backend/src/services/liveBusProjection.ts:137`). The leader claims a route once with a transaction on the whole node, then publishes each change to one bus as a multi-path update of only the changed fields, with `null` for a removed field or bus. The security rules accept that update only from the leader's rules-bound writer identity, with the stored `_workerGeneration` and the next `revision` ([live projection leaf writes](../testing/LIVE_PROJECTION_LEAF_WRITES_2026_11_21.md)).
+The browser-readable projection of live nodes, materialized by the leader (`backend/src/services/liveBusProjection.ts:108`, writes in `backend/src/services/liveBusProjectionWriter.ts:68`). The leader claims a route once with a transaction on the whole node, then publishes each change to one bus as a multi-path update of only the changed fields, with `null` for a removed field or bus. The security rules accept that update only from the leader's rules-bound writer identity, with the stored `_workerGeneration` and the next `revision` ([live projection leaf writes](../testing/LIVE_PROJECTION_LEAF_WRITES_2026_11_21.md)).
 
 | Field | Type | Meaning |
 |---|---|---|
@@ -211,7 +211,7 @@ A node with `retiredAssignmentRevision`, or with an invalid `busId` or `routeId`
 | Item | Value |
 |---|---|
 | Readers | Passenger map (one route's `buses`), and admin Live Ops and fleet management (whole root) (`frontend/src/lib/liveBusStore.ts:17`, `frontend/src/lib/createLiveBusStore.ts:182`) |
-| Client rule | `buses` read, signed in; root read, current admin (`database.rules.json:17`). No client write. The backend's projection writer (`auth.uid` `eki:live-projection-writer`, set by an Admin SDK auth override) may update a route node under the generation and revision conditions above; every bus it writes keeps `busId` and `routeId` (`database.rules.json:20-27`) |
+| Client rule | `buses` read, signed in; root read, current admin (`database.rules.json:17`). No client write. The backend's projection writer (`auth.uid` `eki:live-projection-writer`, set by an Admin SDK auth override) may update a route node under the generation and revision conditions above; every bus it writes keeps string `busId` and `routeId` values that match its keys, `route:{routeId}` and `node:{busId}_{routeId}`; removing a bus or one of its other fields is allowed (`database.rules.json:20-27`) |
 | Retention | Follows `activeBuses`: an entry is removed when its source node is removed |
 
 ### 3.4 `liveRouteCatalog`
