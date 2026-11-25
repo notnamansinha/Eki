@@ -725,8 +725,10 @@ export default function PassengerWorkspace() {
     // The ride steps need the demo ride and live data; otherwise the tour
     // still introduces Live routes, Routes and Profile. A passenger joined to
     // a real ride also gets the short tour: a demo boarding must never replace
-    // the ride they are on.
-    const realRideJoined = Boolean(trackedSessionId) && !isDemoRouteId(joinedRouteId);
+    // the ride they are on. That includes a saved ride still being restored:
+    // only real rides save the pointer, and the restore may finish mid-tour.
+    const realRideJoined = (Boolean(trackedSessionId) && !isDemoRouteId(joinedRouteId)) ||
+      Boolean(user && readJoinedRidePointer(user.uid));
     const steps: TourStepId[] = showDemoRide && !realRideJoined
       ? ["welcome", "stops", "drawer", "chat", "routes", "profile"]
       : ["welcome-no-ride", "routes", "profile"];

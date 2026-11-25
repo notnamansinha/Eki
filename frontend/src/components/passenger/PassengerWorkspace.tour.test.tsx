@@ -24,6 +24,8 @@ const mocks = vi.hoisted(() => ({
   auth: { currentUser: { uid: "qa-passenger", getIdToken: async () => "test-token", metadata: {} as Record<string, string> } },
   // A real ride the passenger is joined to, as the server reports it; null keeps the fixture's.
   joinedRide: null as Record<string, unknown> | null,
+  // When set, the joined-ride status waits for this before answering.
+  joinedRideGate: null as Promise<void> | null,
 }));
 vi.mock("@/lib/firebaseAuth", () => ({ auth: mocks.auth }));
 vi.mock("@/hooks/useAuth", async () => import("../../../../e2e/fixtures/state"));
@@ -34,8 +36,10 @@ vi.mock("@/hooks/useRTDBResume", async () => import("../../../../e2e/fixtures/st
 vi.mock("@/lib/liveBusStore", async () => import("../../../../e2e/fixtures/state"));
 vi.mock("@/lib/joinedRideStatus", async () => {
   const fixture = await import("../../../../e2e/fixtures/state");
-  return { getJoinedRideStatus: (sessionId: string) => mocks.joinedRide
-    ? Promise.resolve({ sessionId, ...mocks.joinedRide }) : fixture.getJoinedRideStatus(sessionId) };
+  return { getJoinedRideStatus: async (sessionId: string) => {
+    if (mocks.joinedRideGate) await mocks.joinedRideGate;
+    return mocks.joinedRide ? { sessionId, ...mocks.joinedRide } : fixture.getJoinedRideStatus(sessionId);
+  } };
 });
 vi.mock("@/lib/authState", async () => import("../../../../e2e/fixtures/state"));
 vi.mock("next/dynamic", () => ({ default: (loader: () => Promise<{ default: ComponentType<Record<string, unknown>> }>) => {
@@ -70,6 +74,7 @@ beforeEach(() => {
   setScenario("empty");
   localStorage.clear();
   mocks.joinedRide = null;
+  mocks.joinedRideGate = null;
   mocks.auth.currentUser.metadata = signedUpNow();
   window.history.replaceState(null, "", "/passenger");
   vi.stubEnv("NEXT_PUBLIC_BACKEND_URL", "https://qa.example.test");
@@ -237,6 +242,27 @@ describe("app tour", () => {
     await userEvent.click(await screen.findByRole("button", { name: "Replay app tour" }));
     expect(await screen.findByText("1 of 3")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Try the demo ride" })).toBeTruthy();
+    await next();
+    expect(await screen.findByRole("heading", { name: "Timetables" })).toBeTruthy();
+  });
+
+  it("gives the short tour while a saved real ride is still being restored", async () => {
+    setScenario("forward");
+    markTourSeen("qa-passenger");
+    saveJoinedRidePointer("qa-passenger", "qa-session");
+    mocks.joinedRide = { busId: "qa-bus", routeId: "qa-route", status: "in_service", boarding: { boardingStopId: "alpha", alightingStopId: null } };
+    let finishRestore = () => {};
+    mocks.joinedRideGate = new Promise<void>(resolve => { finishRestore = resolve; });
+    render(<PassengerWorkspace />);
+    await screen.findByRole("button", { name: "Try the demo ride" });
+    // Replay before the restore answers: the ride is not tracked yet.
+    await userEvent.click(screen.getByRole("button", { name: "Profile" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Replay app tour" }));
+    expect(await screen.findByText("1 of 3")).toBeTruthy();
+    // The restore finishes mid-tour; the tour keeps its short steps.
+    finishRestore();
+    await waitFor(() => expect(section()).toBe("tracking"));
+    expect(screen.getByText("1 of 3")).toBeTruthy();
     await next();
     expect(await screen.findByRole("heading", { name: "Timetables" })).toBeTruthy();
   });
