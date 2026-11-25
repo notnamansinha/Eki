@@ -116,6 +116,8 @@ const markSnapshotReceived = () => {};
 export function useRTDBResume() { return { isConnected: true, isResuming: false, resumeGeneration: 0, connectionGeneration: 0, markSnapshotReceived }; }
 export function useLiveRouteCatalog() { useSyncExternalStore(subscribe, () => revision); return {
   catalog: { [route.id]: { active: 1, available: 0 } }, projectionReady: true, catalogReady: true, error: null, retry() {} }; }
+// No ride is joined here, so no chat is watched.
+export function useRideChatUnread() { return 0; }
 export function subscribeLiveBusChangesByRoute(_id: string, listener: (change: unknown) => void) {
   changeListeners.add(listener); listener({ type: "reset", snapshot, source: "listener" }); return () => { changeListeners.delete(listener); };
 }

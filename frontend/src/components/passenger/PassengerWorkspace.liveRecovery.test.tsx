@@ -13,6 +13,7 @@ const routes = ["A", "B"].map(id => ({ id, name: id, stops: [{ id: "origin", nam
 vi.mock("@/hooks/useAuth", () => ({ useAuth: () => ({ user: fixture.user }) }));
 vi.mock("@/hooks/useRoutes", () => ({ useRoutes: () => ({ routes, error: null, retry: vi.fn() }) }));
 vi.mock("@/hooks/useSettings", () => ({ useSettings: () => ({ settings: {} }) }));
+vi.mock("@/hooks/useRideChatUnread", () => ({ useRideChatUnread: () => 0 }));
 vi.mock("@/hooks/useLiveRouteCatalog", () => ({ useLiveRouteCatalog: () => ({ catalog: { A: { active: 1, available: 0 }, B: { active: 1, available: 0 } }, projectionReady: true, catalogReady: true, error: null, retry: fixture.retryCatalog }) }));
 vi.mock("@/lib/authState", () => ({ getAuthVerificationGeneration: () => fixture.generation }));
 vi.mock("@/lib/joinedRideStatus", () => ({ getJoinedRideStatus: async (sessionId: string) => ({ sessionId, busId: "bus", routeId: "A", status: "active" }) }));

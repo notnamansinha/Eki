@@ -41,6 +41,7 @@ const { routeAvailability } = require(resolve(root, 'backend/dist/services/liveB
 const deviceSecret = 'synthetic-browser-device-only';
 const secretHash = await hashDeviceSecret(deviceSecret);
 let epoch;
+let operatorMessages = 0;
 const route = { id: 'qa_route', name: 'Synthetic route', color: '#3B82F6', duration: '600s', waypoints: [],
   stops: [{ id: 'origin', name: 'Synthetic origin', shortName: 'Origin', lat: 23, lng: 72 },
     { id: 'middle', name: 'Synthetic middle', shortName: 'Middle', lat: 23.0018, lng: 72 },
@@ -61,6 +62,7 @@ for (const uid of ['qa_passenger', 'qa_other', 'qa_admin']) {
 async function reset() {
   providers.reset();
   epoch = Date.now() - 45000;
+  operatorMessages = 0;
   for (const collection of ['ride_sessions', 'routes', 'buses', 'users', 'feedbacks', 'feedbackCooldowns',
     'completed_trips', 'drivers', 'devices', 'active_rides', 'bus_locations', '_active_bus_locks', '_ride_session_creation_keys', '_feedback_idempotency', '_privacy_deletion_requests', '_route_save_operations', '_userAuthorization'])
     await db.recursiveDelete(db.collection(collection));
@@ -118,6 +120,14 @@ async function waitForLifecycle(predicate) {
 const control = createServer(async (req, res) => {
   try {
     if (req.method === 'POST' && req.url === '/reset') { await reset(); res.end('{}'); return; }
+    if (req.method === 'POST' && req.url === '/chat/operator-message') {
+      // No operator browser runs here: store the operator's chat message as the
+      // message endpoint would, so the passenger's real listeners receive it.
+      const text = `Synthetic operator message ${++operatorMessages}`;
+      await db.collection('ride_sessions').doc('qa_session').collection('messages').doc(`qa_operator_${operatorMessages}`)
+        .set({ text, from: 'driver', senderName: 'Synthetic operator', senderId: 'qa_operator', timestamp: new Date() });
+      res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ text })); return;
+    }
     if (req.method === 'POST' && req.url === '/automatic-service') {
       await db.collection('buses').doc('qa_auto_bus').set({name:'Synthetic automatic bus',assignedRoutes:[route.id],active:true});
       await db.collection('drivers').doc('qa_auto_driver').set({name:'Synthetic automatic operator',assignedBusId:'qa_auto_bus'});
