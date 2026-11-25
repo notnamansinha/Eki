@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-TST-014 | 1.0 | Current | 2026-11-23 |
+| EKI-TST-014 | 1.1 | Current | 2026-11-25 |
 
 ## 1. Purpose
 
@@ -22,7 +22,7 @@ The local profile scans every operation and may change any record, because the e
 | Docker | Docker Desktop or Docker Engine, running | Same |
 | ZAP image | `zaproxy/zap-stable:2.17.0`, pinned by digest in `scripts/qa/dast-plan.mjs` (about 1.2 GB compressed). Pull it once with `docker pull` and the full reference | Same |
 | Node and Java | Node 24 and Java 21, as for [`npm run qa:api`](HTTP_AUTHORIZATION.md) | Node 24 |
-| Checkout | Locked dependencies and no `.env`, `backend/.env` or `e2e/emulator/.env` file. The emulator fixture refuses to start otherwise | Clean: the runner refuses a dirty tree, so the evidence names the harness commit |
+| Checkout | Locked dependencies and no `.env`, `backend/.env` or `e2e/emulator/.env` file. The emulator fixture refuses to start otherwise | Clean: the runner refuses a dirty tree, so the evidence names the harness commit. `workingTreeState()` in `scripts/qa/working-tree.mjs` decides "dirty": CSP hashes that a build regenerates in `firebase.json` do not count, and the report lists them in `ignoredChanges` |
 | Identities | Synthetic emulator accounts `qa_passenger` and `qa_admin`, and the synthetic device `qa_device` | Two dedicated test accounts in `bustrack-be165`: one passenger, one administrator. Never a person's account |
 | Approval | None | The staging owner agrees the window. No backend deploy may run during the scan |
 
@@ -100,7 +100,7 @@ Run from a clean checkout of the commit whose harness you want to use. PowerShel
 
 | File | Content |
 |---|---|
-| `artifacts/qa/dast-<profile>-report.json` | Source commit and dirty flag, image and ZAP version, target, release identity (staging), bounds, per-role results, fixture evidence (local), `admissionCheck` (local), merged and triaged alerts, counts by risk, verdict |
+| `artifacts/qa/dast-<profile>-report.json` | Source commit, dirty flag and `ignoredChanges` (generated changes that did not count as dirty), image and ZAP version, target, release identity (staging), bounds, per-role results, fixture evidence (local), `admissionCheck` (local), merged and triaged alerts, counts by risk, verdict |
 | `artifacts/qa/dast-<profile>-report.md` | The same in tables |
 | `artifacts/qa/dast-<profile>/<role>/openapi.json`, `plan.yaml` | The scoped contract and the ZAP Automation Framework plan [1] that ran |
 | `artifacts/qa/dast-<profile>/<role>/alerts.json`, `zap.log` | The role's sanitized alerts and ZAP's progress log |
