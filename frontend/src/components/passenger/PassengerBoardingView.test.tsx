@@ -187,6 +187,28 @@ describe("passenger boarding workflow", () => {
     expect([hidden("boarding-stop"), hidden("destination-station")]).toEqual(["beta", "gamma"]);
   });
 
+  // The app tour's Next chooses a trip for the passenger through this prop.
+  it("applies a preset trip once, as a passenger's choice, and sends nothing before the bus arrives", async () => {
+    const fetchMock = vi.fn(); vi.stubGlobal("fetch", fetchMock);
+    const boardingChange = vi.fn();
+    const destinationChange = vi.fn();
+    const props = { sessionId: "qa-session", route, tripState: "in_service" as const, stopEstimates: approaching,
+      onBoardingStopChange: boardingChange, onDestinationStopChange: destinationChange };
+    const view = render(<PassengerBoardingView {...props} presetTrip={{ boardingStopId: "alpha", alightingStopId: "gamma" }} />);
+    const drawer = await screen.findByRole("group", { name: "Your trip" }, DOCKED);
+    expect(drawer.textContent).toContain("Alpha");
+    expect(boardingChange).toHaveBeenLastCalledWith("alpha");
+    expect(destinationChange).toHaveBeenLastCalledWith("gamma");
+    expect([hidden("boarding-stop"), hidden("destination-station")]).toEqual(["alpha", "gamma"]);
+    // A trip that does not run forward is ignored, leaving the chosen one.
+    view.rerender(<PassengerBoardingView {...props} destinationStopId="gamma" presetTrip={{ boardingStopId: "gamma", alightingStopId: "alpha" }} />);
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect([hidden("boarding-stop"), hidden("destination-station")]).toEqual(["alpha", "gamma"]);
+    expect(boardingChange).toHaveBeenCalledTimes(1);
+    // The bus is still approaching, so no join was sent.
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("allows stop selection and boarding without displaying or submitting a code", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response('{"joined":true}')); vi.stubGlobal("fetch", fetchMock);
     const { joined, arrive } = await prepare();
