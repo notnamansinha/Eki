@@ -6,7 +6,7 @@
 
 ## 1. Purpose
 
-This fixture runs the demo ride ([SRS FR-PAS-059](../../docs/requirements/SOFTWARE_REQUIREMENTS_SPECIFICATION.md#325-boarding)) and the Thumb drawer stop picker (FR-PAS-050 to 053 and 058) on the real passenger layout, workspace, boarding view, route timeline, map logic and road drawing. Auth, routes, the live route catalog, settings and RTDB resume come from the shared synthetic fixture in `e2e/fixtures/` (see its [guide](../fixtures/README.md)); chat is a placeholder. The demo ride is the production simulator in `frontend/src/lib/demoRide.ts`, so nothing here contacts Firebase or the backend.
+This fixture runs the demo ride ([SRS FR-PAS-059](../../docs/requirements/SOFTWARE_REQUIREMENTS_SPECIFICATION.md#325-boarding)) and the Thumb drawer stop picker (FR-PAS-050 to 053 and 058) on the real passenger layout, workspace, boarding view, route timeline, map logic and road drawing. Auth, routes, the live route catalog, settings and RTDB resume come from the shared synthetic fixture in `e2e/fixtures/` (see its [guide](../fixtures/README.md)); chat is a placeholder. The demo ride is the production simulator in `frontend/src/lib/demoRide.ts`, so nothing here contacts Firebase or the backend. Deployed builds leave it off; the fixture turns it on with `NEXT_PUBLIC_DEMO_RIDE=true` in `vite.config.mts`.
 
 ## 2. Run
 

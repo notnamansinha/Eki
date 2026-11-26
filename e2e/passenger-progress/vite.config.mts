@@ -6,7 +6,7 @@ export default defineConfig({
   root: local("."), server: { host: "127.0.0.1", port: 3127, strictPort: true },
   resolve: { alias: [
     ...["@/lib/firebaseAuth", "@/lib/authState", "@/lib/liveBusStore", "@/lib/joinedRideStatus", "@/hooks/useDynamicRouteGeometries",
-      "@/hooks/useAuth", "@/hooks/useRoutes", "@/hooks/useSettings", "@/hooks/useRTDBResume", "@/hooks/useLiveRouteCatalog", "@/hooks/useRideChatUnread"].map(find => ({ find, replacement: local("state.ts") })),
+      "@/hooks/useAuth", "@/hooks/useRoutes", "@/hooks/useSettings", "@/hooks/useRTDBResume", "@/hooks/useLiveRouteCatalog", "@/hooks/useRideChatUnread", "@/hooks/usePassengerRouteConfig"].map(find => ({ find, replacement: local("state.ts") })),
     { find: "next/dynamic", replacement: local("../fixtures/dynamic.tsx") },
     { find: "@/components/maps/PassengerTrackingMap", replacement: local("../../frontend/src/components/maps/PassengerMap.tsx") },
     { find: "@vis.gl/react-google-maps", replacement: local("maps.tsx") },

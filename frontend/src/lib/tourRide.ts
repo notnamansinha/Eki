@@ -5,34 +5,33 @@ import type { LiveBusDeliverySource } from "./liveBusDelivery";
 import { createRideScript, createSimulatedRide, type RideScript, type SimulatedRide } from "./rideSimulation";
 
 /*
- * The app tour's ride: a scripted bus on a real configured route, Vaishnodevi
- * to Campus when it is configured, so the tour shows the app as it looks on a
- * normal day. The tour lists it as a live route under its own id, with the
- * route's real name, stops and road. It runs in this browser only while the
- * tour is open: nothing is read from or written to RTDB or the backend, and
- * boarding needs no location.
+ * The app tour's ride: a scripted bus on a real route published to passengers,
+ * the Vaishnodevi route when it is published, so the tour shows the app as it
+ * looks on a normal day. The tour lists it as a live route under its own id,
+ * with the route's real name, stops and road. It runs in this browser only
+ * while the tour is open: nothing is read from or written to RTDB or the
+ * backend, and boarding needs no location.
  */
 
 export const TOUR_ROUTE_ID = "tour-ride";
 const TOUR_BUS_ID = "bus_01";
-/** The configured id of Vaishnodevi to Campus. */
-export const VAISHNODEVI_ROUTE_ID = "Route-1";
 
 export function isTourRouteId(routeId: unknown): boolean {
   return routeId === TOUR_ROUTE_ID;
 }
 
-/** Vaishnodevi to Campus first, then any other Vaishnodevi route, then the rest in order. */
-export function tourRouteCandidates(configured: readonly RouteData[]): RouteData[] {
-  const rank = (route: RouteData) => {
-    const name = route.name ?? "";
-    if (/vaishno/i.test(name) && /campus/i.test(name)) return 0;
-    if (route.id === VAISHNODEVI_ROUTE_ID) return 1;
-    if (/vaishno/i.test(name)) return 2;
-    return 3;
-  };
-  // Array sort is stable, so routes of equal rank keep their configured order.
-  return [...configured].sort((a, b) => rank(a) - rank(b));
+/**
+ * The routes the tour may use: only those published to passengers
+ * (`settings/passengerRoutes`, the Routes tab's list), so the tour never shows
+ * a route document passengers cannot find, such as an unpublished duplicate.
+ * A Vaishnodevi route comes first, then the published order.
+ */
+export function tourRouteCandidates(configured: readonly RouteData[], publishedRouteIds: readonly string[]): RouteData[] {
+  const byId = new Map(configured.map(route => [route.id, route]));
+  const published = publishedRouteIds.flatMap(id => byId.get(id) ?? []);
+  const rank = (route: RouteData) => /vaishno/i.test(route.name ?? "") ? 0 : 1;
+  // Array sort is stable, so routes of equal rank keep their published order.
+  return published.sort((a, b) => rank(a) - rank(b));
 }
 
 export interface TourRide {
@@ -62,10 +61,10 @@ function scriptFor(route: RouteData): RideScript | null {
 
 /**
  * The tour's ride on the first candidate route whose road can carry one, or
- * null when no configured route can (the tour then skips the ride steps).
+ * null when no published route can (the tour then skips the ride steps).
  */
-export function chooseTourRide(configured: readonly RouteData[]): TourRide | null {
-  for (const candidate of tourRouteCandidates(configured)) {
+export function chooseTourRide(configured: readonly RouteData[], publishedRouteIds: readonly string[]): TourRide | null {
+  for (const candidate of tourRouteCandidates(configured, publishedRouteIds)) {
     const script = scriptFor(candidate);
     if (script) return { route: { ...candidate, id: TOUR_ROUTE_ID }, baseRouteId: candidate.id, script };
   }

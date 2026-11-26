@@ -46,11 +46,14 @@ describe("demo ride route", () => {
     expect(isDemoRouteId("route-1")).toBe(false);
   });
 
-  it("is shown unless NEXT_PUBLIC_DEMO_RIDE is false", () => {
-    expect(isDemoRideEnabled()).toBe(true);
-    vi.stubEnv("NEXT_PUBLIC_DEMO_RIDE", " FALSE ");
+  it("is hidden unless NEXT_PUBLIC_DEMO_RIDE is true", () => {
+    vi.stubEnv("NEXT_PUBLIC_DEMO_RIDE", undefined);
     expect(isDemoRideEnabled()).toBe(false);
-    vi.stubEnv("NEXT_PUBLIC_DEMO_RIDE", "true");
+    vi.stubEnv("NEXT_PUBLIC_DEMO_RIDE", "false");
+    expect(isDemoRideEnabled()).toBe(false);
+    vi.stubEnv("NEXT_PUBLIC_DEMO_RIDE", "1");
+    expect(isDemoRideEnabled()).toBe(false);
+    vi.stubEnv("NEXT_PUBLIC_DEMO_RIDE", " TRUE ");
     expect(isDemoRideEnabled()).toBe(true);
   });
 });

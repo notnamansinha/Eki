@@ -11,6 +11,7 @@ const fixture = vi.hoisted(() => ({
 }));
 const routes = ["A", "B"].map(id => ({ id, name: id, stops: [{ id: "origin", name: "Origin", lat: 23, lng: 72 }, { id: "end", name: "End", lat: 23.01, lng: 72.01 }] }));
 vi.mock("@/hooks/useAuth", () => ({ useAuth: () => ({ user: fixture.user }) }));
+vi.mock("@/hooks/usePassengerRouteConfig", async () => import("../../../../e2e/fixtures/state"));
 vi.mock("@/hooks/useRoutes", () => ({ useRoutes: () => ({ routes, error: null, retry: vi.fn() }) }));
 vi.mock("@/hooks/useSettings", () => ({ useSettings: () => ({ settings: {} }) }));
 vi.mock("@/hooks/useRideChatUnread", () => ({ useRideChatUnread: () => 0 }));

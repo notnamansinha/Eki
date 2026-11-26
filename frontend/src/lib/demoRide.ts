@@ -34,9 +34,9 @@ export const DEMO_BOARDING_MS = 1_200;
 /** Three stops are behind the bus when a ride starts, as in the approved concept. */
 export const DEMO_FIRST_NEXT_STOP = 3;
 
-/** `false` hides the demo ride; anything else, or unset, shows it. */
+/** Only `true` lists the demo ride (recordings, fixtures); unset hides it. */
 export function isDemoRideEnabled(): boolean {
-  return process.env.NEXT_PUBLIC_DEMO_RIDE?.trim().toLowerCase() !== "false";
+  return process.env.NEXT_PUBLIC_DEMO_RIDE?.trim().toLowerCase() === "true";
 }
 
 export function isDemoRouteId(routeId: unknown): boolean {
