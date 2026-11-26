@@ -105,7 +105,7 @@ The register lists every controlled document by its source path. A mirror carrie
 
 | ID | Document | Version | Status | Last updated |
 |---|---|---|---|---|
-| EKI-DAT-001 | [Firebase Data Model](data/FIREBASE_DATA_MODEL.md) | 3.0 | Current | 2026-11-25 |
+| EKI-DAT-001 | [Firebase Data Model](data/FIREBASE_DATA_MODEL.md) | 4.1 | Current | 2026-11-26 |
 | EKI-DAT-002 | [Eki Storage Architecture](data/STORAGE_ARCHITECTURE.md) | 2.2 | Current | 2026-11-08 |
 
 ### 4.8 Security (SEC)
@@ -113,7 +113,7 @@ The register lists every controlled document by its source path. A mirror carrie
 | ID | Document | Version | Status | Last updated |
 |---|---|---|---|---|
 | EKI-SEC-001 | [Security Policy](../SECURITY.md) | 1.3 | Current | 2026-11-07 |
-| EKI-SEC-002 | [Security Architecture](security/SECURITY_ARCHITECTURE.md) | 5.0 | Current | 2026-11-23 |
+| EKI-SEC-002 | [Security Architecture](security/SECURITY_ARCHITECTURE.md) | 5.1 | Current | 2026-11-26 |
 | EKI-SEC-003 | [Browser API Security](security/BROWSER_API_SECURITY.md) | 3.1 | Current | 2026-11-07 |
 | EKI-SEC-004 | [Privileged Database Authorization](security/PRIVILEGED_DATABASE_AUTHORIZATION.md) | 1.1 | Current | 2026-11-07 |
 | EKI-SEC-005 | [Hardware Security Provisioning](security/HARDWARE_SECURITY_PROVISIONING.md) | 1.1 | Current | 2026-11-07 |
