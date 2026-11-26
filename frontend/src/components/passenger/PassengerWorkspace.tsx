@@ -5,11 +5,12 @@ import dynamic from "next/dynamic";
 import { useAuth } from "@/hooks/useAuth";
 import { useRoutes } from "@/hooks/useRoutes";
 import { MapPinned, UserRound, Loader2, MessageCircle, ArrowLeft, Flag, WifiOff, AlertCircle, Info, Megaphone, ChevronUp } from "lucide-react";
-import { subscribeRouteBusChanges } from "@/lib/passengerLiveSource";
+import { isSimulatedRouteId, subscribeRouteBusChanges } from "@/lib/passengerLiveSource";
 import { DEMO_ROUTE_ID, demoRoute, isDemoRideEnabled, isDemoRouteId, restartDemoRide } from "@/lib/demoRide";
 import { chooseTourRide, isTourRouteId, startTourRide, TOUR_ROUTE_ID, tourRouteCandidates, type TourRide } from "@/lib/tourRide";
 import { markTourSeen, shouldAutoStartTour } from "@/lib/firstRunTour";
 import type { TourStepId } from "@/components/passenger/AppTour";
+import type { TripStops } from "@/components/passenger/PassengerBoardingView";
 import { useLiveRouteCatalog } from "@/hooks/useLiveRouteCatalog";
 import { getJoinedRideStatus } from "@/lib/joinedRideStatus";
 import { clearJoinedRidePointer, readJoinedRidePointer, saveJoinedRidePointer } from "@/lib/joinedRidePointer";
@@ -210,7 +211,7 @@ export default function PassengerWorkspace() {
   // While the tour runs, a scripted bus drives a configured route (Vaishnodevi
   // to Campus) in this browser, listed and tracked like a live route.
   const [tourRide, setTourRide] = useState<TourRide | null>(null);
-  const [tourTrip, setTourTrip] = useState<{ boardingStopId: string; alightingStopId: string }>();
+  const [tourTrip, setTourTrip] = useState<TripStops>();
   // Bumped by Next on the Routes step to open the tour route's timetable.
   const [tourOpenRoute, setTourOpenRoute] = useState(0);
   // The demo ride is simulated in this browser; it is listed after the live
@@ -433,7 +434,7 @@ export default function PassengerWorkspace() {
     const ride = trackedRideRef.current;
     if (!user || !projectionReady || !catalogReady || !ride?.hasJoined || !trackedSessionId || joinedProjectionPresent || latestTripStatesRef.current.get(trackedSessionId) === "completed") return;
     // The demo ride and the tour's ride have no server session to recover.
-    if (isDemoRouteId(ride.routeId) || isTourRouteId(ride.routeId)) return;
+    if (isSimulatedRouteId(ride.routeId)) return;
     const controller = new AbortController();
     const authGeneration = getAuthVerificationGeneration();
     const current = () => !controller.signal.aborted && authGeneration === getAuthVerificationGeneration();
@@ -656,7 +657,7 @@ export default function PassengerWorkspace() {
 
     const feedbackTimer = setTimeout(() => {
       const currentTripState = latestTripStatesRef.current.get(completedRide.sessionId);
-      if (!isDemoRouteId(completedRide.routeId) && !isTourRouteId(completedRide.routeId) && isPostRideFeedbackEligible(completedRide, currentTripState)) {
+      if (!isSimulatedRouteId(completedRide.routeId) && isPostRideFeedbackEligible(completedRide, currentTripState)) {
         setFeedbackSessionId(completedRide.sessionId);
         setFeedbackBusId(completedRide.busId);
         setFeedbackDriverId(completedRide.driverId);
@@ -770,7 +771,7 @@ export default function PassengerWorkspace() {
     // short tour: boarding the tour's bus must never replace the ride they are
     // on. That includes a saved ride still being restored: only real rides
     // save the pointer, and the restore may finish mid-tour.
-    const realRideJoined = (Boolean(trackedSessionId) && !isDemoRouteId(joinedRouteId) && !isTourRouteId(joinedRouteId)) ||
+    const realRideJoined = (Boolean(trackedSessionId) && !isSimulatedRouteId(joinedRouteId)) ||
       Boolean(user && readJoinedRidePointer(user.uid));
     const ride = liveDataLoaded && !realRideJoined ? chooseTourRide(configuredRoutes) : null;
     if (ride) startTourRide(ride.script);
@@ -828,8 +829,9 @@ export default function PassengerWorkspace() {
     return () => window.removeEventListener("popstate", closeOnBack);
   }, [tourOpen, user, leaveTourRide]);
   // A first sign-in starts the tour once Live routes and the configured routes
-  // have loaded (or failed to), unless the passenger is returning to a joined
-  // ride or opened another section.
+  // have loaded (or failed to), unless the passenger has opened another
+  // section. A saved ride still being restored gets the short tour (startTour
+  // checks), so its ride is never replaced by the tour's.
   const tourDataSettled = (projectionReady && catalogReady && !routesLoading) || Boolean(liveDataError || routesError);
   useEffect(() => {
     if (!user || tour || !tourDataSettled || currentView !== "home" || tourCheckedUid.current === user.uid) return;
@@ -839,7 +841,7 @@ export default function PassengerWorkspace() {
       if (!current) return;
       tourCheckedUid.current = user.uid;
       const firebaseUser = auth.currentUser;
-      if (firebaseUser?.uid !== user.uid || readJoinedRidePointer(user.uid)) return;
+      if (firebaseUser?.uid !== user.uid) return;
       if (shouldAutoStartTour(user.uid, firebaseUser.metadata)) startTourLatest.current();
     }).catch(() => { /* Without the sign-in record, the tour waits for Profile. */ });
     return () => { current = false; };
@@ -870,16 +872,18 @@ export default function PassengerWorkspace() {
   // A status card joins the top line only when there is something to say.
   const headerCardShown = !activeBusOnRoute || showBusSelector || !busSelectable || !boardingAvailable;
   // The tour's ride has no driver to text, but its map shows chat where a
-  // live ride has it; the tour only points at it.
+  // live ride has it; the tour only points at it, so the button says it is
+  // not available rather than offering a chat that does not open.
   const tourChatPreview = trackingTour;
   const chatButton = tourChatPreview || (chatAvailable && activeSessionId && isLiveChatDeviceOnline(activeBusOnRoute) && !chatShown(visibleView)) ? (
     <button
       type="button"
       data-tour="chat"
       onClick={tourChatPreview ? undefined : handleOpenMessaging}
+      aria-disabled={tourChatPreview || undefined}
       className="pp-map-button relative ml-auto pointer-events-auto animate-scale-in"
-      aria-label={activeSessionId ? "Open live chat" : "Open live chat status"}
-      title={activeSessionId ? "Open live chat" : "Device online; chat will unlock when the ride is armed"}
+      aria-label={tourChatPreview ? "Live chat, opens on a real bus" : activeSessionId ? "Open live chat" : "Open live chat status"}
+      title={tourChatPreview ? "Live chat opens on a real bus" : activeSessionId ? "Open live chat" : "Device online; chat will unlock when the ride is armed"}
     >
       <MessageCircle className="w-5 h-5" aria-hidden="true" style={{ color: "var(--accent)" }} />
       {joinedChat && chatUnread > 0 && (
@@ -890,14 +894,13 @@ export default function PassengerWorkspace() {
     </button>
   ) : null;
   // The demo ride and the tour's ride always have their one bus, travelling forward.
-  const simulatedRoute = (routeId: string) => isDemoRouteId(routeId) || isTourRouteId(routeId);
   const routeCarouselProps = {
     selectedRouteId,
     onClick: handleRouteSelect,
-    getActiveBusesCount: (routeId: string) => simulatedRoute(routeId) ? 1 : routeCatalog[routeId]?.active ?? 0,
-    getAvailableBusesCount: (routeId: string) => simulatedRoute(routeId) ? 0 : routeCatalog[routeId]?.available ?? 0,
+    getActiveBusesCount: (routeId: string) => isSimulatedRouteId(routeId) ? 1 : routeCatalog[routeId]?.active ?? 0,
+    getAvailableBusesCount: (routeId: string) => isSimulatedRouteId(routeId) ? 0 : routeCatalog[routeId]?.available ?? 0,
     getDirectionState: (routeId: string) => {
-      if (simulatedRoute(routeId)) return "forward" as const;
+      if (isSimulatedRouteId(routeId)) return "forward" as const;
       const bus = activeBuses.find((entry) => entry.routeId === routeId && isPassengerBusSelectable(entry, availabilityNow));
       if (!bus) return "unknown" as const;
       return bus?.directionState === "pending" ? "pending" as const : normalizeRideDirection(bus?.direction);

@@ -15,6 +15,12 @@ import { stopLabel } from "@/lib/stopLabel";
 import { boardDemoRide } from "@/lib/demoRide";
 import StopPickerSheet, { type PickerField, type PickerStop } from "./StopPickerSheet";
 
+/** A trip: where the passenger boards and where they get off. */
+export interface TripStops {
+  boardingStopId: string;
+  alightingStopId: string;
+}
+
 interface Props {
   sessionId: string;
   route: RouteData;
@@ -31,7 +37,7 @@ interface Props {
   /** With `demo`, word notices as a real ride (the app tour). The demo ride says it is a demo. */
   realWording?: boolean;
   /** The app tour chooses both stops, as a passenger would; each new object is applied once. */
-  presetTrip?: { boardingStopId: string; alightingStopId: string };
+  presetTrip?: TripStops;
   onDestinationStopChange?: (stopId: string) => void;
   /** Lets the map label the chosen boarding stop. */
   onBoardingStopChange?: (stopId: string) => void;

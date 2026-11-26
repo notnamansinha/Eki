@@ -50,6 +50,9 @@
   --pp-dialog-radius: 14px;
   --pp-dialog-shadow: 0 -10px 40px -10px rgb(0 0 0 / 0.35);
   --pp-scrim: rgb(0 0 0 / 0.32);
+  /* The app tour dims the screen around its spotlight with Dark Grey, deeper than a dialog's scrim. */
+  --pp-tour-scrim: rgb(35 37 37 / 0.62);
+  --pp-tour-card-shadow: 0 24px 48px -20px rgb(0 0 0 / 0.5);
   --pp-input-bg: #ffffff;
   --pp-button-radius: 12px;
 }
@@ -1413,11 +1416,11 @@ button.pp-picker-passed:hover { background: var(--surface-3); }
 .pp-tour[data-shown] { opacity: 1; }
 .pp-tour:not([data-shown]) :is(.pp-tour-spotlight, .pp-tour-card) { transition: none; }
 .pp-tour-blocker { position: absolute; inset: 0; pointer-events: auto; }
-.pp-tour-scrim { position: absolute; inset: 0; background: rgb(35 37 37 / 0.62); pointer-events: none; }
+.pp-tour-scrim { position: absolute; inset: 0; background: var(--pp-tour-scrim); pointer-events: none; }
 .pp-tour-spotlight {
   position: fixed;
   border-radius: 16px;
-  box-shadow: 0 0 0 2px var(--accent-contrast), 0 0 0 9999px rgb(35 37 37 / 0.62);
+  box-shadow: 0 0 0 2px var(--accent-contrast), 0 0 0 9999px var(--pp-tour-scrim);
   pointer-events: none;
   transition: top 0.32s cubic-bezier(0.32, 0.72, 0, 1), left 0.32s cubic-bezier(0.32, 0.72, 0, 1),
     width 0.32s cubic-bezier(0.32, 0.72, 0, 1), height 0.32s cubic-bezier(0.32, 0.72, 0, 1);
@@ -1448,7 +1451,7 @@ button.pp-picker-passed:hover { background: var(--surface-3); }
   border: var(--pp-float-border);
   border-radius: var(--pp-dialog-radius);
   background: var(--surface-1);
-  box-shadow: 0 24px 48px -20px rgb(0 0 0 / 0.5);
+  box-shadow: var(--pp-tour-card-shadow);
   color: var(--text-primary);
   font-family: var(--font-ui);
   transition: top 0.32s cubic-bezier(0.32, 0.72, 0, 1), left 0.32s cubic-bezier(0.32, 0.72, 0, 1);

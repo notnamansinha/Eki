@@ -164,7 +164,10 @@ describe("app tour", () => {
     await next();
     expect(await screen.findByRole("heading", { name: "Text the driver" })).toBeTruthy();
     expect(screen.getByText("Chat with your driver from here.")).toBeTruthy();
-    expect(document.querySelector('[data-tour="chat"]')).toBeTruthy();
+    // It is shown, not offered: a screen reader hears that chat opens on a real bus.
+    const chat = screen.getByRole("button", { name: "Live chat, opens on a real bus" });
+    expect(chat.getAttribute("data-tour")).toBe("chat");
+    expect(chat.getAttribute("aria-disabled")).toBe("true");
     await next();
     expect(await screen.findByRole("heading", { name: "Timetables" })).toBeTruthy();
     expect(section()).toBe("tracking");
@@ -308,6 +311,20 @@ describe("app tour", () => {
     expect(screen.queryByRole("button", { name: "Track Vaishnodevi to Campus" })).toBeNull();
     await next();
     expect(await screen.findByRole("heading", { name: "Timetables" })).toBeTruthy();
+  });
+
+  it("starts the short tour after a first sign-in with a saved real ride", async () => {
+    setScenario("forward");
+    saveJoinedRidePointer("qa-passenger", "qa-session");
+    mocks.joinedRide = { busId: "qa-bus", routeId: "qa-route", status: "in_service", boarding: { boardingStopId: "alpha", alightingStopId: null } };
+    let finishRestore = () => {};
+    mocks.joinedRideGate = new Promise<void>(resolve => { finishRestore = resolve; });
+    render(<PassengerWorkspace />);
+    expect(await screen.findByText("1 of 3")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Track Vaishnodevi to Campus" })).toBeNull();
+    finishRestore();
+    await waitFor(() => expect(section()).toBe("tracking"));
+    expect(screen.getByText("1 of 3")).toBeTruthy();
   });
 
   it("gives the short tour while a saved real ride is still being restored", async () => {

@@ -169,7 +169,7 @@ the demo bus is at their stop and ends without feedback.
 Keep it marked "Not a real bus" and out of the route count.
 `NEXT_PUBLIC_DEMO_RIDE=false` hides it.
 
-## App tour (2026-11-25)
+## App tour (2026-11-25, updated 2026-11-26)
 
 After an account's first sign-in the passenger app runs a short, hands-on
 tour (`AppTour`, checked by `src/lib/firstRunTour.ts`) over the real screens,
