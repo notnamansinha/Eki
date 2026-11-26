@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-CST-001 | 3.0 | Current | 2026-11-25 |
+| EKI-CST-001 | 3.1 | Current | 2026-11-26 |
 
 ## 1. Purpose and scope
 
@@ -162,6 +162,8 @@ The backend constant comes from the loopback emulator run in the [R14 live proje
 | Admin fleet listener download per fix of one bus | 1.26 KB | 1,257 to 1,258 bytes for 1, 5 and 10 buses on the route (EVD-068) |
 | Catalog size per route | 81 bytes | 811 bytes for 10 routes |
 | TLS handshake per new connection | 3.5 KB | Firebase billing guide [2] |
+
+The backend constant counts download only and was measured before leaf writes ran on staging, so it is not the backend total per ping with leaf writes. Issue #583 measures that total on an on-route, armed ride, and this row is replaced from that measurement.
 
 Because each publication carries only one bus's changed fields, both listener terms are linear in the number of buses. With whole-route transactions the same listener received `0.21 + 2.75 * n_r` KB per fix and the backend about 8 KB more per fix for each bus on the route (EVD-068), so the passenger term grew with `n_r^2`.
 

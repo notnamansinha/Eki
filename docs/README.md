@@ -122,7 +122,7 @@ The register lists every controlled document by its source path. A mirror carrie
 
 | ID | Document | Version | Status | Last updated |
 |---|---|---|---|---|
-| EKI-CST-001 | [Eki Cost Model](cost/COST_MODEL.md) | 3.0 | Current | 2026-11-25 |
+| EKI-CST-001 | [Eki Cost Model](cost/COST_MODEL.md) | 3.1 | Current | 2026-11-26 |
 
 ### 4.10 Operations (OPS)
 
