@@ -119,6 +119,40 @@ describe("passenger Routes tab", () => {
     expect(document.activeElement).toBe(screen.getByRole("heading", { name: "Routes" }));
   });
 
+  it("tells the app tour when a route is opened, and opens the tour's route on request", async () => {
+    const onRouteOpen = vi.fn();
+    const view = render(<RoutesTab onRouteOpen={onRouteOpen} tourRouteId="loop" />);
+    // The tour's route is the row it spotlights, wherever it is listed.
+    expect(screen.getByRole("button", { name: "View schedule for Campus Loop" }).dataset.tour).toBe("route-row");
+    expect(screen.getByRole("button", { name: "View schedule for Express" }).dataset.tour).toBeUndefined();
+    expect(onRouteOpen).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole("button", { name: "View schedule for Campus Loop" }));
+    expect(onRouteOpen).toHaveBeenCalledOnce();
+    view.unmount();
+
+    // Next in the tour: open the tour's route without a tap.
+    const next = render(<RoutesTab tourRouteId="loop" openTourRoute={1} />);
+    expect(screen.getByRole("button", { name: "Back to all routes" })).toBeTruthy();
+    expect(screen.getByRole("heading", { level: 2, name: "Campus Loop" })).toBeTruthy();
+    next.unmount();
+
+    // A tour route that is not published falls back to the first listed route.
+    render(<RoutesTab tourRouteId="hidden" openTourRoute={1} />);
+    expect(screen.getByRole("button", { name: "View schedule for Express" }).dataset.tour).toBe("route-row");
+    expect(screen.getByRole("heading", { level: 2, name: "Express" })).toBeTruthy();
+  });
+
+  it("returns to the list when a tour starts, so a timetable left open does not skip its step", async () => {
+    const view = render(<RoutesTab />);
+    await userEvent.click(screen.getByRole("button", { name: "View schedule for Campus Loop" }));
+    expect(screen.getByRole("button", { name: "Back to all routes" })).toBeTruthy();
+    const onRouteOpen = vi.fn();
+    view.rerender(<RoutesTab tourRouteId="loop" />);
+    expect(screen.queryByRole("button", { name: "Back to all routes" })).toBeNull();
+    view.rerender(<RoutesTab tourRouteId="loop" onRouteOpen={onRouteOpen} />);
+    expect(onRouteOpen).not.toHaveBeenCalled();
+  });
+
   it("shows a missing time as not set", () => {
     render(<RoutesTab />);
     const [north, south] = stopItems("Express");

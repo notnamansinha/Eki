@@ -43,18 +43,28 @@ function endpoints(schedule: PassengerRouteSchedule) {
   return first;
 }
 
-export default function RoutesTab() {
+interface TourHooks {
+  /** A route's timetable was opened (the app tour waits for this). */
+  onRouteOpen?: () => void;
+  /** The route the app tour points at; the first listed route when it is not listed. */
+  tourRouteId?: string;
+  /** Each new value opens the tour's route, for the tour's Next. */
+  openTourRoute?: number;
+}
+
+export default function RoutesTab({ onRouteOpen, tourRouteId, openTourRoute }: TourHooks = {}) {
   const { retry } = useRoutes();
   // Reopen the published schedule listener as well as retrying the shared routes listener.
   const [attempt, setAttempt] = useState(0);
   return (
     <div className="passenger-schedules">
-      <RouteSchedules key={attempt} onRetry={() => { retry(); setAttempt(value => value + 1); }} />
+      <RouteSchedules key={attempt} onRetry={() => { retry(); setAttempt(value => value + 1); }}
+        onRouteOpen={onRouteOpen} tourRouteId={tourRouteId} openTourRoute={openTourRoute} />
     </div>
   );
 }
 
-function RouteSchedules({ onRetry }: { onRetry: () => void }) {
+function RouteSchedules({ onRetry, onRouteOpen, tourRouteId, openTourRoute }: { onRetry: () => void } & TourHooks) {
   const { config, loading: configLoading, error: configError } = usePassengerRouteConfig();
   const { routes, loading: routesLoading, error: routesError } = useRoutes();
   const [search, setSearch] = useState("");
@@ -73,6 +83,29 @@ function RouteSchedules({ onRetry }: { onRetry: () => void }) {
       .some(value => value.toLocaleLowerCase().includes(query)));
   const selected = selectedId ? schedules.find(schedule => schedule.routeId === selectedId) : filtered[0];
   const selectedMissing = selectedId !== null && !selected && !loading && !error;
+
+  // The tour points at its route (Vaishnodevi to Campus), else the first one
+  // listed, and its Next opens that route. Focus stays on the tour card, so
+  // unlike a tap on the row this does not move it to the timetable.
+  const tourRowId = filtered.find(schedule => schedule.routeId === tourRouteId)?.routeId ?? filtered[0]?.routeId;
+  // A tour starts from the list, so a timetable left open before it does not
+  // skip the step that asks for one.
+  const [tourFor, setTourFor] = useState(tourRouteId);
+  if (tourRouteId !== tourFor) {
+    setTourFor(tourRouteId);
+    if (tourRouteId) setSelectedId(null);
+  }
+  // Starts unhandled: Next may open Routes and ask for a route in the same tap.
+  const [handledOpenRequest, setHandledOpenRequest] = useState<number | undefined>(undefined);
+  if (openTourRoute !== handledOpenRequest && tourRowId) {
+    setHandledOpenRequest(openTourRoute);
+    setSelectedId(tourRowId);
+  }
+  const routeOpen = useRef(onRouteOpen);
+  useEffect(() => { routeOpen.current = onRouteOpen; });
+  // A timetable that is already open when the tour starts waiting counts too.
+  const tourWaiting = Boolean(onRouteOpen);
+  useEffect(() => { if (tourWaiting && selectedId !== null) routeOpen.current?.(); }, [selectedId, tourWaiting]);
 
   useEffect(() => {
     if (focusNext.current === "detail") {
@@ -125,6 +158,7 @@ function RouteSchedules({ onRetry }: { onRetry: () => void }) {
                 <button
                   type="button"
                   className="schedule-route-row"
+                  data-tour={schedule.routeId === tourRowId ? "route-row" : undefined}
                   data-selected={selected?.routeId === schedule.routeId}
                   aria-label={`View schedule for ${schedule.name}`}
                   aria-current={selectedId === schedule.routeId ? "true" : undefined}

@@ -15,6 +15,12 @@ import { stopLabel } from "@/lib/stopLabel";
 import { boardDemoRide } from "@/lib/demoRide";
 import StopPickerSheet, { type PickerField, type PickerStop } from "./StopPickerSheet";
 
+/** A trip: where the passenger boards and where they get off. */
+export interface TripStops {
+  boardingStopId: string;
+  alightingStopId: string;
+}
+
 interface Props {
   sessionId: string;
   route: RouteData;
@@ -28,6 +34,10 @@ interface Props {
   boardingBlockedReason?: string;
   /** The demo ride boards without a location check or a join request. */
   demo?: boolean;
+  /** With `demo`, word notices as a real ride (the app tour). The demo ride says it is a demo. */
+  realWording?: boolean;
+  /** The app tour chooses both stops, as a passenger would; each new object is applied once. */
+  presetTrip?: TripStops;
   onDestinationStopChange?: (stopId: string) => void;
   /** Lets the map label the chosen boarding stop. */
   onBoardingStopChange?: (stopId: string) => void;
@@ -118,6 +128,8 @@ export default function PassengerBoardingView({
   liveHealth,
   boardingBlockedReason,
   demo = false,
+  realWording = false,
+  presetTrip,
   onDestinationStopChange,
   onBoardingStopChange,
   onJoined,
@@ -251,6 +263,8 @@ export default function PassengerBoardingView({
     : !demo && boardingVisit === "next" && boardingDetail === "<1 min" ? "arriving"
     : undefined;
   const trip = `${sessionId}|${boardingStopId}|${alightingStopId}`;
+  // The demo ride names itself in its notices; the app tour reads like a real ride.
+  const demoWording = demo && !realWording;
   // A passenger not yet on board gets one attempt per stage; one on board
   // has each change of stops sent once.
   const sendKey = hasJoined ? trip : `${trip}|${arrivalStage}`;
@@ -259,10 +273,10 @@ export default function PassengerBoardingView({
   // the location notice until the first join (FR-PAS-053).
   const note: { text: string; tone?: "danger"; role?: "alert" | "status" } | undefined =
     joinState === "error" && joinError ? { text: joinError, tone: "danger", role: "alert" }
-    : joinState === "joining" ? { text: demo ? DEMO_JOINING_NOTICE : hasJoined ? UPDATING_NOTICE : arrivalStage === "arriving" ? ARRIVING_NOTICE : JOINING_NOTICE, role: "status" }
+    : joinState === "joining" ? { text: demoWording ? DEMO_JOINING_NOTICE : hasJoined ? UPDATING_NOTICE : arrivalStage === "arriving" ? ARRIVING_NOTICE : JOINING_NOTICE, role: "status" }
     : onBoard ? undefined
     : boardingBlockedReason && stopsChosen ? { text: boardingBlockedReason }
-    : stopsChosen && !hasJoined ? { text: demo ? DEMO_NOTICE : LOCATION_NOTICE }
+    : stopsChosen && !hasJoined ? { text: demoWording ? DEMO_NOTICE : LOCATION_NOTICE }
     : undefined;
 
   const joinRide = async (automatic = false) => {
@@ -303,7 +317,7 @@ export default function PassengerBoardingView({
         // There is no passenger to locate, so a first boarding needs the demo
         // bus at the stop; one that has left it went without them.
         if (!updatingExistingPassenger && boardingVisit !== "at") {
-          throw new Error(`The demo bus has already left ${stops[boardingIndex].name}. Choose a stop ahead of it.`);
+          throw new Error(`The ${demoWording ? "demo " : ""}bus has already left ${stops[boardingIndex].name}. Choose a stop ahead of it.`);
         }
         await boardDemoRide(controller.signal);
       } else {
@@ -464,6 +478,32 @@ export default function PassengerBoardingView({
     }
   };
   const choose = (field: PickerField, value: string) => (field === "boarding" ? chooseBoarding : chooseDestination)(value);
+
+  // The app tour picks a trip the way a passenger would: both stops set, the
+  // whole trip shown for a moment, then the bar slides into the drawer.
+  const presetLatest = useRef<(trip: NonNullable<Props["presetTrip"]>) => void>(() => {});
+  useEffect(() => {
+    presetLatest.current = trip => {
+      const from = stops.findIndex(stop => stop.id === trip.boardingStopId);
+      const to = stops.findIndex(stop => stop.id === trip.alightingStopId);
+      if (from < 0 || to <= from) return;
+      setBoardingStopId(trip.boardingStopId);
+      boardingChange.current?.(trip.boardingStopId);
+      setAlightingStopId(trip.alightingStopId);
+      onDestinationStopChange?.(trip.alightingStopId);
+      selectionChanged();
+      setPicker(null);
+      setShowPassed(false);
+      setActiveIndex(undefined);
+      settle();
+    };
+  });
+  useEffect(() => {
+    if (!presetTrip) return;
+    let current = true;
+    queueMicrotask(() => { if (current && mountedRef.current) presetLatest.current(presetTrip); });
+    return () => { current = false; };
+  }, [presetTrip]);
 
   const reopen = () => {
     cancelDock();
