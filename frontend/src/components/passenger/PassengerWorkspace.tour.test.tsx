@@ -198,11 +198,13 @@ describe("app tour", () => {
     expect(window.location.hash).toBe("#profile");
     expect(hasSeenTour("qa-passenger")).toBe(true);
 
-    // The tour's bus leaves with the tour; Live routes is back to the real list.
+    // The tour's bus leaves with the tour; Live routes is back to the real
+    // list, and no demo ride takes its place.
     await userEvent.click(screen.getByRole("button", { name: "Live" }));
-    expect(await screen.findByRole("button", { name: "Try the demo ride" })).toBeTruthy();
+    expect(await screen.findByText("No buses running")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Track Vaishnodevi to Campus" })).toBeNull();
     expect(screen.getByText("0 routes")).toBeTruthy();
+    expectNoDemoWording();
   });
 
   it("does each step for the passenger with Next", async () => {
@@ -249,9 +251,10 @@ describe("app tour", () => {
     unmount();
 
     render(<PassengerWorkspace />);
-    await screen.findByRole("button", { name: "Try the demo ride" });
+    await screen.findByText("No buses running");
     await new Promise(resolve => setTimeout(resolve, 50));
     expect(screen.queryByRole("dialog")).toBeNull();
+    expectNoDemoWording();
   });
 
   it("closes with Escape", async () => {
@@ -273,14 +276,15 @@ describe("app tour", () => {
     expect(section()).toBe("routes");
     expect(hasSeenTour("qa-passenger")).toBe(true);
     await userEvent.click(screen.getByRole("button", { name: "Live" }));
-    expect(await screen.findByRole("button", { name: "Try the demo ride" })).toBeTruthy();
+    expect(await screen.findByText("No buses running")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Track Vaishnodevi to Campus" })).toBeNull();
+    expectNoDemoWording();
   });
 
   it("does not start for an account that has signed in before", async () => {
     mocks.auth.currentUser.metadata = { creationTime: "Mon, 02 Nov 2026 08:00:00 GMT", lastSignInTime: new Date().toUTCString() };
     render(<PassengerWorkspace />);
-    await screen.findByRole("button", { name: "Try the demo ride" });
+    await screen.findByText("No buses running");
     await new Promise(resolve => setTimeout(resolve, 50));
     expect(screen.queryByRole("dialog")).toBeNull();
   });
@@ -288,7 +292,7 @@ describe("app tour", () => {
   it("replays from Profile", async () => {
     markTourSeen("qa-passenger");
     render(<PassengerWorkspace />);
-    await screen.findByRole("button", { name: "Try the demo ride" });
+    await screen.findByText("No buses running");
     await userEvent.click(screen.getByRole("button", { name: "Profile" }));
     await userEvent.click(await screen.findByRole("button", { name: "Replay app tour" }));
     expect(await screen.findByRole("heading", { name: "Welcome to Eki" })).toBeTruthy();
@@ -335,7 +339,7 @@ describe("app tour", () => {
     let finishRestore = () => {};
     mocks.joinedRideGate = new Promise<void>(resolve => { finishRestore = resolve; });
     render(<PassengerWorkspace />);
-    await screen.findByRole("button", { name: "Try the demo ride" });
+    await screen.findByRole("button", { name: "Track QA route" });
     // Replay before the restore answers: the ride is not tracked yet.
     await userEvent.click(screen.getByRole("button", { name: "Profile" }));
     await userEvent.click(await screen.findByRole("button", { name: "Replay app tour" }));
@@ -358,12 +362,15 @@ describe("app tour", () => {
     expect(screen.getByText("2 routes")).toBeTruthy();
   });
 
-  it("keeps the ride steps with the demo ride turned off", async () => {
-    vi.stubEnv("NEXT_PUBLIC_DEMO_RIDE", "false");
+  it("keeps a turned-on demo ride out of the tour, and lists it only after", async () => {
+    vi.stubEnv("NEXT_PUBLIC_DEMO_RIDE", "true");
     render(<PassengerWorkspace />);
     await tourCard();
     expect(screen.getByText("1 of 6")).toBeTruthy();
     expect(await tourRouteCard()).toBeTruthy();
+    expectNoDemoWording();
+    await userEvent.click(screen.getByRole("button", { name: "Skip tour" }));
+    expect(await screen.findByRole("button", { name: "Try the demo ride" })).toBeTruthy();
   });
 
   it("rides the first configured route whose road can carry a bus when Vaishnodevi to Campus is not configured", async () => {

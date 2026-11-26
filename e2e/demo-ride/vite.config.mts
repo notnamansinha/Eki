@@ -37,10 +37,14 @@ export default defineConfig({
   ] },
   css: { postcss: { plugins: [tailwindcss({ base: local("../../frontend") })] } },
   define: {
-    "process.env": JSON.stringify(realMaps ? {
-      NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY,
-      NEXT_PUBLIC_GOOGLE_MAP_ID: env.NEXT_PUBLIC_GOOGLE_MAP_ID,
-    } : {}),
+    // The demo ride is off unless turned on; this fixture exists to show it.
+    "process.env": JSON.stringify({
+      NEXT_PUBLIC_DEMO_RIDE: "true",
+      ...(realMaps ? {
+        NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY,
+        NEXT_PUBLIC_GOOGLE_MAP_ID: env.NEXT_PUBLIC_GOOGLE_MAP_ID,
+      } : {}),
+    }),
   },
   oxc: { jsx: { runtime: "automatic" } },
 });

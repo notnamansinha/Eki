@@ -214,8 +214,8 @@ export default function PassengerWorkspace() {
   const [tourTrip, setTourTrip] = useState<TripStops>();
   // Bumped by Next on the Routes step to open the tour route's timetable.
   const [tourOpenRoute, setTourOpenRoute] = useState(0);
-  // The demo ride is simulated in this browser; it is listed after the live
-  // routes and is never part of the live catalog or the route count.
+  // The demo ride (only with NEXT_PUBLIC_DEMO_RIDE=true) is simulated in this
+  // browser, listed after the live routes, never in the catalog or the count.
   const demoRideEnabled = isDemoRideEnabled();
   const routes = useMemo(() => [
     ...configuredRoutes,

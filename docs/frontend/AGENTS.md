@@ -167,7 +167,10 @@ RTDB through `src/lib/passengerLiveSource.ts`. It never contacts Firebase or
 the backend, offers no chat or walking-time notice, boards the passenger when
 the demo bus is at their stop and ends without feedback.
 Keep it marked "Not a real bus" and out of the route count.
-`NEXT_PUBLIC_DEMO_RIDE=false` hides it.
+It is off unless `NEXT_PUBLIC_DEMO_RIDE=true` (2026-11-26): it was for the
+tour and the feature video, and the user saw its Practice card on the
+deployed app after the tour. Turn it on only for recordings and the
+`e2e/demo-ride` fixture; the tour rides its own bus.
 
 ## App tour (2026-11-25, updated 2026-11-26)
 
