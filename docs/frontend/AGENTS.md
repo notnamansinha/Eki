@@ -178,9 +178,9 @@ After an account's first sign-in the passenger app runs a short, hands-on
 tour (`AppTour`, checked by `src/lib/firstRunTour.ts`) over the real screens,
 with Skip at the top of the card and Next at the bottom. On a "Your turn" step
 the spotlight stays usable and the tour moves on when the passenger acts: they
-tap Vaishnodevi to Campus in Live routes, choose their own stops so the
+tap the Vaishnodevi route in Live routes, choose their own stops so the
 From → To bar docks into the Thumb drawer, see where live chat sits, tap
-Routes and then Vaishnodevi to Campus (the card changes once Routes is open),
+Routes and then that route (the card changes once Routes is open),
 then tap Profile, where a closing card ("You're all set") points at Replay app
 tour and Done ends the tour. Next does each step for them and
 is the keyboard and screen reader path. Profile has **Replay app tour**
@@ -191,14 +191,18 @@ less text), in the passenger palette and type
 tour is remembered per account in this browser.
 
 No fake route appears in the tour (2026-11-26, the user's request): it rides
-the configured **Vaishnodevi to Campus** route (`Route-1`), so it looks like
-the app on a normal day. While the tour is open `src/lib/tourRide.ts` drives a
+a route published to passengers (`settings/passengerRoutes`, the Routes tab's
+list), the published Vaishnodevi route first, so it looks like the app on a
+normal day. Only published routes are candidates (2026-11-26): Firestore still
+holds an unpublished copy, **Vaishnodevi to Campus** (`Route-1`), and the user
+asked that only the original, **Vaishnodevi Circle** (`route_01`, the route
+the trackers run on), be shown; never pick a route by id or by name alone. While the tour is open `src/lib/tourRide.ts` drives a
 scripted bus along that route's stored stops and road in this browser (the
 same engine as the demo ride, `src/lib/rideSimulation.ts`), listed first as an
 ordinary live route card in place of the route's own card, and the demo ride's
 Practice card is hidden. Its map, notes and chat button read as a live ride;
 nothing reaches RTDB or the backend, and the bus leaves with the tour. Routes
-spotlights the same route. Without a configured route that can carry the ride,
+spotlights the same route. Without a published route that can carry the ride,
 without live data, or for a passenger already on a real ride, the tour is
 three steps. Keep it smooth: the tour fades
 in once its first spotlight is in place, and each spotlight waits for its part

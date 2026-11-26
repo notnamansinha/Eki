@@ -84,7 +84,7 @@ function RouteSchedules({ onRetry, onRouteOpen, tourRouteId, openTourRoute }: { 
   const selected = selectedId ? schedules.find(schedule => schedule.routeId === selectedId) : filtered[0];
   const selectedMissing = selectedId !== null && !selected && !loading && !error;
 
-  // The tour points at its route (Vaishnodevi to Campus), else the first one
+  // The tour points at its route (the published Vaishnodevi route), else the first one
   // listed, and its Next opens that route. Focus stays on the tour card, so
   // unlike a tap on the row this does not move it to the timetable.
   const tourRowId = filtered.find(schedule => schedule.routeId === tourRouteId)?.routeId ?? filtered[0]?.routeId;

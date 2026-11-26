@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({ auth: { currentUser: { uid: "qa-passenger", ge
 vi.mock("@/lib/firebaseAuth", () => ({ auth: mocks.auth }));
 vi.mock("@/hooks/useAuth", async () => import("../../../../e2e/fixtures/state"));
 vi.mock("@/hooks/useLiveRouteCatalog", async () => import("../../../../e2e/fixtures/state"));
+vi.mock("@/hooks/usePassengerRouteConfig", async () => import("../../../../e2e/fixtures/state"));
 vi.mock("@/hooks/useRoutes", async () => import("../../../../e2e/fixtures/state"));
 vi.mock("@/hooks/useSettings", async () => import("../../../../e2e/fixtures/state"));
 vi.mock("@/hooks/useRTDBResume", async () => import("../../../../e2e/fixtures/state"));

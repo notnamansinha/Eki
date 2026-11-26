@@ -118,6 +118,8 @@ export function useLiveRouteCatalog() { useSyncExternalStore(subscribe, () => re
   catalog: { [route.id]: { active: 1, available: 0 } }, projectionReady: true, catalogReady: true, error: null, retry() {} }; }
 // No ride is joined here, so no chat is watched.
 export function useRideChatUnread() { return 0; }
+// No route is published to passengers here; the app tour never starts in this fixture.
+export function usePassengerRouteConfig() { return { config: { routes: [] }, loading: false, error: null, saveConfig: async () => {} }; }
 export function subscribeLiveBusChangesByRoute(_id: string, listener: (change: unknown) => void) {
   changeListeners.add(listener); listener({ type: "reset", snapshot, source: "listener" }); return () => { changeListeners.delete(listener); };
 }
