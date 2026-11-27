@@ -8,8 +8,6 @@
 #   TRAFFIC                  traffic block, built by the job so that the
 #                            previous revision keeps serving until the new one
 #                            passes the /health gate
-#   SERVICE_MIN_SCALE        the live service-level minimum instances, so a
-#                            deploy keeps the value Cloud Scheduler last set
 #   SOURCE_SHA               the commit the image was built from; the revision
 #                            label lets release evidence map the serving
 #                            revision back to its source (issue #504)
@@ -25,24 +23,24 @@ metadata:
     env: staging
   annotations:
     run.googleapis.com/ingress: all
-    # Service-level minimum instances. The Cloud Scheduler jobs eki-workers-up and
-    # eki-workers-down own it (issue #374); the deploy job copies the live value.
-    run.googleapis.com/minScale: "${SERVICE_MIN_SCALE}"
+    # Service-level minimum instances, pinned to 0 so nothing holds an instance
+    # between requests (cost plan step 02, issue #573 D3). Do not resume or
+    # recreate the Cloud Scheduler jobs eki-workers-up / eki-workers-down.
+    run.googleapis.com/minScale: "0"
 spec:
   template:
     metadata:
       labels:
         eki-source-sha: "${SOURCE_SHA}"
       annotations:
-        # Revision-level minimum stays 0. Two Cloud Scheduler jobs set the
-        # service-level minimum instances to 1 from 06:00 to 22:00 IST so the
-        # lease-owned workers run in that window (issue #374). Overnight the
-        # service scales to zero and a request that wakes an instance makes it
-        # the worker leader until it idles again.
+        # The service scales to zero when idle; a request that wakes an instance
+        # makes it the worker leader until it idles again. maxScale stays 1.
         autoscaling.knative.dev/minScale: "0"
         autoscaling.knative.dev/maxScale: "1"
-        # Instance-based CPU: the process runs background work outside requests.
-        run.googleapis.com/cpu-throttling: "false"
+        # Request-based CPU: billed only while a request or a probe runs (cost plan
+        # step 02, issue #573). Flipping this to "false" costs about Rs1,058 a month;
+        # scripts/deploy-backend-manifest.test.mjs fails if it changes.
+        run.googleapis.com/cpu-throttling: "true"
         run.googleapis.com/startup-cpu-boost: "true"
     spec:
       serviceAccountName: ${RUNTIME_SERVICE_ACCOUNT}
