@@ -2,9 +2,13 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-GEN-001 | 1.3 | Current | 2026-11-07 |
+| EKI-GEN-001 | 1.4 | Current | 2026-11-27 |
 
 Eki tracks university buses in real time. An ESP32 tracker with a NEO-M8N GNSS receiver in each bus sends its position to an Express backend, which runs each ride through its stops in order and publishes live state through Firebase. Passengers follow buses and board rides in a progressive web app; administrators manage routes, the fleet and ride operations.
+
+https://github.com/user-attachments/assets/4a55223e-c014-4ae8-a8c9-92db10e9e29a
+
+Video 1. The passenger app in 1 min 58 s: the first-login tour, live routes and the map, stop estimates, driver chat, choosing your stops, a ride to campus (time-lapse), arrival, rating the ride, route schedules and the profile. The bus in the video is scripted.
 
 ## 1. Features
 
