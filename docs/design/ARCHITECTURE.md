@@ -136,7 +136,6 @@ flowchart LR
     esp["ESP32 tracker"]
     subgraph gcp["Google Cloud project behind bustrack-be165"]
         run["Cloud Run eki-backend-staging<br/>asia-south2, NODE_ENV=production<br/>one instance at most, lease-owned workers"]
-        sched["Cloud Scheduler<br/>eki-workers-up, eki-workers-down"]
         sm["Secret Manager<br/>google-maps-server-key"]
     end
     subgraph fb["Firebase project bustrack-be165"]
@@ -149,7 +148,6 @@ flowchart LR
     phone -->|"Static app"| host
     phone -->|"REST commands"| run
     esp -->|"Telemetry"| run
-    sched -.->|"Service-level minimum instances"| run
     sm -->|"GOOGLE_MAPS_API_KEY"| run
     run --> authn
     run --> db1
@@ -159,11 +157,11 @@ flowchart LR
     phone -->|"SDK listeners"| db2
 ```
 
-Figure 3. Staging deployment. The dashed line shows the Cloud Scheduler jobs, which set the minimum instances only while they are not paused.
+Figure 3. Staging deployment.
 
 The staging web app sends its REST commands to the Cloud Run service `eki-backend-staging` in `asia-south2`, and trackers post telemetry to the same origin. The manual job `deploy-backend-staging` deploys the service from [`deploy/cloud-run/staging.service.yaml`](../../deploy/cloud-run/staging.service.yaml) ([CI, deployment and releases](../operations/CI_CD_AND_RELEASES.md#52-steps)). The manifest runs the backend container with `NODE_ENV=production`, which trusts one forwarded hop by default, and sets `WORKER_ENABLED=true`. It allows at most one instance (revision `minScale` 0, `maxScale` 1), keeps CPU allocated outside requests (`run.googleapis.com/cpu-throttling: "false"`), limits each request to 60 s, and reads the Maps server key from the Secret Manager secret `google-maps-server-key`. The worker handoff to Cloud Run was rehearsed on staging ([issue #374](https://github.com/notnamansinha/Eki/issues/374)).
 
-Two Cloud Scheduler jobs, `eki-workers-up` and `eki-workers-down`, set the service-level minimum instances to 1 from 06:00 to 22:00 IST and to 0 overnight, so that the lease-owned workers run in that window. The deploy job copies the live service-level minimum into the manifest, so a release does not change it. Without a minimum instance the service scales to zero when idle, and a request that wakes an instance makes it the worker leader until it idles. On 2026-11-03 both Scheduler jobs were paused and the serving revision ran `WORKER_ENABLED=true`, so staging ran in wake-on-traffic mode: the first telemetry from a tracker started an instance, and the instance stopped 15 to 17 minutes after the last request ([staging runtime configuration](../operations/STAGING_RUNTIME_CONFIG.md#2-project-facts)). Because the service may be scaled to zero or closed to public calls, `deploy-staging` checks the live backend contract only on a dispatch that also deploys the backend (Section 5.1).
+The service is request-billed and its minimum instances are pinned to 0, so the lease-owned workers run only while an instance is up: the first telemetry from a tracker starts an instance, it becomes the worker leader until it idles, and it stops 15 to 17 minutes after the last request ([staging runtime configuration](../operations/STAGING_RUNTIME_CONFIG.md#2-project-facts)). The Cloud Scheduler jobs `eki-workers-up` and `eki-workers-down` are retired ([issue #573](https://github.com/notnamansinha/Eki/issues/573) D3). Because the service may be scaled to zero or closed to public calls, `deploy-staging` checks the live backend contract only on a dispatch that also deploys the backend (Section 5.1).
 
 Clients call the service on its own origin. `firebase.json` defines no Hosting rewrites, so Hosting serves only static files. A preview-channel trial of rewrites for `/api/**`, `/health` and `/live` added latency and showed the backend a Google egress address instead of the caller's, which would merge the per-IP rate-limit buckets ([issue #372](https://github.com/notnamansinha/Eki/issues/372), [client IP](../operations/STAGING_RUNTIME_CONFIG.md#7-client-ip)). Before any rewrite is released, `npm run verify:hosting-rewrites -- --hosting <origin>` ([`scripts/verify-hosting-rewrites.mjs`](../../scripts/verify-hosting-rewrites.mjs)) checks it with GET requests only. Hosting must forward `/live`, `/health` and `/api/**` to the backend together with the `Authorization` header, API responses must carry `Cache-Control: no-store`, pages, `/sw.js` and `/__/auth/handler` must still come from Hosting, and an unknown page must not reach the backend. With `--direct <origin>` the script also reports the latency that Hosting adds.
 

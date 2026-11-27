@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -48,10 +48,28 @@ describe("backend deploy manifest", () => {
     const rendered = new Set([...candidateStep.run.matchAll(/envsubst '([^']+)'/g)].flatMap(([, list]) => list.match(/[A-Z_]+/g)));
     const used = new Set([...manifest.replace(/^\s*#.*$/gm, "").matchAll(/\$\{([A-Z_]+)\}/g)].map(([, name]) => name));
     assert.deepEqual([...used].sort(), [...rendered].sort());
-    assert.match(manifest, /\n {2}annotations:\r?\n(?: {4}.*\r?\n)*? {4}run\.googleapis\.com\/minScale: "\$\{SERVICE_MIN_SCALE\}"/);
   });
 
-  it("keeps the live service-level minimum instances in the applied manifest", { skip: !fullStep && "no bash, jq or envsubst" }, () => {
+  // Cost plan step 02 (issue #573): request billing is what keeps Cloud Run compute at Rs0.
+  it("pins request billing, scale to zero, one instance, 1 CPU / 512Mi and a 30 s liveness probe in every manifest", () => {
+    const dir = path.join(root, "deploy/cloud-run");
+    const files = readdirSync(dir).filter((name) => name.endsWith(".service.yaml"));
+    assert.ok(files.length > 0, "no service manifest found");
+    for (const name of files) {
+      const text = readFileSync(path.join(dir, name), "utf8");
+      const service = yaml.load(text.replace("${TRAFFIC}", "    - latestRevision: true\n      percent: 100"));
+      const a = service.spec.template.metadata.annotations;
+      const c = service.spec.template.spec.containers[0];
+      assert.equal(a["run.googleapis.com/cpu-throttling"], "true", `${name}: instance billing costs about Rs1,058/month more (cost plan step 02, issue #573)`);
+      assert.equal(a["autoscaling.knative.dev/minScale"], "0", `${name}: revision minScale (issue #573)`);
+      assert.equal(service.metadata.annotations["run.googleapis.com/minScale"], "0", `${name}: service minScale (issue #573 D3)`);
+      assert.equal(a["autoscaling.knative.dev/maxScale"], "1", `${name}: maxScale (issue #573)`);
+      assert.deepEqual(c.resources.limits, { cpu: "1", memory: "512Mi" }, `${name}: size (issue #573)`);
+      assert.equal(c.livenessProbe.periodSeconds, 30, `${name}: the 30 s probe is the only CPU an idle instance gets (issue #573)`);
+    }
+  });
+
+  it("applies the pinned manifest whatever the live service says, and refuses a candidate that is not request-billed", { skip: !fullStep && "no bash, jq or envsubst" }, () => {
     const dir = mkdtempSync(path.join(tmpdir(), "eki-candidate-"));
     try {
       writeFileSync(path.join(dir, "step.sh"), candidateStep.run);
@@ -59,7 +77,11 @@ describe("backend deploy manifest", () => {
       // replace copies the rendered manifest to $FAKE_APPLIED.
       writeFileSync(path.join(dir, "gcloud"), [
         "#!/bin/sh",
-        'if [ "$1 $2 $3" = "run services describe" ]; then',
+        // The after-replace billing check asks for the cpu-throttling annotation: answer it
+        // from $FAKE_THROTTLING, or from the manifest that was just applied.
+        'if [ "$1 $2 $3" = "run services describe" ] && case "$*" in *"value("*) true;; *) false;; esac; then',
+        '  if [ -n "$FAKE_THROTTLING" ]; then echo "$FAKE_THROTTLING"; else sed -n \'s/.*cpu-throttling: "\\([a-z]*\\)".*/\\1/p\' "$FAKE_APPLIED"; fi',
+        'elif [ "$1 $2 $3" = "run services describe" ]; then',
         '  [ -n "$FAKE_SERVICE_JSON" ] || { echo "ERROR: Cannot find service [eki-backend-staging]." >&2; exit 1; }',
         '  printf "%s\\n" "$FAKE_SERVICE_JSON"',
         'elif [ "$1 $2 $3" = "run services replace" ]; then',
@@ -69,7 +91,7 @@ describe("backend deploy manifest", () => {
       ].join("\n"));
       chmodSync(path.join(dir, "gcloud"), 0o755);
       const applied = path.join(dir, "applied.yaml");
-      const deploy = (service, sourceSha = "f925ebd723949c3470cf2bf0eb9581638148ad6d") => {
+      const deploy = (service, sourceSha = "f925ebd723949c3470cf2bf0eb9581638148ad6d", throttling = "") => {
         rmSync(applied, { force: true });
         const result = spawnSync("bash", ["-e", path.join(dir, "step.sh")], {
           cwd: root,
@@ -79,6 +101,7 @@ describe("backend deploy manifest", () => {
             PATH: `${dir}${path.delimiter}${process.env.PATH}`,
             FAKE_SERVICE_JSON: service ? JSON.stringify(service) : "",
             FAKE_APPLIED: applied,
+            FAKE_THROTTLING: throttling,
             RUNNER_TEMP: dir,
             GITHUB_ENV: path.join(dir, "github_env"),
             // Should a real gcloud ever run instead of the fake, it has no credentials
@@ -102,7 +125,9 @@ describe("backend deploy manifest", () => {
 
       const daytime = deploy(serving({ "run.googleapis.com/minScale": "1", "run.googleapis.com/ingress": "all" }));
       assert.equal(daytime.status, 0, daytime.stderr);
-      assert.equal(daytime.service.metadata.annotations["run.googleapis.com/minScale"], "1");
+      // A live service-level minimum (for example from a resumed Scheduler job) is not carried over.
+      assert.equal(daytime.service.metadata.annotations["run.googleapis.com/minScale"], "0");
+      assert.equal(daytime.service.spec.template.metadata.annotations["run.googleapis.com/cpu-throttling"], "true");
       assert.equal(daytime.service.spec.template.metadata.annotations["autoscaling.knative.dev/minScale"], "0");
       assert.deepEqual(daytime.service.spec.traffic[0], { revisionName: "eki-backend-staging-00007-k6j", percent: 100 });
       // The new revision names the commit it was built from (issue #504).
@@ -116,10 +141,10 @@ describe("backend deploy manifest", () => {
       assert.equal(first.status, 0, first.stderr);
       assert.equal(first.service.metadata.annotations["run.googleapis.com/minScale"], "0");
 
-      const garbled = deploy(serving({ "run.googleapis.com/minScale": "1; rm -rf /" }));
-      assert.notEqual(garbled.status, 0);
-      assert.equal(garbled.service, undefined);
-      assert.match(garbled.stdout, /is not a whole number; refusing to deploy/);
+      // Console drift or a wrong manifest value: the candidate is not request-billed, so the job stops.
+      const instanceBilled = deploy(serving({}), undefined, "false");
+      assert.notEqual(instanceBilled.status, 0);
+      assert.match(instanceBilled.stdout, /The candidate is not request-billed/);
 
       for (const sourceSha of ["", "main", "f925ebd"]) {
         const unlabelled = deploy(serving({}), sourceSha);

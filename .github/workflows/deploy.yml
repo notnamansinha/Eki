@@ -171,23 +171,13 @@ jobs:
           # failure stops here, because a first deployment skips the gate.
           if service_json="$(gcloud run services describe "$SERVICE" --project "$GCP_PROJECT" --region "$REGION" --format json 2>"$RUNNER_TEMP/describe.err")"; then
             previous="$(jq -r '[.status.traffic[]? | select((.percent // 0) > 0)] | sort_by(-.percent) | .[0].revisionName // empty' <<< "$service_json")"
-            # Cloud Scheduler owns the service-level minimum (1 from 06:00 to 22:00 IST,
-            # 0 overnight). services replace applies the whole manifest, so carry the
-            # live value into it, or a daytime deploy would turn the workers off.
-            SERVICE_MIN_SCALE="$(jq -r '.metadata.annotations["run.googleapis.com/minScale"] // "0"' <<< "$service_json")"
           elif grep -q "Cannot find service" "$RUNNER_TEMP/describe.err"; then
             previous=""
-            SERVICE_MIN_SCALE=0
           else
             cat "$RUNNER_TEMP/describe.err" >&2
             echo "::error::Could not read the service ${SERVICE}. Refusing to deploy without the /health gate."
             exit 1
           fi
-          if ! [[ "$SERVICE_MIN_SCALE" =~ ^[0-9]+$ ]]; then
-            echo "::error::The service-level minimum instances '${SERVICE_MIN_SCALE}' is not a whole number; refusing to deploy."
-            exit 1
-          fi
-          echo "Service-level minimum instances kept at ${SERVICE_MIN_SCALE}."
           echo "PREVIOUS_REVISION=${previous}" >> "$GITHUB_ENV"
           if [ -n "$previous" ]; then
             TRAFFIC="$(printf '    - revisionName: %s\n      percent: 100\n    - latestRevision: true\n      percent: 0\n      tag: candidate' "$previous")"
@@ -201,9 +191,17 @@ jobs:
             echo "::error::The source commit '${SOURCE_SHA}' is not a full commit SHA; refusing to deploy."
             exit 1
           fi
-          export TRAFFIC IMAGE RUNTIME_SERVICE_ACCOUNT SERVICE_MIN_SCALE SOURCE_SHA
-          envsubst '${IMAGE} ${RUNTIME_SERVICE_ACCOUNT} ${TRAFFIC} ${SERVICE_MIN_SCALE} ${SOURCE_SHA}' < deploy/cloud-run/staging.service.yaml > "$RUNNER_TEMP/service.yaml"
+          export TRAFFIC IMAGE RUNTIME_SERVICE_ACCOUNT SOURCE_SHA
+          envsubst '${IMAGE} ${RUNTIME_SERVICE_ACCOUNT} ${TRAFFIC} ${SOURCE_SHA}' < deploy/cloud-run/staging.service.yaml > "$RUNNER_TEMP/service.yaml"
           gcloud run services replace "$RUNNER_TEMP/service.yaml" --project "$GCP_PROJECT" --region "$REGION"
+          # The candidate gets no traffic yet. Stop here if it is not request-billed,
+          # because instance billing costs about Rs1,058 a month more (cost plan step 02, issue #573).
+          throttling="$(gcloud run services describe "$SERVICE" --project "$GCP_PROJECT" --region "$REGION" \
+            --format="value(spec.template.metadata.annotations['run.googleapis.com/cpu-throttling'])")"
+          if [ "$throttling" != "true" ]; then
+            echo "::error::The candidate is not request-billed (cpu-throttling='${throttling}'). See cost plan step 02, issue #573."
+            exit 1
+          fi
       - name: Allow public invocation (application authentication stays the gate)
         run: >-
           gcloud run services add-iam-policy-binding "$SERVICE"

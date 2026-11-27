@@ -118,7 +118,7 @@ Hosting `pinTag` can couple static releases with a backend revision. It does not
 
 Its Firestore lease lasts 45 seconds and renews every 15 seconds; generation and local monotonic fencing protect takeover. See [worker leadership](WORKER_LEADERSHIP.md). Preserve `_worker_leases/trip-state-worker` and its generation; never delete it to force a cutover. A hung or late renewal may require natural expiry, skew allowance, and the next acquisition attempt, so failover is not instantaneous.
 
-Use instance-based billing plus a nonzero minimum for this process. Minimum instances alone does not provide continuous request-independent CPU. Instances can still restart, so recovery/fencing remains necessary. [Cloud Run CPU and billing settings](https://docs.cloud.google.com/run/docs/configuring/billing-settings)
+Superseded by [issue #573](https://github.com/notnamansinha/Eki/issues/573): staging now uses request-based billing and scale to zero. Original recommendation: use instance-based billing plus a nonzero minimum for this process. Minimum instances alone does not provide continuous request-independent CPU. Instances can still restart, so recovery/fencing remains necessary. [Cloud Run CPU and billing settings](https://docs.cloud.google.com/run/docs/configuring/billing-settings)
 
 `WORKER_ENABLED=false` disables the coordinator, not the HTTP server, route watcher, or all asynchronous HTTP operations. It is a smoke-test control, not a guarantee that a service accepting mutation requests is read-only.
 

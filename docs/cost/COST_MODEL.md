@@ -81,7 +81,7 @@ Sources: [15], [16]. The SKU depends on the request:
 | ngrok Hobbyist | Monthly plan | 100,000 requests, 5 GB | USD 10 per month; endpoints stop when the usage credit is spent | [23] |
 | ngrok Pay-as-you-go | Monthly plan | 100,000 requests, 5 GB | USD 20 per month, then USD 1 per 100,000 requests and USD 0.10 per GB | [23] |
 | Cloud Run | Request-based billing free tier | 2,000,000 requests, 180,000 vCPU-seconds, 360,000 GB-seconds and 1 GB of outbound data transfer from North America per month per billing account | Not confirmed | [9], [10] |
-| Cloud Run | Instance-based billing | None stated | Not confirmed | [10], [12] |
+| Cloud Run | Request-based billing | None stated | Not confirmed | [10], [12] |
 | Cloud Run | Region pricing tier | `asia-south1` (Mumbai) is Tier 1; `asia-south2` (Delhi) is Tier 2 | Not confirmed | [11] |
 | Cloud Logging | Request logs that Cloud Run writes for a service | Not confirmed | Not confirmed | [36], [37] |
 | GitHub Actions | Standard GitHub-hosted runners | Free in public repositories | Linux 2-core USD 0.006 per minute in private repositories | [24] |
@@ -249,9 +249,9 @@ The service uses the container in `backend/Dockerfile` (port 8080). The process 
 
 | Setting | Staging value | Cost effect |
 |---|---|---|
-| `run.googleapis.com/cpu-throttling` (line 40) | `"false"` | Instance-based billing: Cloud Run charges for the entire lifecycle of each instance, including idle time [12]. The free tier page lists allowances for request-based billing only [9]. |
+| `run.googleapis.com/cpu-throttling` (line 45) | `"true"` | Request-based billing: Cloud Run charges only while a request or a health probe is handled, and the free tier lists allowances for this mode [9]. The manifest was instance-billed before issue #573; see the [cost plan](https://github.com/notnamansinha/Eki/issues/571). |
 | Revision `autoscaling.knative.dev/minScale` and `maxScale` (lines 37-38) | `0` and `1` | At most one instance per revision, so at most 24 instance-hours a day outside a deploy, which briefly starts a candidate revision beside the serving one. |
-| Service `run.googleapis.com/minScale` (line 27) | The live value, copied at each deploy | The Cloud Scheduler jobs `eki-workers-up` and `eki-workers-down` set it to 1 from 06:00 to 22:00 IST and to 0 overnight. Both jobs are paused, so the service has no minimum instance ([staging runtime configuration](../operations/STAGING_RUNTIME_CONFIG.md#2-project-facts)). |
+| Service `run.googleapis.com/minScale` (line 30) | `"0"` | Pinned so nothing holds an instance between requests. The Cloud Scheduler jobs `eki-workers-up` and `eki-workers-down` are retired ([issue #573](https://github.com/notnamansinha/Eki/issues/573) D3). |
 | CPU and memory limits (lines 53-54) | `1` vCPU, `512Mi` | The vCPU and GiB factors below are 1 and 0.5. |
 | `containerConcurrency` (line 44) | `80` | One instance serves up to 80 concurrent requests from trackers and browsers. |
 
@@ -371,7 +371,7 @@ Costs assume the Blaze plan, the India Maps price list and the daily Hosting all
 | GitHub Actions | USD 0 | USD 0 | USD 0 |
 | Subtotal | USD 26.17 (INR 2,496) | USD 329.96 (INR 31,468) | USD 2,546.95 (INR 242,899) |
 | Backend on a workstation: ngrok Pay-as-you-go | USD 59.98 (INR 5,720) | USD 163.08 (INR 15,553) | USD 477.45 (INR 45,534) |
-| Backend (staging): Cloud Run, instance-based billing, wake-on-traffic, at most one instance (Section 3.7) | Not confirmed | Not confirmed | Not confirmed |
+| Backend (staging): Cloud Run, request-based billing, wake-on-traffic, at most one instance (Section 3.7) | Not confirmed | Not confirmed | Not confirmed |
 | Tracker cellular data | Not confirmed | Not confirmed | Not confirmed |
 
 The subtotals exclude Firestore overage and backend hosting. Under the global Maps list, the pilot's 18,060 map loads would exceed the 10,000 free loads and cost USD 56.42 (INR 5,381).
