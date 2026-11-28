@@ -189,7 +189,8 @@ describe("HTTPS device credentials", () => {
     harness.beforeReturn = undefined;
     await authenticateDeviceCredentials("device_1", secret, 1_001);
     harness.collections.get("devices")!.get("device_1")!.enabled = false;
-    await expect(authenticateDeviceCredentials("device_1", secret, 61_001)).resolves.toBeNull();
+    // Positive TTL is 15 minutes (issue #576 D7).
+    await expect(authenticateDeviceCredentials("device_1", secret, 901_001)).resolves.toBeNull();
   });
   it("coalesces and expires negative fills without extending their TTL on access", async () => {
     const secret = await configure();
@@ -199,7 +200,10 @@ describe("HTTPS device credentials", () => {
     expect(harness.reads).toEqual(["devices/device_1"]);
     harness.collections.get("devices")!.set("device_1", device);
     await expect(authenticateDeviceCredentials("device_1", secret, 5_999)).resolves.toBeNull();
-    await expect(authenticateDeviceCredentials("device_1", secret, 6_000)).resolves.toEqual({ busId: "bus_1", routeId: "route_1" });
+    // The 5 s negative entry has expired, but an unknown device ID stays "not found"
+    // for 60 s (issue #576 D6) unless provisioning publishes an invalidation.
+    await expect(authenticateDeviceCredentials("device_1", secret, 6_000)).resolves.toBeNull();
+    await expect(authenticateDeviceCredentials("device_1", secret, 61_000)).resolves.toEqual({ busId: "bus_1", routeId: "route_1" });
   });
   it("clears authorization when the invalidation listener fails", async () => {
     const secret = await configure();

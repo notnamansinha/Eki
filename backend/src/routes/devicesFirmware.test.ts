@@ -15,6 +15,7 @@ const harness = vi.hoisted(() => ({
   disabled: new Map<string, Record<string, unknown>>(),
   invalidated: [] as string[],
   credentialChecks: 0,
+  throttled: false,
   verifyIdentity: vi.fn(),
 }));
 
@@ -70,6 +71,7 @@ vi.mock("../services/deviceTelemetryService", () => ({
     : null,
   checkDeviceCredentials: async (deviceId: string, secret: string) => {
     harness.credentialChecks += 1;
+    if (harness.throttled) throw new (await import("../lib/deviceCredentialGuard")).DeviceCredentialThrottledError("ip");
     const expectedSecret = deviceId === "device_1" ? harness.validSecret : deviceId === "device_2" ? "c".repeat(20) : null;
     return !harness.authenticated || !harness.deviceEnabled || secret !== expectedSecret ? { status: "invalid" }
     : harness.unassigned ? { status: "unassigned" }
@@ -142,6 +144,7 @@ beforeEach(() => {
   harness.disabled = new Map();
   harness.invalidated = [];
   harness.credentialChecks = 0;
+  harness.throttled = false;
   harness.verifyIdentity.mockReset();
   harness.verifyIdentity.mockResolvedValue({ uid: "rider", admin: false });
   process.env.FIRMWARE_RELEASE_VERSION = "s2-gnss-v2";
@@ -231,6 +234,18 @@ describe("device firmware release endpoint", () => {
     expect((await requestFirmware("2")).status).toBe(204);
   });
 
+  it("answers a refused credential check with 429 and a 10 s Retry-After on both firmware paths", async () => {
+    harness.throttled = true;
+    const base = await bootDeviceIngress();
+    const valid = `Device ${harness.validSecret}`;
+    const update = await fetch(`${base}/api/devices/device_1/firmware?sequence=1`, { headers: { Authorization: valid } });
+    expect(update.status).toBe(429);
+    expect(update.headers.get("retry-after")).toBe("10");
+    await expect(update.json()).resolves.toEqual({ error: "Too many failed device credential checks.", retryAfterMs: 10_000 });
+    const reservation = await installation(base, "acquire", valid);
+    expect(reservation.status).toBe(429);
+    expect(reservation.headers.get("retry-after")).toBe("10");
+  });
   it("withholds updates during an active ride", async () => {
     harness.activeRide = true;
     expect((await requestFirmware()).status).toBe(204);

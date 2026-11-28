@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-GEN-005 | 2.0 | Current | 2026-11-25 |
+| EKI-GEN-005 | 2.1 | Current | 2026-11-28 |
 
 ## 1. Purpose
 
@@ -68,7 +68,10 @@ The template is a production template. Copied unchanged, it sets `NODE_ENV=produ
 | `HTTPS_DEVICE_RATE_PER_MINUTE` | No | `90` | Accepted device requests per device per minute; in distributed mode the budget is shared by all replicas. Non-positive or non-numeric values use the default. | `services/deviceRateLimiter.ts` |
 | `HTTPS_DEVICE_RATE_LIMIT_MODE` | No | `distributed` | `distributed` keeps device budgets in RTDB; `local` keeps them in process memory and requires `RATE_LIMIT_SHARD_FACTOR=1`. Any other value refuses startup. | `services/deviceRateLimiter.ts` |
 | `HTTPS_DEVICE_RATE_LIMIT_LEASE_SIZE` | No | `5` | Tokens reserved per RTDB transaction in distributed mode, capped at the per-minute limit. Larger values mean fewer transactions but more stranded capacity after a replica stops. | `services/deviceRateLimiter.ts` |
-| `HTTPS_INGRESS_DEVICES_PER_IP` | No | `100` | Largest fleet expected behind one public IP. Per IP and 10 s window, telemetry allows 15 requests per device; diagnostics and firmware each allow 2. Must be an integer from `1` to `100000`, otherwise the backend does not start. | `routes/devices.ts` |
+| `HTTPS_INGRESS_DEVICES_PER_IP` | No | `100` | Largest fleet expected behind one public IP. Per IP and 10 s window, telemetry allows 15 requests per device; diagnostics and firmware each allow 2. Must be an integer from `1` to `100000`, otherwise the backend does not start. Sizing rule: `ceil(1.5 x` the number of senders that can share one public IP`)`; the staging manifest sets `3` for one tracker plus one replay sender. Raise it before adding trackers and for load tests. | `routes/devices.ts` |
+| `DEVICE_CREDENTIAL_FAILURE_WINDOW_MS` | No | `900000` | Window for the failed device credential budgets below, from `1000` to `86400000`. | `lib/deviceCredentialGuard.ts` |
+| `DEVICE_CREDENTIAL_FAILURES_PER_IP` | No | `20` | Failed credential checks one client IP may cause per window before further unverified checks from it get HTTP 429 with `Retry-After: 10`, without a Firestore read or scrypt run. `0` turns the budget off. Divided by `RATE_LIMIT_SHARD_FACTOR`. A pair that already verified is never refused. | `lib/deviceCredentialGuard.ts` |
+| `DEVICE_CREDENTIAL_FAILURES_PER_DEVICE` | No | `10` | The same per device ID, applied only while that device ID has a verified pair in memory. `0` turns the budget off. Divided by `RATE_LIMIT_SHARD_FACTOR`. | `lib/deviceCredentialGuard.ts` |
 | `RATE_LIMIT_SHARD_FACTOR` | No | `1` | Expected replica count. Every in-memory limiter divides its budget by this number. A value that is not a positive decimal integer, or that exceeds the smallest in-process budget (10 per minute), refuses startup. | `lib/rateLimitShard.ts`, `services/deviceRateLimiter.ts` |
 | `AUTH_REVOCATION_CACHE_MS` | No | `15000` | Cache lifetime for Firebase Auth revocation checks of passenger tokens. `0` disables the cache; values above `60000` are capped. Admin and driver tokens are always checked fresh. | `services/authTokenVerifier.ts` |
 | `AUTH_MAX_PENDING_VERIFICATIONS` | No | `256` | Distinct Firebase Auth verifications in flight per process; overflow returns a retryable HTTP 503. Values above `2000` are capped; non-positive values use the default. | `services/authTokenVerifier.ts` |

@@ -10,7 +10,7 @@ type IngestResult =
 
 const harness = vi.hoisted(() => ({
   result: { ok: true, duplicate: false } as IngestResult,
-  diagnosticsAccepted: "accepted" as "accepted" | "credentials" | "unassigned",
+  diagnosticsAccepted: "accepted" as "accepted" | "credentials" | "unassigned" | "throttled",
   failure: undefined as Error | undefined,
   realParser: false,
 }));
@@ -208,6 +208,14 @@ describe("device telemetry HTTP responses", () => {
 
     harness.diagnosticsAccepted = "credentials";
     expect((await sendDiagnostics()).status).toBe(401);
+  });
+
+  it("answers a refused diagnostics credential check with 429 and a 10 s Retry-After, not a latching 401", async () => {
+    harness.diagnosticsAccepted = "throttled";
+    const response = await sendDiagnostics();
+    expect(response.status).toBe(429);
+    expect(response.headers.get("retry-after")).toBe("10");
+    await expect(response.json()).resolves.toEqual({ error: "Too many failed device credential checks.", retryAfterMs: 10_000 });
   });
 
   it("keeps authenticated but unassigned devices retryable on both ingress paths", async () => {

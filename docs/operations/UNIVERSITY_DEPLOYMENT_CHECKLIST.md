@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-OPS-006 | 1.5 | Current | 2026-11-21 |
+| EKI-OPS-006 | 1.6 | Current | 2026-11-28 |
 
 ## 1. Purpose
 
@@ -30,7 +30,7 @@ Each item is complete only when its evidence is recorded in the release evidence
 - [ ] Provide separate staging and production Firebase projects with approved regions, budgets, quota alerts and scheduled backups or exports. Only `bustrack-be165` exists; it receives every green push to `main` and serves field tests. `eki-production` is named in the Deploy workflow but not provisioned.
 - [ ] Run the production backend on a managed runtime under university HTTPS, not on a workstation behind a tunnel ([proposal](CI_CD_AND_RELEASES.md#72-proposed-migration-to-cloud-run)). The repository releases only the staging service: the manual job `deploy-backend-staging` applies `deploy/cloud-run/staging.service.yaml` to `bustrack-be165`. Production needs its own service manifest, deploy identity and release job. The Docker Hub image and the [VPS guide](../../deploy/vps/README.md) describe a backup host that an operator starts and updates by hand; no workflow deploys it or checks its `/health`.
 - [ ] Run at least two backend replicas behind a load balancer with a WAF and edge rate limits, or record acceptance of a single instance. The WAF is the authoritative global rate cap.
-- [ ] Set `RATE_LIMIT_SHARD_FACTOR` on every instance to the replica count, so the in-memory limiters together enforce one instance's budget. The count must not exceed the smallest limiter budget (10 requests per minute, route computation); beyond that, use a shared limiter. Keep `HTTPS_DEVICE_RATE_LIMIT_MODE=distributed`.
+- [ ] Set `RATE_LIMIT_SHARD_FACTOR` on every instance to the replica count, so the in-memory limiters together enforce one instance's budget. The count must not exceed the smallest limiter budget (10 requests per minute, route computation); beyond that, use a shared limiter. Keep `HTTPS_DEVICE_RATE_LIMIT_MODE=distributed` whenever more than one backend copy can run; `local` is only for one copy with `maxScale` 1, as the staging manifest does.
 - [ ] Set `TRUST_PROXY` to the number of reverse proxies in front of the backend (unset means one in production), so rate limits key on the real client address.
 - [ ] Point load balancer readiness at `/health`, which returns `200` only while the Firestore and RTDB probes pass. Point restart or liveness probes at `/live`, which stays `200` while the process runs. Do not restart a healthy process because a dependency is down.
 - [ ] Use Workload Identity or Secret Manager for server credentials. Keep service-account JSON out of the repository, images and build logs.

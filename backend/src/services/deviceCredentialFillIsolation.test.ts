@@ -33,6 +33,8 @@ import { checkDeviceCredentials, hashDeviceSecret, invalidateDeviceCredentialCac
 
 const secret = "legitimate-device-secret-with-entropy";
 const wrongSecret = "wrong-device-secret-with-entropy";
+// A verified pair is trusted for 15 minutes (issue #576 D7); the stale grace adds 10 more.
+const JUST_PAST_TTL_MS = 15 * 60_000 + 1_000;
 let offsetMs = 0;
 let floodRound = 0;
 const realNow = performance.now.bind(performance);
@@ -80,8 +82,8 @@ describe("device credential fill isolation from unauthenticated floods", () => {
     await provision(1);
     const t0 = Date.now();
     await expect(checkDeviceCredentials("device_1", secret, t0)).resolves.toMatchObject({ status: "assigned" });
-    offsetMs = 61_000;
-    const later = t0 + 61_000;
+    offsetMs = JUST_PAST_TTL_MS;
+    const later = t0 + JUST_PAST_TTL_MS;
     harness.hangUnknownReads = true;
     const attacker = flood(16, later);
     await settle();
@@ -96,8 +98,8 @@ describe("device credential fill isolation from unauthenticated floods", () => {
     await provision(1);
     const t0 = Date.now();
     await checkDeviceCredentials("device_1", secret, t0);
-    offsetMs = 61_000;
-    const later = t0 + 61_000;
+    offsetMs = JUST_PAST_TTL_MS;
+    const later = t0 + JUST_PAST_TTL_MS;
     harness.holdDummyKdf = true;
     const attacker = flood(12, later);
     await settle();
@@ -111,8 +113,8 @@ describe("device credential fill isolation from unauthenticated floods", () => {
     await provision(1);
     const t0 = Date.now();
     await checkDeviceCredentials("device_1", secret, t0);
-    offsetMs = 61_000;
-    const later = t0 + 61_000;
+    offsetMs = JUST_PAST_TTL_MS;
+    const later = t0 + JUST_PAST_TTL_MS;
     invalidateDeviceCredentialCache("device_1");
     harness.hangUnknownReads = true;
     const attacker = flood(16, later);
@@ -128,15 +130,15 @@ describe("device credential fill isolation from unauthenticated floods", () => {
     await provision(9);
     const t0 = Date.now();
     for (let index = 1; index <= 9; index++) await checkDeviceCredentials(`device_${index}`, secret, t0);
-    offsetMs = 61_000;
-    const later = t0 + 61_000;
+    offsetMs = JUST_PAST_TTL_MS;
+    const later = t0 + JUST_PAST_TTL_MS;
     for (let index = 1; index <= 8; index++) harness.hangReads.add(`devices/device_${index}`);
     const refills = Array.from({ length: 8 }, (_, index) => outcome(`device_${index + 1}`, secret, later));
     await settle();
     await expect(outcome("device_9", secret, later)).resolves.toEqual({ status: "assigned" });
     await expect(outcome("device_9", wrongSecret, later)).resolves.toEqual({ status: "invalid" });
 
-    offsetMs = 61_000 + 10 * 60_000;
+    offsetMs = JUST_PAST_TTL_MS + 10 * 60_000;
     await expect(outcome("device_9", secret, t0 + offsetMs)).resolves.toEqual({ error: SingleFlightCapacityError.name });
     await releaseAll();
     await Promise.all(refills);
