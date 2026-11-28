@@ -40,29 +40,35 @@ const route = (id: string, name: string, stops = [stop(`${id}-a`, 23.1), stop(`$
   ({ id, name, color: "#801214", waypoints: [], stops });
 
 describe("tour route", () => {
-  it("prefers Vaishnodevi to Campus, then Route-1, then another Vaishnodevi route, then the rest in order", () => {
+  it("offers only published routes, a Vaishnodevi route first, then the published order", () => {
     const routes = [
-      route("loop", "Campus Loop"), route("circle", "Vaishnodevi Circle"), route("Route-1", "Old name"),
-      route("express", "Express"), route("vtc", "Vaishnodevi to Campus"),
+      route("loop", "Campus Loop"), route("route_01", "Vaishnodevi Circle"), route("express", "Express"),
+      route("Route-1", "Vaishnodevi to Campus"), route("unlisted", "Unlisted"),
     ];
-    expect(tourRouteCandidates(routes).map(entry => entry.id)).toEqual(["vtc", "Route-1", "circle", "loop", "express"]);
+    // Route-1 is an unpublished duplicate of the Vaishnodevi route: never offered.
+    expect(tourRouteCandidates(routes, ["express", "loop", "route_01"]).map(entry => entry.id)).toEqual(["route_01", "express", "loop"]);
+    // A published id without a route document is skipped.
+    expect(tourRouteCandidates(routes, ["gone", "loop"]).map(entry => entry.id)).toEqual(["loop"]);
+    expect(tourRouteCandidates(routes, [])).toEqual([]);
   });
 
-  it("rides the configured route under the tour's id, keeping its name, stops and road", () => {
-    const vaishnodevi = route("Route-1", "Vaishnodevi to Campus");
-    const ride = chooseTourRide([route("loop", "Campus Loop"), vaishnodevi])!;
-    expect(ride.baseRouteId).toBe("Route-1");
-    expect(ride.route).toMatchObject({ id: TOUR_ROUTE_ID, name: "Vaishnodevi to Campus", stops: vaishnodevi.stops });
+  it("rides the published route under the tour's id, keeping its name, stops and road", () => {
+    const vaishnodevi = route("route_01", "Vaishnodevi Circle");
+    const ride = chooseTourRide([route("loop", "Campus Loop"), route("Route-1", "Vaishnodevi to Campus"), vaishnodevi], ["loop", "route_01"])!;
+    expect(ride.baseRouteId).toBe("route_01");
+    expect(ride.route).toMatchObject({ id: TOUR_ROUTE_ID, name: "Vaishnodevi Circle", stops: vaishnodevi.stops });
     expect(isTourRouteId(ride.route.id)).toBe(true);
     // Three stops before the terminus: one stop behind the bus here.
     expect(ride.script.firstNextStop).toBe(1);
   });
 
   it("skips a route whose road cannot carry a ride, and gives none when no route can", () => {
-    const oneStop = route("Route-1", "Vaishnodevi to Campus", [stop("only", 23.1)]);
-    expect(chooseTourRide([oneStop, route("loop", "Campus Loop")])?.baseRouteId).toBe("loop");
-    expect(chooseTourRide([oneStop])).toBeNull();
-    expect(chooseTourRide([])).toBeNull();
+    const oneStop = route("route_01", "Vaishnodevi Circle", [stop("only", 23.1)]);
+    expect(chooseTourRide([oneStop, route("loop", "Campus Loop")], ["route_01", "loop"])?.baseRouteId).toBe("loop");
+    expect(chooseTourRide([oneStop], ["route_01"])).toBeNull();
+    // A route that could carry a ride but is not published gives none.
+    expect(chooseTourRide([route("loop", "Campus Loop")], [])).toBeNull();
+    expect(chooseTourRide([], [])).toBeNull();
   });
 
   it("publishes nothing until the tour starts a ride, then a live bus that does not call itself a demo", () => {
@@ -71,7 +77,7 @@ describe("tour route", () => {
     subscribeTourRide(before)();
     expect(before).toHaveBeenCalledWith(null, "listener");
 
-    startTourRide(chooseTourRide([route("Route-1", "Vaishnodevi to Campus")])!.script);
+    startTourRide(chooseTourRide([route("route_01", "Vaishnodevi Circle")], ["route_01"])!.script);
     const changes = vi.fn();
     const stop = subscribeTourRideChanges(changes);
     const { snapshot } = changes.mock.lastCall![0];

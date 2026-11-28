@@ -7,7 +7,7 @@ import { useDialogFocus } from "@/hooks/useDialogFocus";
 /*
  * The app tour: a short, hands-on walk through the passenger app. Each step
  * dims everything but one part of the real screen. On a "try it" step that
- * part stays live and pulses: the passenger opens Vaishnodevi to Campus (a bus
+ * part stays live and pulses: the passenger opens the Vaishnodevi route (a bus
  * the tour drives in this browser), picks their own stops, then opens Routes
  * and Profile, and the tour moves on as they do. Next does the step for them
  * (and is the keyboard and screen reader path); Skip at the top of the card

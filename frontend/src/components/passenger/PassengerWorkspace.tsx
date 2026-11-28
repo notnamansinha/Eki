@@ -4,6 +4,7 @@ import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback, use
 import dynamic from "next/dynamic";
 import { useAuth } from "@/hooks/useAuth";
 import { useRoutes } from "@/hooks/useRoutes";
+import { usePassengerRouteConfig } from "@/hooks/usePassengerRouteConfig";
 import { MapPinned, UserRound, Loader2, MessageCircle, ArrowLeft, Flag, WifiOff, AlertCircle, Info, Megaphone, ChevronUp } from "lucide-react";
 import { isSimulatedRouteId, subscribeRouteBusChanges } from "@/lib/passengerLiveSource";
 import { DEMO_ROUTE_ID, demoRoute, isDemoRideEnabled, isDemoRouteId, restartDemoRide } from "@/lib/demoRide";
@@ -205,6 +206,10 @@ export default function PassengerWorkspace() {
   }
 
   const { routes: configuredRoutes, loading: routesLoading, error: routesError, retry: retryRoutes } = useRoutes();
+  // The routes published to passengers (the Routes tab's list); the tour only
+  // rides one of these, never an unpublished route document.
+  const { config: passengerRouteConfig, loading: publishedRoutesLoading, error: publishedRoutesError } = usePassengerRouteConfig();
+  const publishedRouteIds = useMemo(() => passengerRouteConfig.routes.map(entry => entry.routeId), [passengerRouteConfig]);
   // The app tour: its steps and position, its ride, the trip Next chose, and
   // the account already checked for a first sign-in.
   const [tour, setTour] = useState<{ steps: TourStepId[]; index: number } | null>(null);
@@ -214,8 +219,8 @@ export default function PassengerWorkspace() {
   const [tourTrip, setTourTrip] = useState<TripStops>();
   // Bumped by Next on the Routes step to open the tour route's timetable.
   const [tourOpenRoute, setTourOpenRoute] = useState(0);
-  // The demo ride is simulated in this browser; it is listed after the live
-  // routes and is never part of the live catalog or the route count.
+  // The demo ride (only with NEXT_PUBLIC_DEMO_RIDE=true) is simulated in this
+  // browser, listed after the live routes, never in the catalog or the count.
   const demoRideEnabled = isDemoRideEnabled();
   const routes = useMemo(() => [
     ...configuredRoutes,
@@ -702,8 +707,8 @@ export default function PassengerWorkspace() {
   }
 
   // ── App tour: after the first sign-in, and from Profile ────────────────────
-  // Hands-on: on a try-it step the passenger does the real thing (opens
-  // Vaishnodevi to Campus, picks stops, taps Routes and Profile) and the tour
+  // Hands-on: on a try-it step the passenger does the real thing (opens the
+  // tour's route, picks stops, taps Routes and Profile) and the tour
   // moves on as they do. Next does the step for them. Sections change with
   // replaceState so the tour adds nothing to Back.
   const tourSection = (section: PassengerSection) => {
@@ -713,9 +718,9 @@ export default function PassengerWorkspace() {
     showSection(section);
   };
   const tourStep = tour ? tour.steps[tour.index] : null;
-  // The route the Routes step points at: the tour ride's route, or Vaishnodevi
-  // to Campus (or the first configured route) when there is no ride.
-  const tourRoutesRowId = tour ? tourRide?.baseRouteId ?? tourRouteCandidates(configuredRoutes)[0]?.id : undefined;
+  // The route the Routes step points at: the tour ride's route, or the
+  // published Vaishnodevi route (or the first published one) with no ride.
+  const tourRoutesRowId = tour ? tourRide?.baseRouteId ?? tourRouteCandidates(configuredRoutes, publishedRouteIds)[0]?.id : undefined;
   /** Next on a try-it step: do what the passenger was asked to do. */
   const performTourStep = (step: TourStepId) => {
     if (step === "welcome") {
@@ -765,7 +770,7 @@ export default function PassengerWorkspace() {
     if (from >= 0 && to > from) advanceTour("stops");
   };
   const startTour = () => {
-    // The ride steps need live data and a configured route whose road can
+    // The ride steps need live data and a published route whose road can
     // carry the tour's ride; otherwise the tour still introduces Live routes,
     // Routes and Profile. A passenger joined to a real ride also gets the
     // short tour: boarding the tour's bus must never replace the ride they are
@@ -773,7 +778,7 @@ export default function PassengerWorkspace() {
     // save the pointer, and the restore may finish mid-tour.
     const realRideJoined = (Boolean(trackedSessionId) && !isSimulatedRouteId(joinedRouteId)) ||
       Boolean(user && readJoinedRidePointer(user.uid));
-    const ride = liveDataLoaded && !realRideJoined ? chooseTourRide(configuredRoutes) : null;
+    const ride = liveDataLoaded && !realRideJoined ? chooseTourRide(configuredRoutes, publishedRouteIds) : null;
     if (ride) startTourRide(ride.script);
     const steps: TourStepId[] = ride
       ? ["welcome", "stops", "drawer", "chat", "routes", "profile"]
@@ -828,11 +833,12 @@ export default function PassengerWorkspace() {
     window.addEventListener("popstate", closeOnBack);
     return () => window.removeEventListener("popstate", closeOnBack);
   }, [tourOpen, user, leaveTourRide]);
-  // A first sign-in starts the tour once Live routes and the configured routes
-  // have loaded (or failed to), unless the passenger has opened another
+  // A first sign-in starts the tour once Live routes, the configured routes and
+  // the published list have loaded (or failed to), unless the passenger has opened another
   // section. A saved ride still being restored gets the short tour (startTour
   // checks), so its ride is never replaced by the tour's.
-  const tourDataSettled = (projectionReady && catalogReady && !routesLoading) || Boolean(liveDataError || routesError);
+  const tourDataSettled = (projectionReady && catalogReady && !routesLoading && (!publishedRoutesLoading || Boolean(publishedRoutesError))) ||
+    Boolean(liveDataError || routesError);
   useEffect(() => {
     if (!user || tour || !tourDataSettled || currentView !== "home" || tourCheckedUid.current === user.uid) return;
     let current = true;

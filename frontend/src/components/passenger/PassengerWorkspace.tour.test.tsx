@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // The app tour starts by itself after an account's first sign-in. The
-// passenger opens Vaishnodevi to Campus (a bus the tour drives in this
-// browser), picks stops in the Thumb drawer and opens Routes and Profile
+// passenger opens Vaishnodevi Circle, the published Vaishnodevi route (a bus
+// the tour drives in this browser), picks stops in the Thumb drawer and opens Routes and Profile
 // themselves, or lets Next do each step; the tour can be skipped or replayed
 // from Profile.
 import { lazy, Suspense, useEffect, useState, type ComponentType } from "react";
@@ -25,18 +25,24 @@ const signedUpNow = () => {
 };
 const mocks = vi.hoisted(() => {
   const stop = (id: string, name: string, index: number) => ({ id, name, shortName: name, lat: 23.15 - index * 0.02, lng: 72.53 });
-  // Configured as in Firestore; no bus is running on it.
+  // Configured and published as in Firestore; no bus is running on it.
   const vaishnodevi = {
-    id: "Route-1", name: "Vaishnodevi to Campus", color: "#10B981", duration: "3774s", waypoints: [],
+    id: "route_01", name: "Vaishnodevi Circle", color: "#10B981", duration: "3774s", waypoints: [],
     stops: [
       stop("trident", "Trident Elanzza", 0), stop("godrej", "Godrej Garden City", 1), stop("gota", "Gota Chokdi Flyover", 2),
       stop("thaltej", "Thaltej Char Rasta", 3), stop("sbi", "SBI Branch Bodakdev", 4), stop("au", "Ahmedabad University", 5),
     ],
   };
+  // An older copy of the same route that is still a route document but is not
+  // published to passengers: the tour must never use it.
+  const unpublishedCopy = { ...vaishnodevi, id: "Route-1", name: "Vaishnodevi to Campus" };
   return {
     auth: { currentUser: { uid: "qa-passenger", getIdToken: async () => "test-token", metadata: {} as Record<string, string> } },
     vaishnodevi,
+    unpublishedCopy,
     routes: null as RouteData[] | null,
+    // Route ids in settings/passengerRoutes; null publishes the QA route and Vaishnodevi Circle.
+    published: null as string[] | null,
     // A real ride the passenger is joined to, as the server reports it; null keeps the fixture's.
     joinedRide: null as Record<string, unknown> | null,
     // When set, the joined-ride status waits for this before answering.
@@ -46,14 +52,18 @@ const mocks = vi.hoisted(() => {
 vi.mock("@/lib/firebaseAuth", () => ({ auth: mocks.auth }));
 vi.mock("@/hooks/useAuth", async () => import("../../../../e2e/fixtures/state"));
 vi.mock("@/hooks/useLiveRouteCatalog", async () => import("../../../../e2e/fixtures/state"));
-// The QA route, then Vaishnodevi to Campus, unless a test sets its own routes.
+// The QA route, the unpublished copy, then Vaishnodevi Circle, unless a test sets its own routes.
 vi.mock("@/hooks/useRoutes", async () => {
   const fixture = await import("../../../../e2e/fixtures/state");
   return { ...fixture, useRoutes: () => {
     const base = fixture.useRoutes();
-    return { ...base, routes: mocks.routes ?? [...base.routes, mocks.vaishnodevi] };
+    return { ...base, routes: mocks.routes ?? [...base.routes, mocks.unpublishedCopy, mocks.vaishnodevi] };
   } };
 });
+vi.mock("@/hooks/usePassengerRouteConfig", () => ({ usePassengerRouteConfig: () => ({
+  config: { routes: (mocks.published ?? ["qa-route", "route_01"]).map(routeId => ({ routeId, stopTimes: {} })) },
+  loading: false, error: null, saveConfig: async () => {},
+}) }));
 vi.mock("@/hooks/useSettings", async () => import("../../../../e2e/fixtures/state"));
 vi.mock("@/hooks/useRTDBResume", async () => import("../../../../e2e/fixtures/state"));
 vi.mock("@/lib/liveBusStore", async () => import("../../../../e2e/fixtures/state"));
@@ -84,14 +94,14 @@ vi.mock("@/components/passenger/AccountTab", () => ({
 vi.mock("@/components/passenger/RoutesTab", () => ({
   default: function QaRoutes({ onRouteOpen, tourRouteId, openTourRoute }: { onRouteOpen?: () => void; tourRouteId?: string; openTourRoute?: number }) {
     const [open, setOpen] = useState<string | null>(null);
-    const tourRow = tourRouteId === "Route-1" ? "Route-1" : "qa-route";
+    const tourRow = tourRouteId === "route_01" ? "route_01" : "qa-route";
     useEffect(() => { if (openTourRoute) setOpen(tourRow); }, [openTourRoute, tourRow]);
     useEffect(() => { if (open) onRouteOpen?.(); }, [open, onRouteOpen]);
-    if (open) return <h2>{open === "Route-1" ? "Vaishnodevi to Campus" : "QA route"} timetable</h2>;
+    if (open) return <h2>{open === "route_01" ? "Vaishnodevi Circle" : "QA route"} timetable</h2>;
     return (
       <>
         <button type="button" data-tour={tourRow === "qa-route" ? "route-row" : undefined} onClick={() => setOpen("qa-route")}>View schedule for QA route</button>
-        <button type="button" data-tour={tourRow === "Route-1" ? "route-row" : undefined} onClick={() => setOpen("Route-1")}>View schedule for Vaishnodevi to Campus</button>
+        <button type="button" data-tour={tourRow === "route_01" ? "route-row" : undefined} onClick={() => setOpen("route_01")}>View schedule for Vaishnodevi Circle</button>
       </>
     );
   },
@@ -102,6 +112,7 @@ vi.mock("@/components/shared/FeedbackModal", () => ({ default: () => <div>QA fee
 beforeEach(() => {
   setScenario("empty");
   mocks.routes = null;
+  mocks.published = null;
   localStorage.clear();
   mocks.joinedRide = null;
   mocks.joinedRideGate = null;
@@ -117,15 +128,16 @@ afterEach(() => { cleanup(); resetDemoRideForTests(); resetTourRideForTests(); v
 const tourCard = () => screen.findByRole("dialog", { name: /./ });
 const next = (label = "Next") => userEvent.click(screen.getByRole("button", { name: label }));
 const section = () => document.querySelector("[data-passenger-workspace]")?.getAttribute("data-passenger-section");
-const tourRouteCard = () => screen.findByRole("button", { name: "Track Vaishnodevi to Campus" });
-/** Nothing on screen says the tour's bus is not real. */
+const tourRouteCard = () => screen.findByRole("button", { name: "Track Vaishnodevi Circle" });
+/** Nothing on screen says the tour's bus is not real, or shows the unpublished copy. */
 const expectNoDemoWording = () => {
   expect(screen.queryByText(/demo|practice|not a real bus/i)).toBeNull();
   expect(screen.queryByRole("button", { name: "Try the demo ride" })).toBeNull();
+  expect(screen.queryByText(/Vaishnodevi to Campus/)).toBeNull();
 };
 
 describe("app tour", () => {
-  it("starts after the first sign-in and lets the passenger try each part on Vaishnodevi to Campus", async () => {
+  it("starts after the first sign-in and lets the passenger try each part on Vaishnodevi Circle", async () => {
     render(<PassengerWorkspace />);
     expect((await tourCard()).getAttribute("aria-labelledby")).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Welcome to Eki" })).toBeTruthy();
@@ -148,7 +160,7 @@ describe("app tour", () => {
     await userEvent.click(card);
     expect(await screen.findByRole("heading", { name: "Choose your stops" })).toBeTruthy();
     expect(section()).toBe("tracking");
-    expect((await screen.findByTestId("tracking-map")).textContent).toContain("Vaishnodevi to Campus");
+    expect((await screen.findByTestId("tracking-map")).textContent).toContain("Vaishnodevi Circle");
 
     // They pick their own stops on the route timeline.
     await userEvent.click(await screen.findByRole("combobox", { name: "Boarding stop" }));
@@ -174,17 +186,17 @@ describe("app tour", () => {
 
     // Tab taps during the tour replace the history entry, as Next does, so the tour adds nothing to Back.
     const historyLength = window.history.length;
-    // Routes asks for the tab, then for Vaishnodevi to Campus, and moves on once it opens.
+    // Routes asks for the tab, then for Vaishnodevi Circle, and moves on once it opens.
     expect(screen.getByText("Tap Routes.")).toBeTruthy();
     await userEvent.click(screen.getByRole("button", { name: "Routes" }));
     expect(section()).toBe("routes");
     expect(await screen.findByText("Tap a route to see its stops and times.")).toBeTruthy();
-    const row = await screen.findByRole("button", { name: "View schedule for Vaishnodevi to Campus" });
+    const row = await screen.findByRole("button", { name: "View schedule for Vaishnodevi Circle" });
     expect(row.dataset.tour).toBe("route-row");
     await userEvent.click(row);
     expect(await screen.findByRole("heading", { name: "Your profile" })).toBeTruthy();
     expect(screen.getByText("Tap Profile.")).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "Vaishnodevi to Campus timetable" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Vaishnodevi Circle timetable" })).toBeTruthy();
 
     expect(window.history.length).toBe(historyLength);
     // Tapping Profile shows the closing card beside Replay app tour; Done ends it there.
@@ -198,11 +210,13 @@ describe("app tour", () => {
     expect(window.location.hash).toBe("#profile");
     expect(hasSeenTour("qa-passenger")).toBe(true);
 
-    // The tour's bus leaves with the tour; Live routes is back to the real list.
+    // The tour's bus leaves with the tour; Live routes is back to the real
+    // list, and no demo ride takes its place.
     await userEvent.click(screen.getByRole("button", { name: "Live" }));
-    expect(await screen.findByRole("button", { name: "Try the demo ride" })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Track Vaishnodevi to Campus" })).toBeNull();
+    expect(await screen.findByText("No buses running")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Track Vaishnodevi Circle" })).toBeNull();
     expect(screen.getByText("0 routes")).toBeTruthy();
+    expectNoDemoWording();
   });
 
   it("does each step for the passenger with Next", async () => {
@@ -210,7 +224,7 @@ describe("app tour", () => {
     await tourCard();
     await next();
     expect(await screen.findByRole("heading", { name: "Choose your stops" })).toBeTruthy();
-    expect((await screen.findByTestId("tracking-map")).textContent).toContain("Vaishnodevi to Campus");
+    expect((await screen.findByTestId("tracking-map")).textContent).toContain("Vaishnodevi Circle");
 
     // Next chooses the stop the bus is heading to and the terminus; the bar
     // then slides into the drawer.
@@ -222,10 +236,10 @@ describe("app tour", () => {
     expect(await screen.findByRole("heading", { name: "Text the driver" })).toBeTruthy();
     await next();
     expect(await screen.findByRole("heading", { name: "Timetables" })).toBeTruthy();
-    // Next opens Routes and Vaishnodevi to Campus's timetable.
+    // Next opens Routes and Vaishnodevi Circle's timetable.
     await next();
     expect(await screen.findByRole("heading", { name: "Your profile" })).toBeTruthy();
-    expect(await screen.findByRole("heading", { name: "Vaishnodevi to Campus timetable" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "Vaishnodevi Circle timetable" })).toBeTruthy();
     expect(section()).toBe("routes");
     expect(window.location.hash).toBe("#routes");
     // Next opens Profile and shows the closing card.
@@ -245,13 +259,14 @@ describe("app tour", () => {
     await userEvent.click(screen.getByRole("button", { name: "Skip tour" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(hasSeenTour("qa-passenger")).toBe(true);
-    expect(screen.queryByRole("button", { name: "Track Vaishnodevi to Campus" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Track Vaishnodevi Circle" })).toBeNull();
     unmount();
 
     render(<PassengerWorkspace />);
-    await screen.findByRole("button", { name: "Try the demo ride" });
+    await screen.findByText("No buses running");
     await new Promise(resolve => setTimeout(resolve, 50));
     expect(screen.queryByRole("dialog")).toBeNull();
+    expectNoDemoWording();
   });
 
   it("closes with Escape", async () => {
@@ -273,14 +288,15 @@ describe("app tour", () => {
     expect(section()).toBe("routes");
     expect(hasSeenTour("qa-passenger")).toBe(true);
     await userEvent.click(screen.getByRole("button", { name: "Live" }));
-    expect(await screen.findByRole("button", { name: "Try the demo ride" })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Track Vaishnodevi to Campus" })).toBeNull();
+    expect(await screen.findByText("No buses running")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Track Vaishnodevi Circle" })).toBeNull();
+    expectNoDemoWording();
   });
 
   it("does not start for an account that has signed in before", async () => {
     mocks.auth.currentUser.metadata = { creationTime: "Mon, 02 Nov 2026 08:00:00 GMT", lastSignInTime: new Date().toUTCString() };
     render(<PassengerWorkspace />);
-    await screen.findByRole("button", { name: "Try the demo ride" });
+    await screen.findByText("No buses running");
     await new Promise(resolve => setTimeout(resolve, 50));
     expect(screen.queryByRole("dialog")).toBeNull();
   });
@@ -288,7 +304,7 @@ describe("app tour", () => {
   it("replays from Profile", async () => {
     markTourSeen("qa-passenger");
     render(<PassengerWorkspace />);
-    await screen.findByRole("button", { name: "Try the demo ride" });
+    await screen.findByText("No buses running");
     await userEvent.click(screen.getByRole("button", { name: "Profile" }));
     await userEvent.click(await screen.findByRole("button", { name: "Replay app tour" }));
     expect(await screen.findByRole("heading", { name: "Welcome to Eki" })).toBeTruthy();
@@ -308,7 +324,7 @@ describe("app tour", () => {
     await userEvent.click(screen.getByRole("button", { name: "Profile" }));
     await userEvent.click(await screen.findByRole("button", { name: "Replay app tour" }));
     expect(await screen.findByText("1 of 3")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Track Vaishnodevi to Campus" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Track Vaishnodevi Circle" })).toBeNull();
     await next();
     expect(await screen.findByRole("heading", { name: "Timetables" })).toBeTruthy();
   });
@@ -321,7 +337,7 @@ describe("app tour", () => {
     mocks.joinedRideGate = new Promise<void>(resolve => { finishRestore = resolve; });
     render(<PassengerWorkspace />);
     expect(await screen.findByText("1 of 3")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Track Vaishnodevi to Campus" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Track Vaishnodevi Circle" })).toBeNull();
     finishRestore();
     await waitFor(() => expect(section()).toBe("tracking"));
     expect(screen.getByText("1 of 3")).toBeTruthy();
@@ -335,7 +351,7 @@ describe("app tour", () => {
     let finishRestore = () => {};
     mocks.joinedRideGate = new Promise<void>(resolve => { finishRestore = resolve; });
     render(<PassengerWorkspace />);
-    await screen.findByRole("button", { name: "Try the demo ride" });
+    await screen.findByRole("button", { name: "Track QA route" });
     // Replay before the restore answers: the ride is not tracked yet.
     await userEvent.click(screen.getByRole("button", { name: "Profile" }));
     await userEvent.click(await screen.findByRole("button", { name: "Replay app tour" }));
@@ -344,7 +360,7 @@ describe("app tour", () => {
     finishRestore();
     await waitFor(() => expect(section()).toBe("tracking"));
     expect(screen.getByText("1 of 3")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Track Vaishnodevi to Campus" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Track Vaishnodevi Circle" })).toBeNull();
     await next();
     expect(await screen.findByRole("heading", { name: "Timetables" })).toBeTruthy();
   });
@@ -358,15 +374,19 @@ describe("app tour", () => {
     expect(screen.getByText("2 routes")).toBeTruthy();
   });
 
-  it("keeps the ride steps with the demo ride turned off", async () => {
-    vi.stubEnv("NEXT_PUBLIC_DEMO_RIDE", "false");
+  it("keeps a turned-on demo ride out of the tour, and lists it only after", async () => {
+    vi.stubEnv("NEXT_PUBLIC_DEMO_RIDE", "true");
     render(<PassengerWorkspace />);
     await tourCard();
     expect(screen.getByText("1 of 6")).toBeTruthy();
     expect(await tourRouteCard()).toBeTruthy();
+    expectNoDemoWording();
+    await userEvent.click(screen.getByRole("button", { name: "Skip tour" }));
+    expect(await screen.findByRole("button", { name: "Try the demo ride" })).toBeTruthy();
   });
 
-  it("rides the first configured route whose road can carry a bus when Vaishnodevi to Campus is not configured", async () => {
+  it("rides the first published route whose road can carry a bus when no Vaishnodevi route is published", async () => {
+    mocks.published = ["short", "loop"];
     mocks.routes = [
       { id: "short", name: "One stop", color: "#801214", waypoints: [], stops: [{ id: "only", name: "Only stop", shortName: "Only", lat: 23, lng: 72 }] },
       { id: "loop", name: "Campus Loop", color: "#801214", waypoints: [], stops: [
@@ -379,6 +399,16 @@ describe("app tour", () => {
     expect(await screen.findByRole("button", { name: "Track Campus Loop" })).toBeTruthy();
   });
 
+  it("never rides an unpublished route, even a Vaishnodevi one", async () => {
+    // Only the QA route is published; both Vaishnodevi documents are not.
+    mocks.published = ["qa-route"];
+    render(<PassengerWorkspace />);
+    await tourCard();
+    const card = await screen.findByRole("button", { name: "Track QA route" });
+    expect(card.dataset.passengerRoute).toBe("tour-ride");
+    expect(screen.queryByText(/Vaishnodevi/)).toBeNull();
+  });
+
   it("introduces Live routes, Routes and Profile without live data", async () => {
     setScenario("catalog-denied");
     render(<PassengerWorkspace />);
@@ -387,8 +417,8 @@ describe("app tour", () => {
     await next();
     expect(await screen.findByRole("heading", { name: "Timetables" })).toBeTruthy();
     expect(section()).toBe("home");
-    // Routes still points at Vaishnodevi to Campus.
+    // Routes still points at Vaishnodevi Circle.
     await next();
-    expect(await screen.findByRole("heading", { name: "Vaishnodevi to Campus timetable" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "Vaishnodevi Circle timetable" })).toBeTruthy();
   });
 });
