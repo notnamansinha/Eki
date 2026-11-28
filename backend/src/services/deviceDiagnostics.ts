@@ -1,6 +1,7 @@
 import { FieldValue } from "firebase-admin/firestore";
 import { db } from "../lib/firebaseAdmin";
-import { checkDeviceCredentials } from "./deviceTelemetryService";
+import { checkDeviceCredentials, type DeviceCredentialContext } from "./deviceTelemetryService";
+import { DeviceCredentialThrottledError } from "../lib/deviceCredentialGuard";
 
 const DIAGNOSTIC_KEYS = [
   "firmwareVersion",
@@ -112,9 +113,16 @@ export async function ingestDeviceDiagnostics(
   secret: string,
   diagnostics: DeviceDiagnosticsPayload,
   now = Date.now(),
-): Promise<"accepted" | "credentials" | "unassigned"> {
+  context: DeviceCredentialContext = {},
+): Promise<"accepted" | "credentials" | "unassigned" | "throttled"> {
   if (!SAFE_DEVICE_ID.test(deviceId)) return "credentials";
-  const credential = await checkDeviceCredentials(deviceId, secret, now);
+  let credential;
+  try {
+    credential = await checkDeviceCredentials(deviceId, secret, now, context);
+  } catch (error) {
+    if (error instanceof DeviceCredentialThrottledError) return "throttled";
+    throw error;
+  }
   if (credential.status !== "assigned") return credential.status === "unassigned" ? "unassigned" : "credentials";
   const assignment = credential.assignment;
   await db.collection("_device_diagnostics").doc(deviceId).set({

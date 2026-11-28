@@ -78,10 +78,18 @@ spec:
               value: "90"
             - name: WORKER_ENABLED
               value: "true"
+            # One backend copy (maxScale 1), so the per-device count lives in
+            # process memory instead of costing RTDB transactions (#576 D12).
+            # Distributed mode must come back before maxScale goes above 1 or a
+            # second backend runs; see docs/operations/STAGING_RUNTIME_CONFIG.md.
             - name: HTTPS_DEVICE_RATE_LIMIT_MODE
-              value: distributed
+              value: local
             - name: RATE_LIMIT_SHARD_FACTOR
               value: "1"
+            # One tracker plus one replay sender behind a public IP:
+            # ceil(1.5 x 2) = 3 (#576 D2). Raise it before adding trackers.
+            - name: HTTPS_INGRESS_DEVICES_PER_IP
+              value: "3"
             - name: OTEL_SDK_DISABLED
               value: "true"
             - name: LOG_LEVEL

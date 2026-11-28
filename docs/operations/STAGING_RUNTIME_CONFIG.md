@@ -2,7 +2,7 @@
 
 | Document ID | Version | Status | Last updated |
 |---|---|---|---|
-| EKI-OPS-029 | 1.6 | Current | 2026-11-11 |
+| EKI-OPS-029 | 1.7 | Current | 2026-11-28 |
 
 ## 1. Purpose
 
@@ -42,7 +42,9 @@ These values were read from the live project on 2026-10-31 and the Cloud Run ser
 | `RIDE_SESSION_RETENTION_DAYS`, `FEEDBACK_RETENTION_DAYS`, `COMPLETED_TRIP_RETENTION_DAYS` | `180` | The `.env.example` values. Deletion starts as soon as the sweeper runs. |
 | `OPERATION_LOG_RETENTION_DAYS` | `90` | The `.env.example` value. |
 | `WORKER_ENABLED` | `true` | The serving revision `eki-backend-staging-00009-7sh` runs `true`, so the workers run while an instance is up and the instance takes the worker lease within about 5 s of starting (measured on 2026-11-03). The handoff was rehearsed on 2026-11-02 ([issue #374](https://github.com/notnamansinha/Eki/issues/374)). `false` keeps an instance out of leader election; it does not stop the HTTP server. Set `WORKER_ENABLED=false` before starting a local backend against this project to keep it out of the election ([worker leadership](WORKER_LEADERSHIP.md)). |
-| `HTTPS_DEVICE_RATE_LIMIT_MODE` | `distributed` | `local` also requires `RATE_LIMIT_SHARD_FACTOR=1`. |
+| `HTTPS_DEVICE_RATE_LIMIT_MODE` | `local` | The per-device count stays in process memory, which saves RTDB transactions while the service runs as one copy (`maxScale` 1). `local` also requires `RATE_LIMIT_SHARD_FACTOR=1`. **Distributed mode must come back before `maxScale` goes above 1 or a second backend runs** (issue #576 D12). A restart resets the counts. |
+| `HTTPS_INGRESS_DEVICES_PER_IP` | `3` | `ceil(1.5 x senders sharing one public IP)`; one tracker plus one replay sender gives 3. Raise it before adding trackers and for load tests (issue #576 D2). |
+| `DEVICE_CREDENTIAL_FAILURE_WINDOW_MS`, `DEVICE_CREDENTIAL_FAILURES_PER_IP`, `DEVICE_CREDENTIAL_FAILURES_PER_DEVICE` | Unset | The defaults (15 min, 20 per IP, 10 per device) apply. A refused unverified check gets HTTP 429 with `Retry-After: 10`; a pair that verified is never refused. `/api/health` reports the counters under `credentialGuard`, and the backend logs at most one refusal summary a minute. |
 | `RATE_LIMIT_SHARD_FACTOR` | `1` with a maximum of one instance | Set it to the maximum instance count if that count grows. |
 | `TRUST_PROXY` | Unset | Unset means one trusted hop in production. Section 7 describes the open question. |
 | `OTEL_SDK_DISABLED` | `true` | The manifest sets no OTLP endpoint either. Tracing starts only when an endpoint is configured and this flag is not `true`. |

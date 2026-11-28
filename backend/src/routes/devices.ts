@@ -3,6 +3,7 @@ import { FieldValue } from "firebase-admin/firestore";
 import rateLimit from "express-rate-limit";
 import { requireAdmin } from "../middleware/requireAdmin";
 import { ipKeyGenerator } from "../lib/rateLimitIdentity";
+import { CREDENTIAL_THROTTLE_RETRY_AFTER_MS, DeviceCredentialThrottledError } from "../lib/deviceCredentialGuard";
 import { readRateLimitShardFactor, shardedLimit } from "../lib/rateLimitShard";
 import { db } from "../lib/firebaseAdmin";
 import { singleRouteParam } from "../lib/requestParams";
@@ -28,6 +29,11 @@ import {
 
 const router = Router();
 const SAFE_ID = /^[A-Za-z0-9_-]{1,128}$/;
+/** A refused unverified credential check: 429 so firmware waits and retries instead of latching a 401. */
+function sendCredentialThrottled(res: Response, retryAfterMs: number): void {
+  res.set("Retry-After", String(Math.max(1, Math.ceil(retryAfterMs / 1000))));
+  res.status(429).json({ error: "Too many failed device credential checks.", retryAfterMs });
+}
 // This is the pre-auth DoS limit, so it must not trust a deviceId or Device
 // header supplied by the caller. ingestDeviceTelemetry keeps the authoritative
 // per-device budget after credential verification.
@@ -127,6 +133,7 @@ router.post(
         secret,
         parsed.value,
         serverReceivedAt,
+        { clientIp: ipKeyGenerator(req) },
       );
       if (!result.ok) {
         recordDiagnosticRejection(result.reason);
@@ -187,6 +194,7 @@ router.get(
         deviceId,
         secret,
         Date.now(),
+        { clientIp: ipKeyGenerator(req) },
       );
       if (credential.status !== "assigned") {
         res.status(credential.status === "unassigned" ? 403 : 401).json({ error: credential.status === "unassigned" ? "Device assignment is unavailable." : "Invalid device credentials." });
@@ -221,6 +229,7 @@ router.get(
 
       res.json(configuration.release);
     } catch (error) {
+      if (error instanceof DeviceCredentialThrottledError) { sendCredentialThrottled(res, error.retryAfterMs); return; }
       console.error("[Firmware] Release lookup failed:", error);
       res.status(503).json({ error: "Firmware service unavailable." });
     }
@@ -242,7 +251,7 @@ router.post(
       return;
     }
     try {
-      const credential = await checkDeviceCredentials(deviceId, secret, Date.now());
+      const credential = await checkDeviceCredentials(deviceId, secret, Date.now(), { clientIp: ipKeyGenerator(req) });
       if (credential.status !== "assigned") { res.status(credential.status === "unassigned" ? 403 : 401).json({ error: credential.status === "unassigned" ? "Device assignment is unavailable." : "Invalid device credentials." }); return; }
       const assignment = credential.assignment;
       const lockRef = db.collection("_active_bus_locks").doc(assignment.busId);
@@ -268,6 +277,7 @@ router.post(
       if (!allowed) { res.status(409).json({ error: "Bus is busy." }); return; }
       res.json({ acknowledged: true });
     } catch (error) {
+      if (error instanceof DeviceCredentialThrottledError) { sendCredentialThrottled(res, error.retryAfterMs); return; }
       console.error("[Firmware] Maintenance reservation failed:", error);
       res.status(503).json({ error: "Firmware service unavailable." });
     }
@@ -295,7 +305,10 @@ router.post(
         deviceId,
         secret,
         parsed.value,
+        Date.now(),
+        { clientIp: ipKeyGenerator(req) },
       );
+      if (accepted === "throttled") { sendCredentialThrottled(res, CREDENTIAL_THROTTLE_RETRY_AFTER_MS); return; }
       if (accepted !== "accepted") {
         res.status(accepted === "unassigned" ? 403 : 401).json({ error: accepted === "unassigned" ? "Device assignment is unavailable." : "Invalid device credentials." });
         return;

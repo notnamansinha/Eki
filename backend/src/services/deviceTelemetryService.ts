@@ -1,3 +1,4 @@
+import { DeviceCredentialGuard, DeviceCredentialThrottledError } from "../lib/deviceCredentialGuard";
 import { scheduleAutomaticServiceAdmission, invalidateAutomaticServiceAdmission, isAutomaticServiceAdmissionDeferred } from "./automaticServiceAdmission";
 import {
   createHash,
@@ -46,7 +47,10 @@ const SAFE_ID = /^[A-Za-z0-9_-]{1,128}$/;
 // ID can never be provisioned, so treat it as an invalid credential instead of
 // letting the registry read fail as a retryable dependency outage.
 const RESERVED_DOCUMENT_ID = /^__.*__$/;
-const CREDENTIAL_CACHE_MS = 60_000;
+// A verified pair is trusted for 15 minutes (issue #576 D7). Changing or
+// disabling a device publishes an invalidation that deletes it at once, so the
+// longer lifetime only saves Firestore reads and scrypt runs.
+const CREDENTIAL_CACHE_MS = 15 * 60_000;
 // When a verified credential's reserved refill lane is saturated, keep serving
 // it for at most this long past expiry. Explicit invalidation still deletes it.
 const CREDENTIAL_STALE_GRACE_MS = 10 * 60_000;
@@ -94,6 +98,7 @@ export interface HttpsTelemetryStatus {
   deviceToServerLatencyMs: LatencySummary;
   rtdbWriteLatencyMs: LatencySummary;
   rtdbTransactionAttempts: LatencySummary;
+  credentialGuard: ReturnType<DeviceCredentialGuard["snapshot"]>;
   rateLimit: {
     mode: "local" | "distributed";
     limitPerMinute: number;
@@ -150,6 +155,7 @@ const verifiedCredentialFills = createBoundedSingleFlight<DeviceCredentialResult
 });
 const durableRideRestores = new Map<string, Promise<void>>();
 const durableRideRestoreLatest = new Map<string, { assignment: DeviceAssignment; sample: TelemetryPayload; allowAdmission: boolean }>();
+const credentialGuard = new DeviceCredentialGuard();
 let credentialInvalidationListenerStarted = false;
 const status: Pick<
   HttpsTelemetryStatus,
@@ -317,6 +323,7 @@ function ensureDeviceCredentialInvalidationListener(): void {
     credentialInvalidationListenerStarted = false;
     credentialCache.clear();
     rejectedCredentialCache.clear();
+    credentialGuard.clear();
     credentialFills.invalidate();
     verifiedCredentialFills.invalidate();
     versions.off("child_added", invalidate);
@@ -387,10 +394,25 @@ async function verifySecretHashWith(
   return safeBufferEqual(derived, storedKey) && storedHashIsValid;
 }
 
+/** Where a credential check came from; the IP is the normalized rate-limit key. */
+export interface DeviceCredentialContext {
+  clientIp?: string;
+}
+
+/** True while any pair for this device ID has verified since the process started (D10). */
+function hasVerifiedPair(deviceId: string): boolean {
+  const prefix = `${deviceId}:`;
+  for (const key of credentialCache.keys()) {
+    if (key.startsWith(prefix)) return true;
+  }
+  return false;
+}
+
 export async function checkDeviceCredentials(
   deviceId: string,
   secret: string,
   now: number,
+  context: DeviceCredentialContext = {},
 ): Promise<DeviceCredentialResult> {
   if (RESERVED_DOCUMENT_ID.test(deviceId)) return { status: "invalid" };
   ensureDeviceCredentialInvalidationListener();
@@ -416,8 +438,18 @@ export async function checkDeviceCredentials(
     previouslyVerified.secretDigest &&
     safeBufferEqual(suppliedDigest, previouslyVerified.secretDigest),
   );
+  if (!reserved) {
+    // Unverified pairs only: a pair that verified before is never refused here.
+    credentialGuard.assertAdmitted(context.clientIp, deviceId, hasVerifiedPair(deviceId), now);
+    if (credentialGuard.isNotFound(deviceId, now)) {
+      credentialGuard.recordFailure(context.clientIp, deviceId, now);
+      return { status: "invalid" };
+    }
+  }
   try {
-    return await fillDeviceCredentials(deviceId, secret, now, suppliedDigest, cacheKey, reserved);
+    const result = await fillDeviceCredentials(deviceId, secret, now, suppliedDigest, cacheKey, reserved);
+    if (!reserved && result.status === "invalid") credentialGuard.recordFailure(context.clientIp, deviceId, now);
+    return result;
   } catch (error) {
     // Only a pair that verified before, was never invalidated, and cannot get
     // a reserved refill slot may keep its assignment, for a bounded grace.
@@ -461,6 +493,7 @@ function fillDeviceCredentials(
     };
     const deviceDoc = await db.collection("devices").doc(deviceId).get();
     assertCurrent();
+    if (!deviceDoc.exists) credentialGuard.markNotFound(deviceId, now);
     const device = deviceDoc.data() as Record<string, unknown> | undefined;
     const assignment = deviceDoc.exists ? assignmentFromDevice(device) : null;
     const secretMatches = await verifySecretHashWith(kdf, secret, device?.secretHash, isCurrent);
@@ -810,9 +843,10 @@ async function authenticateTelemetryDevice(
   secret: string,
   now: number,
   deadline: ExecutionDeadline,
+  context: DeviceCredentialContext,
 ): Promise<DeviceCredentialResult> {
   const credential: DeviceCredentialResult = SAFE_ID.test(deviceId)
-    ? await deadline.dependency("credentials", () => checkDeviceCredentials(deviceId, secret, now))
+    ? await deadline.dependency("credentials", () => checkDeviceCredentials(deviceId, secret, now, context))
     : { status: "invalid" };
   if (credential.status !== "assigned") {
     status.rejected += 1;
@@ -874,6 +908,7 @@ async function executeDeviceTelemetry(
 
 export async function ingestDeviceTelemetry(
   deviceId: string, secret: string, sample: TelemetryPayload, now = Date.now(),
+  context: DeviceCredentialContext = {},
 ): Promise<TelemetryIngestResult> {
   const deadline = new ExecutionDeadline();
   try {
@@ -883,7 +918,15 @@ export async function ingestDeviceTelemetry(
     // scrypt reject every cached, legitimate device with 503.
     const operation = deadline.run(async (): Promise<TelemetryIngestResult> => {
       deadline.assert();
-      const credential = await authenticateTelemetryDevice(deviceId, secret, now, deadline);
+      let credential: DeviceCredentialResult;
+      try {
+        credential = await authenticateTelemetryDevice(deviceId, secret, now, deadline, context);
+      } catch (error) {
+        if (!(error instanceof DeviceCredentialThrottledError)) throw error;
+        status.rejected += 1;
+        status.lastRejectedAt = new Date(now).toISOString();
+        return { ok: false, reason: "rate_limit", retryAfterMs: error.retryAfterMs };
+      }
       if (credential.status !== "assigned") {
         return { ok: false, reason: credential.status === "unassigned" ? "unassigned" : "credentials" };
       }
@@ -908,6 +951,7 @@ export function invalidateDeviceCredentialCache(deviceId: string): void {
   invalidateAutomaticServiceAdmission(deviceId);
   credentialFills.invalidate(deviceId);
   verifiedCredentialFills.invalidate(deviceId);
+  credentialGuard.forgetDevice(deviceId);
   const prefix = `${deviceId}:`;
   for (const cache of [credentialCache, rejectedCredentialCache]) {
     for (const key of cache.keys()) {
@@ -943,6 +987,7 @@ export function getHttpsTelemetryStatus(): HttpsTelemetryStatus {
     deviceToServerLatencyMs: summarizeLatencySamples(deviceToServerLatencySamples),
     rtdbWriteLatencyMs: summarizeLatencySamples(rtdbWriteLatencySamples),
     rtdbTransactionAttempts: summarizeLatencySamples(rtdbTransactionAttemptSamples),
+    credentialGuard: credentialGuard.snapshot(),
     rateLimit: {
       mode: deviceRateLimitConfiguration.mode,
       limitPerMinute: deviceRateLimitConfiguration.limit,
