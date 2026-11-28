@@ -23,6 +23,7 @@ const revision = () => fixture.revision;
 function useFixtureRevision() { useSyncExternalStore(observe, revision); }
 function refresh() { fixture.revision++; fixture.observers.forEach(next => next()); }
 vi.mock("@/hooks/useAuth", () => ({ useAuth: () => { useFixtureRevision(); return { user: fixture.user, loading: false }; } }));
+vi.mock("@/hooks/usePassengerRouteConfig", async () => import("../../../../e2e/fixtures/state"));
 vi.mock("@/hooks/useRoutes", () => ({ useRoutes: () => ({ routes: [fixture.route, { ...fixture.route, id: "B", name: "B route" }], error: null, retry: vi.fn() }) }));
 vi.mock("@/hooks/useSettings", () => ({ useSettings: () => ({ settings: {} }) }));
 vi.mock("@/hooks/useRideChatUnread", () => ({ useRideChatUnread: () => 0 }));

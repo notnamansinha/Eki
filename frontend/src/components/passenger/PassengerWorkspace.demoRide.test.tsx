@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({ auth: { currentUser: { uid: "qa-passenger", ge
 vi.mock("@/lib/firebaseAuth", () => ({ auth: mocks.auth }));
 vi.mock("@/hooks/useAuth", async () => import("../../../../e2e/fixtures/state"));
 vi.mock("@/hooks/useLiveRouteCatalog", async () => import("../../../../e2e/fixtures/state"));
+vi.mock("@/hooks/usePassengerRouteConfig", async () => import("../../../../e2e/fixtures/state"));
 vi.mock("@/hooks/useRoutes", async () => import("../../../../e2e/fixtures/state"));
 vi.mock("@/hooks/useSettings", async () => import("../../../../e2e/fixtures/state"));
 vi.mock("@/hooks/useRTDBResume", async () => import("../../../../e2e/fixtures/state"));
@@ -45,6 +46,8 @@ beforeEach(() => {
   localStorage.clear();
   mocks.mapProps.length = 0;
   vi.stubEnv("NEXT_PUBLIC_BACKEND_URL", "https://qa.example.test");
+  // Off unless turned on (recordings and fixtures); these tests turn it on.
+  vi.stubEnv("NEXT_PUBLIC_DEMO_RIDE", "true");
   Object.defineProperty(navigator, "geolocation", { configurable: true, value: {
     getCurrentPosition: vi.fn(), watchPosition: () => 1, clearWatch: () => {},
   } });
@@ -72,11 +75,15 @@ describe("demo ride in Live routes", () => {
     expect(screen.getByText("1 route")).toBeTruthy();
   });
 
-  it("is hidden when NEXT_PUBLIC_DEMO_RIDE is false", async () => {
-    vi.stubEnv("NEXT_PUBLIC_DEMO_RIDE", "false");
-    render(<PassengerWorkspace />);
-    await screen.findByText("No buses running");
-    expect(screen.queryByRole("button", { name: "Try the demo ride" })).toBeNull();
+  it("is not listed unless NEXT_PUBLIC_DEMO_RIDE is true, as in production", async () => {
+    for (const value of [undefined, "false"]) {
+      vi.stubEnv("NEXT_PUBLIC_DEMO_RIDE", value);
+      const { unmount } = render(<PassengerWorkspace />);
+      await screen.findByText("No buses running");
+      expect(screen.queryByRole("button", { name: "Try the demo ride" })).toBeNull();
+      expect(screen.queryByText(/practice|not a real bus|openstreetmap/i)).toBeNull();
+      unmount();
+    }
   });
 });
 

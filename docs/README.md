@@ -50,7 +50,7 @@ The register lists every controlled document by its source path. A mirror carrie
 
 | ID | Document | Version | Status | Last updated |
 |---|---|---|---|---|
-| EKI-GEN-001 | [Eki Campus Bus Tracking](../README.md) | 1.3 | Current | 2026-11-07 |
+| EKI-GEN-001 | [Eki Campus Bus Tracking](../README.md) | 1.4 | Current | 2026-11-27 |
 | EKI-GEN-002 | [Eki Documentation Index](README.md) | 1.7 | Current | 2026-11-25 |
 | EKI-GEN-003 | [Eki Documentation Standard](DOCUMENTATION_STANDARD.md) | 1.3 | Current | 2026-11-09 |
 | EKI-GEN-004 | [Getting Started with Eki](GETTING_STARTED.md) | 2.3 | Current | 2026-11-08 |
